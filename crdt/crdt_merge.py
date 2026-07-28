@@ -77,7 +77,7 @@ def _has_field_crdt_table(db_path: Path, tenant_id: str) -> bool:
     if not hasattr(_schema_cache, "checked"):
         _schema_cache.checked = {}
     if cache_key in _schema_cache.checked:
-        return _schema_cache.checked[cache_key]
+        return bool(_schema_cache.checked[cache_key])
     try:
         from infra._lazy_imports import open_db
         with open_db(db_path, timeout=10.0, tenant_id=tenant_id) as probe:

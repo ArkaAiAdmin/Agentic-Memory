@@ -201,7 +201,7 @@ class SQLiteLockManager(LockManager):
                     (lock_name,),
                 ).fetchone()
                 if row:
-                    return now <= row[0]
+                    return bool(now <= row[0])
                 return False
         except sqlite3.OperationalError:
             return False

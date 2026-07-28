@@ -48,7 +48,7 @@ def _resolve_principal_for_rbac() -> tuple[str | None, str | None]:
         except Exception:
             tenant_id = principal_id
     return principal_id, tenant_id
-from save_pipeline import save_memory, SaveValidationError
+from save_pipeline import SaveValidationError
 
 
 @with_audit("memory_save")
@@ -155,39 +155,22 @@ def memory_save(
         # verb off the direct memory.db write path, which would race the
         # daemon.  When the flag is off, fall back to the direct
         # save_memory (local/single-writer) for backward compatibility.
-        from config import get_config
-        from save_pipeline import save_memory_journal
+        from save_pipeline import save_memory_auto
 
-        cfg = get_config()
-        if getattr(cfg, "write_journal", False):
-            result = save_memory_journal(
-                content=content,
-                category=category,
-                title_slug=title_slug,
-                tags=tags or [],
-                pinned=pinned,
-                is_global=is_global,
-                importance=importance,
-                context="mcp",
-                note_id="",
-                tenant_id=tenant_id,
-                defer_expensive=True,
-            )
-            return json.dumps({"note_id": result, "status": "success"})
-        result = save_memory(
+        result = save_memory_auto(
             content=content,
             category=category,
             title_slug=title_slug,
-            tags=tags,
+            tags=tags or [],
             pinned=pinned,
             is_global=is_global,
-            safety_wiring=True,
             importance=importance,
             context="mcp",
             note_id="",
             tenant_id=tenant_id,
             defer_expensive=True,
         )
+        return json.dumps({"note_id": result, "status": "success"})
     except SaveValidationError as e:
         return str(e)
     finally:
@@ -574,7 +557,6 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
         try:
             from infra.authorizer import mcp_authorize, log_authorization_decision
             from infra.memory_common import get_memory_paths
-            from pathlib import Path
 
             # Resolve DB path for RBAC check
             _, local_mem, _ = get_memory_paths()
@@ -657,7 +639,6 @@ def memory_restore(note_id: str) -> str:
         try:
             from infra.authorizer import mcp_authorize, log_authorization_decision
             from infra.memory_common import get_memory_paths
-            from pathlib import Path
 
             _, local_mem, _ = get_memory_paths()
             auth_db = str(local_mem / "memory.db") if (local_mem / "memory.db").exists() else None

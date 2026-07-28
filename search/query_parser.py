@@ -1081,7 +1081,7 @@ def _did_you_mean(query: str, synonym_map: dict) -> list:
     if not query or not synonym_map:
         return []
     words = query.lower().split()
-    expansions = []
+    expansions: list[str] = []
     for i, w in enumerate(words):
         if len(expansions) >= 3:
             break

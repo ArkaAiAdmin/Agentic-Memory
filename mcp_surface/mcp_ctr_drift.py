@@ -75,7 +75,7 @@ def memory_record_ctr_feedback(
 
         record_ctr_feedback_db(
             db_path,
-            id=id,
+            memory_id=id,
             query_id=query_id,
             action=action,
             returned_at=returned_at,

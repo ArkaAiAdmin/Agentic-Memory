@@ -28,6 +28,7 @@ import argparse
 import os
 import sqlite3
 import sys
+from typing import Any
 import time
 from pathlib import Path
 
@@ -43,7 +44,7 @@ from infra.infrastructure import resolve_active_memory_dir
 try:
     from infra.tenant_query import install_tenant_context
 except Exception:  # pragma: no cover
-    def install_tenant_context(conn, tenant_id=None):
+    def install_tenant_context(conn: Any, tenant_id: str | None = None) -> str:
         import os
         tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
         conn.create_function("tenant_id", 0, lambda: tid)

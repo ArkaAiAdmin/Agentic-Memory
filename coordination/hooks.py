@@ -186,7 +186,7 @@ def verify_save_lock(file_path: str, expected_version: int, agent_id: str | None
         return True
 
     try:
-        return _verify(conn, file_path, expected_version)
+        return bool(_verify(conn, file_path, expected_version))
     except Exception as e:
         logger.warning("verify_save_lock failed for %s: %s", file_path, e)
         return True
@@ -212,7 +212,7 @@ def renew_save_lock(file_path: str, agent_id: str | None = None, conn: sqlite3.C
     try:
         if not agent_id:
             agent_id = _get_agent_id()
-        return _renew(conn, file_path, agent_id, ttl)
+        return bool(_renew(conn, file_path, agent_id, ttl))
     except Exception as e:
         logger.warning("renew_save_lock failed for %s: %s", file_path, e)
         return False

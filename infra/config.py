@@ -357,6 +357,7 @@ class GraphCacheConfig:
 @dataclass(frozen=True)
 class WritePipelineConfig:
     write_journal: bool = False
+    write_journal_fallback_sync: bool = False
     quality_gates: bool = True
     saga_enabled: bool = True
     defer_expensive: bool = True
@@ -504,6 +505,7 @@ class RerankConfig:
 @dataclass(frozen=True)
 class FeatureFlagsConfig:
     write_journal: bool = False
+    write_journal_fallback_sync: bool = False
     multi_agent: bool = True
     summarization: bool = True
     user_profile: bool = True
@@ -598,7 +600,7 @@ class MemoryConfig:
         import dataclasses
 
         _FEATURE_FLAGS = frozenset({
-            "write_journal", "multi_agent", "summarization", "user_profile",
+            "write_journal", "write_journal_fallback_sync", "multi_agent", "summarization", "user_profile",
             "self_directed", "adaptive_retention", "neural_forget_mode",
             "neural_forget_weights", "temporal_ssm_enabled", "temporal_ssm_weights",
             "consolidation", "saga_enabled", "quality_gates", "temporal_tiers",
@@ -831,6 +833,56 @@ def _resolve_sync_peers(toml_data: dict) -> tuple:
     return ()
 
 
+def _apply_scope_overrides(toml_data: dict) -> dict:
+    """Apply scope-based overrides to TOML data before config construction.
+
+    When ``MEMORY_SCOPE=production`` (or ``scope.name = \"production\"`` in
+    memory.toml), heavy default-on features are downgraded to keep latency
+    and resource usage in check.  Env vars still win — an operator can
+    re-enable any flag explicitly.
+    """
+    scope_name = os.environ.get("MEMORY_SCOPE") or _deep_get(toml_data, "scope.name") or "development"
+    if scope_name != "production":
+        return toml_data
+
+    # Production-safe defaults: disable the heaviest optional features.
+    # Core search (FTS5 BM25 + KG facts + basic reranking) stays enabled.
+    # Env vars still take precedence — re-enable anything explicitly.
+    prod_defaults = {
+        "features.llm_extraction": False,
+        "features.ner_spacy_enabled": False,
+        "features.feature_temporal_kg_llm": False,
+        "features.graph_centrality_boost": False,
+        "features.graph_communities": False,
+        "features.graph_evolution_tracking": False,
+        "features.knowledge_compilation": False,
+        "features.user_profile": False,
+        "features.adaptive_retention": False,
+        "features.consolidation": False,
+        "features.summarization": False,
+        "search.contextual_retrieval": False,
+        "search.contextual_enrichment": False,
+        "search.deep_rerank_timeout": 0,
+        "search.ce_deep_enabled": False,
+        "search.colbert_enabled": False,
+        "search.splade_enabled": False,
+        "search.answer_rerank_enabled": False,
+        "search.ctr_weight_learning": False,
+    }
+
+    for key, value in prod_defaults.items():
+        parts = key.split(".", 1)
+        if len(parts) == 2:
+            section, field = parts
+            if section not in toml_data:
+                toml_data[section] = {}
+            # Only set if not already explicitly set in TOML
+            if field not in toml_data[section]:
+                toml_data[section][field] = value
+
+    return toml_data
+
+
 def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
     """Build a MemoryConfig from a parsed TOML dict.
 
@@ -838,6 +890,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
     argument form is replaced by per-section constructors. No behavior
     change — same defaults, same env-var / TOML precedence.
     """
+    toml_data = _apply_scope_overrides(toml_data)
 
     def _b(
         env_var: str, toml_key: str, default, cast=None, toml_data: dict | None = None
@@ -986,6 +1039,9 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
     features = FeatureFlagsConfig(
         write_journal=_b(
             "MEMORY_WRITE_JOURNAL_ENABLED", "features.write_journal", False, bool, toml_data
+        ),
+        write_journal_fallback_sync=_b(
+            "MEMORY_WRITE_JOURNAL_FALLBACK_SYNC", "features.write_journal_fallback_sync", False, bool, toml_data
         ),
         multi_agent=_b(
             "MEMORY_MULTI_AGENT", "features.multi_agent", True, bool, toml_data

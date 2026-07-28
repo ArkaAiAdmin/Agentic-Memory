@@ -97,7 +97,7 @@ class CloudStateStore:
 
     # ── customers ──────────────────────────────────────────────────────────
 
-    def create_customer(self, customer_id: str, email: str, name: str | None = None) -> dict:
+    def create_customer(self, customer_id: str, email: str, name: str | None = None) -> Optional[dict]:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO customers (customer_id, email, name, created_at, status) "
@@ -128,7 +128,7 @@ class CloudStateStore:
         label: str | None = None,
         db_path: str | None = None,
         api_base: str | None = None,
-    ) -> dict:
+    ) -> Optional[dict]:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO deployments "
@@ -180,7 +180,7 @@ class CloudStateStore:
         stripe_sub_id: str | None = None,
         status: str = "active",
         current_period_end: float | None = None,
-    ) -> dict:
+    ) -> Optional[dict]:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO subscriptions "
@@ -216,7 +216,7 @@ class CloudStateStore:
         subscription_id: str | None = None,
         currency: str = "usd",
         status: str = "open",
-    ) -> dict:
+    ) -> Optional[dict]:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO invoices "
@@ -380,9 +380,10 @@ class CloudStateStore:
                 ).fetchone()
                 if not has_table:
                     return 0
-                return conn.execute(
+                row = conn.execute(
                     "SELECT COUNT(DISTINCT principal_id) FROM role_bindings"
-                ).fetchone()[0]
+                ).fetchone()
+                return int(row[0]) if row and row[0] is not None else 0
         except Exception:
             return 0
 

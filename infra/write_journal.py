@@ -51,7 +51,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from save.pipeline import SaveRequest
 
@@ -75,6 +75,13 @@ STUCK_PROCESSING_MAX_AGE_SECONDS = int(os.environ.get("MEMORY_JOURNAL_STUCK_AGE"
 # W3: maximum number of transient-failure retries before an entry is
 # dead-lettered to ``journal_failed``.
 JOURNAL_MAX_RETRIES = int(os.environ.get("MEMORY_JOURNAL_MAX_RETRIES", "3"))
+
+# Overflow guard: maximum pending entries in the journal before new
+# enqueues are refused.  When the background worker is dead or
+# backlogged, pending rows accumulate silently — this caps the backlog
+# and surfaces the condition with a clear error so callers can retry
+# or fall back to synchronous saves.  Configurable via env var.
+JOURNAL_PENDING_THRESHOLD = int(os.environ.get("MEMORY_WRITE_JOURNAL_MAX_PENDING", "1000"))
 
 # Thread-local connections to the journal DB — zero lock contention.
 _local = threading.local()
@@ -184,6 +191,18 @@ def _clear_local_conns() -> None:
             except Exception as e:
                 logger.warning("_clear_local_conns failed: %s", e)
         _local.conns = {}
+
+
+def _pending_count(journal_path: Path) -> int:
+    """Count pending entries in the journal DB."""
+    try:
+        conn = _get_journal_conn(journal_path)
+        row = conn.execute(
+            "SELECT COUNT(*) FROM write_journal WHERE status = 'pending'"
+        ).fetchone()
+        return row[0] if row else 0
+    except Exception:
+        return 0
 
 
 def init_journal_db(journal_path: Path) -> None:
@@ -404,6 +423,20 @@ def enqueue_write(
     """
     note_id = f"{req.category}/{req.title_slug}"
     conn = _get_journal_conn(journal_path)
+
+    # Overflow guard: refuse new enqueues if pending entries exceed the
+    # threshold.  This caps backlog growth when the worker is dead or
+    # stalled, and surfaces the condition with a clear error so callers
+    # can retry or fall back to synchronous saves.
+    pending = _pending_count(journal_path)
+    if pending >= JOURNAL_PENDING_THRESHOLD:
+        raise RuntimeError(
+            f"write_journal backlog at {pending} pending entries "
+            f"(threshold={JOURNAL_PENDING_THRESHOLD}). "
+            "Worker may be down — check background_worker and drain "
+            "journal.db, or raise MEMORY_WRITE_JOURNAL_MAX_PENDING."
+        )
+
     # Size guard: refuse new enqueues if the journal DB is still over the
     # limit after pruning applied entries. This bounds disk usage and
     # surfaces the condition with a clear error instead of silently
@@ -475,6 +508,7 @@ def dequeue_pending_for_worker(
         raise ValueError(f"worker_id {worker_id} out of range [0, {n_workers})")
     conn = _get_journal_conn(journal_path)
     conn.execute("BEGIN IMMEDIATE")
+    params: tuple[Any, ...]
     if tenant_id:
         sql = (
             "SELECT id, note_id, agent_id, category, title_slug, content, "

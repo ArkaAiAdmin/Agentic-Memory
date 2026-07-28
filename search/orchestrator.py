@@ -38,7 +38,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple, Optional, cast
 
 from infra.db import AnyConnection
 
@@ -541,7 +541,7 @@ def _rerank_results(
         return (score, ts)
 
     if out and len(out) > 1:
-        superseded_ids = set()
+        superseded_ids: set[str] = set()
         for item in out:
             sup = item[12] if len(item) > 12 else None
             if sup:
@@ -1035,7 +1035,7 @@ def search_memories(
         else:
             fts_query = ""
         bare_text = " ".join(_bare_tokens)
-        graph_rag_terms = []
+        graph_rag_terms: list[str] = []
     else:
         normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
             query, db_path, conn=db, mode=mode
@@ -1651,14 +1651,14 @@ def search_memories(
                 _search_ctr_weights = None
                 if has_fitness and _effective_rerank:
                     results_to_display = [
-                        (
+                        cast(Any, (
                             r[0], r[1], r[2], r[3], r[4], r[5],
                             -r[5], None, None, None,
                             r[9] if len(r) > 9 else None,
                             r[10] if len(r) > 10 else None,
-                            r[11] if len(r) > 11 else 1,
+                            r[11] if len(r) > 11 else None,
                             None,
-                        )
+                        ))
                         for r in results
                     ]
                 else:
@@ -1833,8 +1833,8 @@ def search_memories(
                                 )
                             if _swm_display_rows:
                                 results_to_display = (
-                                    list(results_to_display)
-                                    + _swm_display_rows
+                                    cast(list[Any], results_to_display)
+                                    + cast(list[Any], _swm_display_rows)
                                 )
                                 try:
                                     _swm_items, _, _ = _build_result_items(

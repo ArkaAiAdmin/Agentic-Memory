@@ -374,11 +374,56 @@ class TestMaterializeJournalEntry:
 
 
 # ---------------------------------------------------------------------------
-# End-to-end: enqueue → daemon drain → verify DB + file (skipped — needs live daemon)
+# save_memory_auto fallback behavior
 # ---------------------------------------------------------------------------
-# The full daemon-drain E2E requires a running reconciliation thread with a
-# properly migrated DB.  The existing test_integration_save_pipeline.py +
-# test_saga_crash_safety.py already verify the saga path writes correctly.
-# This test is replaced by TestMaterializeJournalEntry above which validates
-# the journal entry format.
+
+class TestSaveMemoryAutoFallback:
+    """Tests for write_journal_fallback_sync feature."""
+
+    def test_falls_back_to_sync_when_backlog_and_flag_on(self, tmp_path: Path, monkeypatch):
+        """When journal backlog is full and fallback flag is on, save_memory_auto should call save_memory."""
+        from unittest import mock
+        from save.pipeline import save_memory_auto
+
+        monkeypatch.setenv("MEMORY_WRITE_JOURNAL_ENABLED", "1")
+        monkeypatch.setenv("MEMORY_WRITE_JOURNAL_FALLBACK_SYNC", "1")
+
+        with mock.patch("save.pipeline.save_memory_journal", side_effect=RuntimeError(
+            "write_journal backlog at 1000 pending entries (threshold=1000). "
+            "Worker may be down — check background_worker and drain journal.db"
+        )), mock.patch("save.pipeline.save_memory", return_value="lessons/fallback-test") as mock_sync:
+            result = save_memory_auto(content="fallback test", category="lessons", title_slug="fallback-test")
+            assert result == "lessons/fallback-test"
+            mock_sync.assert_called_once()
+
+    def test_raises_when_backlog_and_flag_off(self, tmp_path: Path, monkeypatch):
+        """When journal backlog is full and fallback flag is off, save_memory_auto should raise."""
+        from unittest import mock
+        from save.pipeline import save_memory_auto
+
+        monkeypatch.setenv("MEMORY_WRITE_JOURNAL_ENABLED", "1")
+        monkeypatch.setenv("MEMORY_WRITE_JOURNAL_FALLBACK_SYNC", "0")
+
+        with mock.patch("save.pipeline.save_memory_journal", side_effect=RuntimeError(
+            "write_journal backlog at 1000 pending entries (threshold=1000). "
+            "Worker may be down — check background_worker and drain journal.db"
+        )), mock.patch("save.pipeline.save_memory", return_value="lessons/fallback-test") as mock_sync:
+            with pytest.raises(RuntimeError, match="backlog"):
+                save_memory_auto(content="no fallback", category="lessons", title_slug="no-fallback")
+            mock_sync.assert_not_called()
+
+    def test_uses_journal_when_no_backlog(self, tmp_path: Path, monkeypatch):
+        """When journal is healthy, save_memory_auto should use the journal path."""
+        from unittest import mock
+        from save.pipeline import save_memory_auto
+
+        monkeypatch.setenv("MEMORY_WRITE_JOURNAL_ENABLED", "1")
+        monkeypatch.setenv("MEMORY_WRITE_JOURNAL_FALLBACK_SYNC", "1")
+
+        with mock.patch("save.pipeline.save_memory_journal", return_value="lessons/journal-test") as mock_journal, \
+             mock.patch("save.pipeline.save_memory", return_value="lessons/sync-test") as mock_sync:
+            result = save_memory_auto(content="journal path", category="lessons", title_slug="journal-test")
+            assert result == "lessons/journal-test"
+            mock_journal.assert_called_once()
+            mock_sync.assert_not_called()
 

@@ -1156,10 +1156,10 @@ def _acquire_db_connection(
     for _attempt in range(2):
         try:
             from infra.db_write_queue import sqlite_write_queue
-            conn = sqlite_write_queue.start_session(db_path_obj)
+            _conn_session = sqlite_write_queue.start_session(db_path_obj)
             from infra.db_migrations import run_schema_setup
-            run_schema_setup(conn)
-            return conn
+            run_schema_setup(_conn_session)
+            return _conn_session
         except Exception as e:
             last_err = e
             if _attempt == 0:
@@ -1775,7 +1775,18 @@ def save_memory_auto(*args: Any, **kwargs: Any) -> str:
     if getattr(cfg, "write_journal", False):
         kwargs.pop("_now_iso", None)
         kwargs.pop("_conn", None)
-        return save_memory_journal(*args, **kwargs)
+        try:
+            return save_memory_journal(*args, **kwargs)
+        except RuntimeError as exc:
+            if "backlog" in str(exc).lower() and getattr(
+                cfg, "write_journal_fallback_sync", False
+            ):
+                logger.warning(
+                    "write_journal backlog (%s) — falling back to synchronous save",
+                    exc,
+                )
+                return cast(str, save_memory(*args, **kwargs))
+            raise
     return cast(str, save_memory(*args, **kwargs))
 
 
@@ -2322,7 +2333,6 @@ def _save_memory_core(
         # saga additionally uses WAL BEGIN IMMEDIATE to claim the batch
         # atomically.  (See AGENTS.md Hard Rule 9.)
         from infra.db_path_flock import (
-            acquire_db_path_flock,
             release_db_path_flock,
         )
 

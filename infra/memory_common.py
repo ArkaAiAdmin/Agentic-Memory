@@ -27,7 +27,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 from infra.frontmatter import _coerce  # noqa: F401
 # Re-exports from the 6 new modules (one canonical home, multiple import paths)
@@ -349,11 +349,11 @@ class RateLimiter:
         from infra.rate_limiter import TokenBucket
         rate = max_calls / window_seconds
         self._bucket = TokenBucket(rate=rate, burst=max_calls)
-        self._buckets: dict[str, "TokenBucket"] = {}
+        self._buckets: dict[str, TokenBucket] = {}
         self._max_calls = max_calls
         self._window = window_seconds
 
-    def _get_bucket(self, name: str) -> "TokenBucket":
+    def _get_bucket(self, name: str) -> Any:
         if name not in self._buckets:
             from infra.rate_limiter import TokenBucket
             rate = self._max_calls / self._window
@@ -362,7 +362,7 @@ class RateLimiter:
 
     def check(self, name: str = "_default") -> bool:
         """Return True if the call is allowed (within budget)."""
-        return self._get_bucket(name).allow()
+        return bool(self._get_bucket(name).allow())
 
     def reset(self, name: str | None = None) -> None:
         """Reset one bucket (by name) or all buckets."""

@@ -897,7 +897,7 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_surface.mcp_maintenance import memory_extract_skills
-            return cast(str, memory_extract_skills.__wrapped__(conn, memory_id=memory_id, dry_run=dry_run))
+            return cast(str, cast(Any, memory_extract_skills).__wrapped__(conn, memory_id=memory_id, dry_run=dry_run))
     except Exception as e:
         logger.warning("Unhandled exception in _op_extract_skills: %s", e)
         return _err(classify_exception(e), str(e))
@@ -916,7 +916,7 @@ def _op_list_skills(limit: int = 50) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_surface.mcp_maintenance import memory_list_skills
-            return cast(str, memory_list_skills.__wrapped__(conn, limit=limit))
+            return cast(str, cast(Any, memory_list_skills).__wrapped__(conn, limit=limit))
     except Exception as e:
         logger.warning("Unhandled exception in _op_list_skills: %s", e)
         return _err(classify_exception(e), str(e))
@@ -1475,9 +1475,12 @@ def _op_recall_status() -> str:
           tiers: list of tier descriptors (name, description, max_items, source)
     """
     try:
-        from recall.recall import _get_recall_cfg
+        from config import get_config
 
-        cfg = _get_recall_cfg()
+        cfg_obj = get_config()
+        cfg = getattr(cfg_obj, "recall", {})
+        if hasattr(cfg, "to_dict"):
+            cfg = cfg.to_dict()
         tiers = [
             {
                 "name": "tier1_hot_curated",

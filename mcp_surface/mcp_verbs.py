@@ -352,16 +352,10 @@ def memory_save(
     if auth_err:
         return auth_err
     try:
-        from config import get_config
-        from infra._lazy_imports import save_memory_journal, save_memory
-        from save_pipeline import SaveValidationError
-
-        cfg = get_config()
-        _save_fn = save_memory_journal if cfg.write_journal else save_memory
-
+        from save_pipeline import save_memory_auto, SaveValidationError
         slug = title_slug or _auto_slug(content)
         try:
-            result = _save_fn(
+            result = save_memory_auto(
                 content=content,
                 category=category,
                 title_slug=slug,
@@ -548,13 +542,8 @@ def memory_curate_autosave(
             if not to_promote:
                 return "No valid notes to promote."
 
-            from config import get_config
-            from infra._lazy_imports import save_memory_journal, save_memory
-            from save_pipeline import SaveValidationError
+            from save_pipeline import save_memory_auto, SaveValidationError
             from mcp_surface.mcp_memory import memory_delete
-
-            cfg = get_config()
-            _save_fn = save_memory_journal if cfg.write_journal else save_memory
 
             promoted = 0
             for nid, (content, tags_json, source_file, title_slug) in to_promote:
@@ -571,7 +560,7 @@ def memory_curate_autosave(
                     # Re-save via write pipeline so .md file write,
                     # FTS5 update, KG extraction, and lock ordering
                     # all happen inside the saga transaction.
-                    _save_fn(
+                    save_memory_auto(
                         content=content,
                         category=category,
                         title_slug=slug,
@@ -770,15 +759,10 @@ def memory_note(
             result = memory_restore(note_id)
             return str(result)
         elif action == "update":
-            from config import get_config
-            from infra._lazy_imports import save_memory_journal, save_memory
-            from save_pipeline import SaveValidationError
-
-            cfg = get_config()
-            _save_fn = save_memory_journal if cfg.write_journal else save_memory
+            from save_pipeline import save_memory_auto, SaveValidationError
 
             try:
-                result = _save_fn(
+                result = save_memory_auto(
                     content=content,
                     category=category or "lessons",
                     title_slug=title_slug or note_id.split("/")[-1],
@@ -866,13 +850,8 @@ def memory_learn(
     if auth_err:
         return auth_err
     try:
-        from config import get_config
-        from infra._lazy_imports import save_memory_journal, save_memory
-        from save_pipeline import SaveValidationError
+        from save_pipeline import save_memory_auto, SaveValidationError
         from mcp_surface.mcp_maintenance import memory_compile_skill
-
-        cfg = get_config()
-        _save_fn = save_memory_journal if cfg.write_journal else save_memory
 
         # Auto-generate a slug from content when no skill_name is provided.
         # The save pipeline rejects empty slugs with INVALID_SLUG.
@@ -883,7 +862,7 @@ def memory_learn(
 
         # Save the memory
         try:
-            result = _save_fn(
+            result = save_memory_auto(
                 content=content,
                 category=category,
                 title_slug=_slug,
@@ -1179,7 +1158,6 @@ def memory_list_revisions(
     try:
         db_path = _resolve_db_path()
         from infra.db import open_db
-        import json as _json
         import time as _time
 
         where = ["1=1"]

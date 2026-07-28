@@ -43,7 +43,7 @@ from infra.ssrf import _ssrf_validate_url
 try:
     import requests
 except ImportError:
-    requests = None
+    requests: Any = None  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,9 @@ try:
     from joserfc import jwt as jose_jwt
     from joserfc.jwt import JWTClaimsRegistry
 except ImportError:
-    import_key = None
-    jose_jwt = None
-    JWTClaimsRegistry = None
+    import_key: Any = None  # type: ignore[no-redef]
+    jose_jwt: Any = None  # type: ignore[no-redef]
+    JWTClaimsRegistry: Any = None  # type: ignore[no-redef]
 
 
 # ---------------------------------------------------------------------------

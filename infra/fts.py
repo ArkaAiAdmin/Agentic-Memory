@@ -49,7 +49,7 @@ def cleanup_fts5_orphans(conn: AnyConnection) -> int:
             ")"
         )
         conn.commit()
-        return cur.rowcount
+        return cur.rowcount if cur.rowcount is not None else 0
     except Exception as exc:
         logger.warning("FTS5 orphan cleanup failed: %s", exc)
         return 0

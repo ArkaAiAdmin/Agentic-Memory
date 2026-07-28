@@ -98,7 +98,7 @@ def check_agent_alive(conn: sqlite3.Connection, agent_id: str) -> bool:
         return False  # Never sent a heartbeat
 
     age = time.time() - row[0]
-    return age < HEARTBEAT_TIMEOUT
+    return bool(age < HEARTBEAT_TIMEOUT)
 
 
 def get_alive_agents(conn: sqlite3.Connection) -> list[dict]:

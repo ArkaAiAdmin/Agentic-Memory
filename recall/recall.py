@@ -294,7 +294,7 @@ def session_recap(
             tier2_rows = []
             if query:
                 try:
-                    search_res = search_memories(query=query, db_path=str(db_path_resolved), light=True)
+                    search_res = search_memories(custom_db_path=str(db_path_resolved), query=query)
                     if isinstance(search_res, dict) and "raw_results" in search_res:
                         tier2_rows = search_res["raw_results"]
                 except Exception:

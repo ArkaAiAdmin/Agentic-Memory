@@ -68,8 +68,8 @@ _SAGA_INTERNALS = {
 # Tier A — CORE verb/write modules. These MUST route content writes through
 # save_memory / save_memory_journal and must not issue raw content-table SQL.
 _ENFORCED_CORE_MODULES = [
-    "mcp_memory.py",
-    "mcp_verbs.py",
+    "mcp_surface/mcp_memory.py",
+    "mcp_surface/mcp_verbs.py",
     "background/tool_complete.py",
     "session_manager.py",
 ]
@@ -90,9 +90,9 @@ def _read(path: Path) -> str:
 
 
 def _module_uses_saga(src: str) -> bool:
-    return "save_memory" in src and (
+    return ("save_memory" in src and (
         "save_memory(" in src or "save_memory_journal" in src
-    )
+    )) or "save_memory_auto" in src
 
 
 def _find_content_table_writes(src: str) -> list[str]:

@@ -8,6 +8,7 @@ import json
 import logging
 import sqlite3
 import time
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def get_agent_activity(conn: sqlite3.Connection, project_id: str) -> dict:
     """Get a summary of what each agent is doing in a project."""
     state = get_state(conn, project_id)
 
-    activity = {}
+    activity: dict[str, list[dict[str, Any]]] = {}
     for key, info in state.items():
         agent = info.get("updated_by", "unknown")
         if agent not in activity:

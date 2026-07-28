@@ -39,6 +39,7 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 | `MEMORY_TEMPORAL_TIERS` | `True` | TOML: `features.temporal_tiers=True` |
 | `MEMORY_USER_PROFILE` | `True` | TOML: `features.user_profile=True` |
 | `MEMORY_WRITE_JOURNAL_ENABLED` | `False` | TOML: `features.write_journal=True` |
+| `MEMORY_WRITE_JOURNAL_FALLBACK_SYNC` | `False` | TOML: `features.write_journal_fallback_sync=True` — when the journal backlog is full, fall back to synchronous `save_memory` instead of raising. |
 
 ## Search
 
@@ -295,6 +296,7 @@ search_compute_budget_ms = 200       # MEMORY_SEARCH_COMPUTE_BUDGET_MS — max m
 # All features on by default so the agent gets the richest possible
 # context automatically. Set any to false to opt out.
 write_journal = true                    # MEMORY_WRITE_JOURNAL_ENABLED — CQRS write journal (lock-free multi-writer). Requires background_worker daemon.
+write_journal_fallback_sync = false     # MEMORY_WRITE_JOURNAL_FALLBACK_SYNC — when the journal backlog is full, fall back to synchronous save_memory instead of raising.
 multi_agent = true                    # MEMORY_MULTI_AGENT — cross-agent memory sharing via shared_memories table
 summarization = true                  # MEMORY_SUMMARIZATION — auto-summarize long notes via TF-IDF
 user_profile = true                   # MEMORY_USER_PROFILE — personalize recall ranking from access history

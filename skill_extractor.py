@@ -527,7 +527,7 @@ def write_skill_md(
         if target.exists():
             existing = target.read_text(encoding="utf-8")
             if f"content_hash: {skill.get('content_hash', '')}" in existing:
-                return target
+                return Path(target)
         triggers = skill.get("triggers", [])
         primary = ", ".join(triggers[:5]) if triggers else "general"
         yaml_header = (
@@ -540,8 +540,8 @@ def write_skill_md(
             f"  keywords:\n"
             f"    primary:\n"
             + "".join(f"      - {t}\n" for t in triggers[:10])
-            + f"    secondary: []\n"
-            f"---\n"
+            + "    secondary: []\n"
+            "---\n"
         )
         steps_md = "\n".join(
             f"{i+1}. {s}" for i, s in enumerate(skill.get("steps", [])[:20])
@@ -554,7 +554,7 @@ def write_skill_md(
         content_hash = skill.get("content_hash", "")
         full = f"{yaml_header}\n{body}\n<!-- content_hash: {content_hash} -->\n"
         atomic_write(target, full, encoding="utf-8")
-        return target
+        return Path(target)
     except Exception as _md_exc:
         logger.debug("write_skill_md skipped for %s: %s", skill.get("name", "?"), _md_exc)
         return None

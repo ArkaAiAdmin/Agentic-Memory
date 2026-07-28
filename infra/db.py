@@ -66,7 +66,7 @@ def set_include_global(enabled: bool) -> None:
     _include_global = enabled
 
 
-def _setup_tenant_view(conn: sqlite3.Connection, tenant_id: str) -> None:
+def _setup_tenant_view(conn: Any, tenant_id: str) -> None:
     """Register tenant_id() UDF and create the tenant_memories view.
 
     Creates an INSTEAD OF UPDATE trigger so that helpers like

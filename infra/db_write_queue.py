@@ -16,7 +16,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +315,7 @@ class SQLiteWriteQueue:
                 except Exception:
                     pass
                 self._sessions[session_id] = {"conn": conn, "db_path": db_path}
-            return self._sessions[session_id]["conn"]
+            return cast(sqlite3.Connection, self._sessions[session_id]["conn"])  # type: ignore[no-any-return]
 
     def _get_reusable_conn(self, db_path: Path) -> sqlite3.Connection:
         if db_path not in self._path_conns:

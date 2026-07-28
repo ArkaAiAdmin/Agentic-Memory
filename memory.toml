@@ -64,6 +64,7 @@ search_compute_budget_ms = 0         # MEMORY_SEARCH_COMPUTE_BUDGET_MS — max m
 # All features on by default so the agent gets the richest possible
 # context automatically. Set any to false to opt out.
 write_journal = true                    # MEMORY_WRITE_JOURNAL_ENABLED — CQRS write journal (lock-free multi-writer). Requires background_worker daemon.
+write_journal_fallback_sync = false     # MEMORY_WRITE_JOURNAL_FALLBACK_SYNC — when the journal backlog is full, fall back to synchronous save_memory instead of raising.
 multi_agent = true                    # MEMORY_MULTI_AGENT — cross-agent memory sharing via shared_memories table
 summarization = true                  # MEMORY_SUMMARIZATION — auto-summarize long notes via TF-IDF
 user_profile = true                   # MEMORY_USER_PROFILE — personalize recall ranking from access history
@@ -269,6 +270,30 @@ model_revision = "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a"  # MEMORY_EMBEDDING_
 # Default: auto-detected (heuristic). Set explicitly for CI/production.
 [scope]
 name = "development"
+
+# [scope.production]
+# Applied when MEMORY_SCOPE=production or scope.name = "production".
+# Disables the heaviest optional features; core FTS5+KG search stays enabled.
+# Env vars still win — re-enable anything explicitly.
+# llm_extraction = false
+# ner_spacy_enabled = false
+# feature_temporal_kg_llm = false
+# graph_centrality_boost = false
+# graph_communities = false
+# graph_evolution_tracking = false
+# knowledge_compilation = false
+# contextual_retrieval = false
+# contextual_enrichment = false
+# deep_rerank_timeout = 0
+# ce_deep_enabled = false
+# colbert_enabled = false
+# splade_enabled = false
+# answer_rerank_enabled = false
+# ctr_weight_learning = false
+# adaptive_retention = false
+# consolidation = false
+# user_profile = false
+# summarization = false
 
 [drift]
 # Whether a drift report is computed at process startup. Default: true.

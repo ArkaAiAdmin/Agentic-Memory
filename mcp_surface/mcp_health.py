@@ -73,7 +73,12 @@ def _check_database(db_path: Path) -> dict[str, Any]:
 
 
 def _check_search(db_path: Path) -> dict[str, Any]:
-    """Probe semantic search functionality."""
+    """Probe search functionality with a fast FTS-only path.
+
+    Uses mode=\"fts\" + light=True to avoid triggering the heavy hybrid
+    pipeline (SentenceTransformer load, cross-encoder rerank, etc.).
+    This keeps the liveness probe under 200ms even on first call.
+    """
     if not db_path.exists():
         return {"status": "yellow", "details": "skipped (no DB)", "action": None}
 
@@ -86,6 +91,13 @@ def _check_search(db_path: Path) -> dict[str, Any]:
             query="health check probe",
             limit=1,
             include_global=False,
+            mode="fts",
+            light=True,
+            hybrid=False,
+            rerank=False,
+            deep_rerank=False,
+            synthesize=False,
+            include_facts=False,
         )
         elapsed_ms = int((time.time() - t0) * 1000)
         count = len(result.get("results", []))
