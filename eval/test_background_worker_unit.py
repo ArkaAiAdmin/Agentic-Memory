@@ -341,5 +341,21 @@ class TestMmapSizeConfig(unittest.TestCase):
                 pass
 
 
+class TestWorkerLivenessMonitor(unittest.TestCase):
+    def test_instantiate_liveness_monitor(self):
+        from background.background_worker import WorkerLivenessMonitor, start_worker_liveness_monitor
+        tmpdir = Path(tempfile.mkdtemp(prefix="worker_mon_"))
+        db_path = tmpdir / "memory.db"
+        try:
+            mon = start_worker_liveness_monitor(db_path, n_workers=2)
+            self.assertIsInstance(mon, WorkerLivenessMonitor)
+            self.assertEqual(mon._n_workers, 2)
+            self.assertEqual(mon._max_failures, 3)
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
+

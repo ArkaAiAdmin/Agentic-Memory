@@ -108,20 +108,25 @@ class TestSearchBudget:
 
     def test_env_var_missing(self):
         from search.budget_aware import get_search_budget
+        from search.config import get_search_config
         import os
         os.environ.pop("MEMORY_SEARCH_COMPUTE_BUDGET_MS", None)
         budget = get_search_budget()
-        assert budget.budget_ms == 200.0  # Default from memory.toml
+        expected = float(get_search_config().search_compute_budget_ms)
+        assert budget.budget_ms == expected
 
     def test_env_var_invalid(self):
         from search.budget_aware import get_search_budget
+        from search.config import get_search_config
         import os
         os.environ["MEMORY_SEARCH_COMPUTE_BUDGET_MS"] = "not_a_number"
         try:
             budget = get_search_budget()
-            assert budget.budget_ms == 200.0  # Falls back to memory.toml default
+            expected = float(get_search_config().search_compute_budget_ms)
+            assert budget.budget_ms == expected
         finally:
             del os.environ["MEMORY_SEARCH_COMPUTE_BUDGET_MS"]
+
 
 
 class TestBudgetCascade:

@@ -1068,10 +1068,91 @@ class WorkerPool:
                 conn.close()
             except Exception:
                 pass
-            logger.info(
-                "worker pool: worker %d stopped (processed %d tasks)",
-                worker_id, processed,
-            )
+
+
+class WorkerLivenessMonitor:
+    """Worker Liveness Monitor for background processes and worker threads.
+
+    Detects worker death within 30s, automatically restarts worker threads,
+    and alerts on repeated consecutive failures (>= max_consecutive_failures).
+    """
+
+    def __init__(
+        self,
+        db_path: Path,
+        n_workers: int = 2,
+        task_type: str | None = None,
+        max_consecutive_failures: int = 3,
+        liveness_check_interval_s: float = 2.0,
+    ) -> None:
+        self._db_path = db_path
+        self._n_workers = n_workers
+        self._task_type = task_type
+        self._max_failures = max_consecutive_failures
+        self._interval = liveness_check_interval_s
+        self._consecutive_failures: dict[int, int] = {i: 0 for i in range(n_workers)}
+        self._pool = WorkerPool(db_path, n_workers=n_workers, task_type=task_type)
+
+    def run_monitored(self, drain: bool = False, max_tasks: int = 10000) -> None:
+        """Run worker pool with active liveness monitoring and auto-restart."""
+        logger.info("liveness monitor: starting monitored worker pool (%d workers)", self._n_workers)
+
+        workers: dict[int, threading.Thread] = {}
+        stop_event = threading.Event()
+
+        def spawn_worker(w_id: int) -> threading.Thread:
+            def runner() -> None:
+                try:
+                    self._pool._worker_loop(w_id, drain, max_tasks)
+                except Exception as exc:
+                    self._consecutive_failures[w_id] += 1
+                    failures = self._consecutive_failures[w_id]
+                    logger.warning(
+                        "liveness monitor: worker %d died (%s). Consecutive failures: %d",
+                        w_id, exc, failures,
+                    )
+                    if failures >= self._max_failures:
+                        logger.error(
+                            "ALERT: worker %d failed %d consecutive times! Auto-restarting but alert triggered.",
+                            w_id, failures,
+                        )
+                else:
+                    self._consecutive_failures[w_id] = 0
+
+            t = threading.Thread(target=runner, daemon=True, name=f"WorkerMonitorThread-{w_id}")
+            t.start()
+            return t
+
+        for i in range(self._n_workers):
+            workers[i] = spawn_worker(i)
+
+        try:
+            while not _shutdown and not stop_event.is_set():
+                time.sleep(self._interval)
+                for i in range(self._n_workers):
+                    t = workers.get(i)
+                    if t and not t.is_alive() and not drain and not _shutdown:
+                        logger.info("liveness monitor: worker %d detected dead within <30s — auto-restarting", i)
+                        workers[i] = spawn_worker(i)
+                if drain and all(not t.is_alive() for t in workers.values()):
+                    break
+        finally:
+            stop_event.set()
+
+
+def start_worker_liveness_monitor(
+    db_path: Path,
+    n_workers: int = 2,
+    task_type: str | None = None,
+    max_consecutive_failures: int = 3,
+) -> WorkerLivenessMonitor:
+    """Instantiate a WorkerLivenessMonitor for a database path."""
+    return WorkerLivenessMonitor(
+        db_path=db_path,
+        n_workers=n_workers,
+        task_type=task_type,
+        max_consecutive_failures=max_consecutive_failures,
+    )
 
 
 def _check_high_priority_pending(conn: AnyConnection) -> bool:

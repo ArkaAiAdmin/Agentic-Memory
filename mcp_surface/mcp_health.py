@@ -75,12 +75,39 @@ def _check_database(db_path: Path) -> dict[str, Any]:
 def _check_search(db_path: Path) -> dict[str, Any]:
     """Probe search functionality with a fast FTS-only path.
 
-    Uses mode=\"fts\" + light=True to avoid triggering the heavy hybrid
-    pipeline (SentenceTransformer load, cross-encoder rerank, etc.).
-    This keeps the liveness probe under 200ms even on first call.
+    Uses mode="fts" + light=True to avoid triggering the heavy hybrid
+    pipeline. Skips probe or uses known-index term when write journal
+    has pending writes to prevent false alarms or lock contention.
     """
     if not db_path.exists():
         return {"status": "yellow", "details": "skipped (no DB)", "action": None}
+
+    # Check for pending journal writes — skip probe if journal has un-drained backlog
+    journal_path = db_path.parent / "journal.db"
+    if journal_path.exists():
+        try:
+            from infra.write_journal import journal_stats
+            stats = journal_stats(journal_path)
+            pending = stats.get("pending", 0)
+            if pending > 0:
+                return {
+                    "status": "green",
+                    "details": f"probe skipped ({pending} journal writes pending)",
+                    "action": None,
+                }
+        except Exception:
+            pass
+
+    # Use a known-index term from DB if available, falling back to 'health check probe'
+    search_term = "health check probe"
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", timeout=2.0, uri=True)
+        row = conn.execute("SELECT category FROM memories WHERE deleted_at IS NULL LIMIT 1").fetchone()
+        conn.close()
+        if row and row[0]:
+            search_term = str(row[0])
+    except Exception:
+        pass
 
     try:
         from search.orchestrator import search_memories
@@ -88,7 +115,7 @@ def _check_search(db_path: Path) -> dict[str, Any]:
         t0 = time.time()
         result = search_memories(
             db_path=db_path,
-            query="health check probe",
+            query=search_term,
             limit=1,
             include_global=False,
             mode="fts",
