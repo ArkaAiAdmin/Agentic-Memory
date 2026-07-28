@@ -72,3 +72,11 @@ dummy
 .playwright-mcp/
 .qoder/
 None
+
+# IDE project
+node_modules/
+.pnpm-store/
+target/
+*.log
+.env
+.env.local
