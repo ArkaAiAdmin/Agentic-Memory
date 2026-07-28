@@ -687,13 +687,18 @@ def _temporal_compare(
     _temporal_compare_boost_cached = get_search_config().temporal_compare_boost
     import re as _re
 
-    # Detect temporal comparison patterns
+    # Detect temporal comparison/enrichment patterns
     _TC_PATTERNS = [
         r"which\s+(changed|updated|modified)\s+(first|last|earliest|most recent)",
         r"what\s+was\s+.*\s+when\s+",
         r"before\s+or\s+after",
         r"in\s+what\s+order",
         r"most\s+recently",
+        r"when\s+did\s+[A-Z][a-z]+",
+        r"what\s+did\s+[A-Z][a-z]+",
+        r"what\s+happened\s+(to|with)\s+[A-Z][a-z]+",
+        r"what\s+was\s+.*\s+(before|after)\s+",
+        r"how\s+did\s+[A-Z][a-z]+",
     ]
     is_temporal = any(_re.search(p, query, _re.IGNORECASE) for p in _TC_PATTERNS)
     if not is_temporal:

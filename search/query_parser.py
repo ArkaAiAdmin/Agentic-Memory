@@ -1363,13 +1363,19 @@ def _graph_rag_expand(query: str, db_path: Path, conn=None) -> list[str]:
 
 
 def _extract_inference_entity(query: str) -> tuple[str | None, list[str]]:
-    """Extract entity name and concept keywords from an inference query.
+    """Extract entity name and concept keywords from a query.
 
-    Queries like "Would Caroline likely have Dr. Seuss books?" are about a
-    specific entity (Caroline) and related concepts (Dr. Seuss, books).
-    Returns (entity_name, concept_keywords) or (None, []) if not an inference query.
+    Handles inference questions ("Would Caroline likely have X?"),
+    temporal entity questions ("When did Caroline go to X?"), and
+    factual entity questions ("What did Caroline research?").
+    Returns (entity_name, concept_keywords) or (None, []) if no entity is found.
     """
-    if not _QUERY_TYPE_INFERENCE_RE.search(query):
+    is_inference = bool(_QUERY_TYPE_INFERENCE_RE.search(query))
+    is_temporal_entity = bool(re.search(
+        r'\b(when|what|where)\s+(did|does|is|are|was|were|could|would|might|may|happened)\s+'
+        r'([A-Z][a-z]+)', query, re.IGNORECASE,
+    ))
+    if not (is_inference or is_temporal_entity):
         return None, []
 
     # Extract capitalized words that are likely entity names

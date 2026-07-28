@@ -247,6 +247,7 @@ def run_bench(quick: bool = False) -> dict:
             _populate_db(db_path, corpus)
 
         es = get_embedding_search()
+        es.wait_for_model(timeout_s=120.0)
         if es.model is None:
             raise RuntimeError("Embedding model unavailable")
 
