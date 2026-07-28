@@ -43,9 +43,10 @@ def _setup_db(db_path: Path) -> sqlite3.Connection:
     """Create a fresh DB with the full schema and populate with golden memories."""
     from infra.db_migrations import run_schema_setup
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
     run_schema_setup(conn)
 
     # Also ensure FTS tables
@@ -170,25 +171,38 @@ def _compute_ndcg_at_k(retrieved: list[str], expected: list[str], k: int = 10) -
 def _search_single(
     db_path: str, query: str, limit: int = 10, as_of: float | None = None
 ) -> tuple[list[str], float]:
-    """Search for a query and return (result_ids, latency_ms)."""
+    """Search for a query and return (result_ids, latency_ms).
+
+    Uses a per-query timeout to prevent hangs in the 14-phase pipeline.
+    """
+    from concurrent.futures import TimeoutError as FutureTimeout
     from search.orchestrator import search_memories
 
     t0 = time.time()
     try:
-        result = search_memories(
-            query=query,
-            db_path=Path(db_path),
-            limit=limit,
-            hybrid=True,
-            rerank=True,
-            as_of=as_of,
-        )
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(
+                search_memories,
+                query=query,
+                db_path=Path(db_path),
+                limit=limit,
+                hybrid=True,
+                rerank=True,
+                as_of=as_of,
+            )
+            result = future.result(timeout=120)
         latency_ms = (time.time() - t0) * 1000
         if isinstance(result, dict):
             ids = [r.get("id", "") for r in result.get("results", [])]
         else:
             ids = []
         return ids, latency_ms
+    except FutureTimeout:
+        latency_ms = (time.time() - t0) * 1000
+        print(f"  ⚠ Search TIMEOUT (120s) for '{query}'", flush=True)
+        return [], latency_ms
     except Exception as e:
         latency_ms = (time.time() - t0) * 1000
         print(f"  Search failed for '{query}': {e}")
@@ -200,6 +214,14 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True, skip_backf
 
     Returns a dict with metrics and pass/fail status.
     """
+    # Clear reranker caches to prevent cross-run contamination
+    try:
+        import search.rerankers as _rerankers
+        if hasattr(_rerankers, "clear_reranker_caches"):
+            _rerankers.clear_reranker_caches()
+    except Exception:
+        pass
+
     golden = _load_golden_set()
     targets = golden["targets"]
     memories = golden["memories"]
@@ -229,22 +251,24 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True, skip_backf
         )
         if verbose:
             print("  Cross-encoder loaded")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  ⚠ Cross-encoder warmup FAILED (reranker disabled): {e}", flush=True)
     # Pre-load SPLADE
     try:
         from infra.splade_encoder import encode_sparse
         encode_sparse("warmup")
         if verbose:
             print("  SPLADE loaded")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  ⚠ SPLADE warmup FAILED (sparse index disabled): {e}", flush=True)
     # Run warm-up queries to prime FTS cache
     warmup_queries = [
         "docker container basics", "python testing", "kubernetes deployment",
         "redis caching", "postgresql transaction", "terraform infrastructure",
     ]
-    for wq in warmup_queries:
+    for i, wq in enumerate(warmup_queries):
+        if i > 0 and i % 2 == 0 and verbose:
+            print(f"  Warmup progress: {i}/{len(warmup_queries)}", flush=True)
         _search_single(str(db_path), wq, limit=5)
 
     # Run test cases

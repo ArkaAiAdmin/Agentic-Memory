@@ -310,7 +310,8 @@ def run_adversarial_eval() -> dict:
     os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
     import sqlite3
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout = 30000")
     dataset = generate_adversarial_dataset()[0]
 
     print("=== NEXT-GEN SOTA ADVERSARIAL MEMORY BENCHMARK ===")
@@ -340,7 +341,19 @@ def run_adversarial_eval() -> dict:
     conn.close()
 
     print("Ingestion complete. Warming up search encoders...")
-    _ = search_memories(db_path, query="warmup test", tenant_id=dataset["tenant_id"], category="sessions", limit=1)
+    try:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            _ = pool.submit(
+                search_memories,
+                db_path=db_path,
+                query="warmup test",
+                tenant_id=dataset["tenant_id"],
+                category="sessions",
+                limit=1,
+            ).result(timeout=30)
+    except FutureTimeout:
+        print("  ⚠ Search warmup timed out after 30s — continuing anyway", flush=True)
     print("Warmup complete. Evaluating 4 hard tracks...\n")
 
     results = []

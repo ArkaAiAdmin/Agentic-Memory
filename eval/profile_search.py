@@ -129,7 +129,11 @@ def main():
         if es.model is not None:
             print(f"  Embedding model ready ({i}s)")
             break
+        if i > 0 and i % 10 == 0:
+            print(f"  Still waiting for embedding model... ({i}s)", flush=True)
         time.sleep(1)
+    else:
+        print("  ⚠ Embedding model NOT loaded after 60s — benchmark will use fallback", flush=True)
 
     print("Warming up CE model...")
     from search.rerankers import _get_ce_chunk_model
@@ -198,4 +202,7 @@ def main():
         pass
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        orch._record_phase_latency = _original_record

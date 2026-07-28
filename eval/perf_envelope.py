@@ -218,13 +218,16 @@ def build_db(memory_dir: Path, db_path: Path) -> float:
     t0 = time.perf_counter()
     # rebuild_index.py expects (source_dir, db_path) as relative paths from cwd.
     # The standard call is: python rebuild_index.py memory memory/memory.db
-    proc = subprocess.run(
-        [str(VENV_PY), str(REBUILD_SCRIPT), "memory", "memory/memory.db"],
-        cwd=str(memory_dir.parent),
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
+    try:
+        proc = subprocess.run(
+            [str(VENV_PY), str(REBUILD_SCRIPT), "memory", "memory/memory.db"],
+            cwd=str(memory_dir.parent),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("rebuild_index.py timed out after 600s") from None
     if proc.returncode != 0:
         raise RuntimeError(f"rebuild failed: {proc.stderr[-500:]}")
     return time.perf_counter() - t0
@@ -271,9 +274,13 @@ def measure_semantic_search(vocab: list[str], n: int, db_path: Path) -> Measurem
     query = " ".join(rng.sample(vocab, 5))
 
     es = EmbeddingSearch()
+    if es.model is None:
+        raise RuntimeError(
+            "Embedding model not loaded — set MEMORY_TEST_EMBEDDING=1 "
+            "or ensure model weights are cached"
+        )
     # Warm embedding model
-    if es.model is not None:
-        es.model.encode(["warmup"])
+    es.model.encode(["warmup"])
 
     def _one() -> int:
         results = es.search(query, str(db_path), limit=5)
@@ -376,13 +383,16 @@ def measure_contradiction(memory_dir: Path, mode: str, n: int,
     build_db(sub_memory, sub_memory / "memory.db")
 
     def _one() -> int:
-        proc = subprocess.run(
-            [str(VENV_PY), str(CONTRADICTION_SCRIPT),
-             str(sub_memory), f"--mode={mode}"],
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
+        try:
+            proc = subprocess.run(
+                [str(VENV_PY), str(CONTRADICTION_SCRIPT),
+                 str(sub_memory), f"--mode={mode}"],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"contradiction {mode} timed out after 600s") from None
         if proc.returncode != 0:
             raise RuntimeError(
                 f"contradiction {mode} failed (rc={proc.returncode}): "
@@ -459,14 +469,16 @@ def run_for_size(n: int) -> dict[str, Any]:
     initial_build_s = build_db(memory_dir, db_path)
     print(f"  initial build: {initial_build_s:.1f}s", flush=True)
 
-    con = sqlite3.connect(str(db_path))
+    con = sqlite3.connect(str(db_path), timeout=30.0)
+    con.execute("PRAGMA busy_timeout = 30000")
     row_count = con.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
     fts_count = con.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
     con.close()
     print(f"  db rows: {row_count:,} (FTS5: {fts_count:,})", flush=True)
 
     # Pick vocabulary from actual corpus for search queries
-    con = sqlite3.connect(str(db_path))
+    con = sqlite3.connect(str(db_path), timeout=30.0)
+    con.execute("PRAGMA busy_timeout = 30000")
     sample = con.execute(
         "SELECT content FROM memories ORDER BY RANDOM() LIMIT 50"
     ).fetchall()

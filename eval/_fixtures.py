@@ -7,6 +7,7 @@ but tests that need to call the helper directly should import from
 here.
 """
 
+import os
 import shutil
 import sqlite3
 from pathlib import Path
@@ -39,7 +40,10 @@ def bootstrap_temp_db(db_path: Path) -> None:
             src = prod_db.parent / (prod_db.name + suffix)
             if src.exists():
                 shutil.copy2(src, db_path.parent / (db_path.name + suffix))
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
@@ -58,7 +62,10 @@ def bootstrap_temp_db_clean(db_path: Path) -> None:
     eliminates the prod-copy dependency and the fragile truncation-
     plus-FTS5-rebuild dance.
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
@@ -239,18 +246,21 @@ def populate_eval_memory_indexes_batch(
         from fact import ensure_facts_schema, index_facts_for_memory
 
         ensure_facts_schema(conn)
-        old_env = os.environ.get("MEMORY_LLM_EXTRACTION")
+        _old_llm_extraction = os.environ.get("MEMORY_LLM_EXTRACTION")
+        _llm_changed = False
         if not use_llm_facts:
             os.environ["MEMORY_LLM_EXTRACTION"] = "0"
+            _llm_changed = True
         try:
             for memory_id, content, _, _ in items:
                 if content and content.strip():
                     index_facts_for_memory(conn, memory_id, content)
         finally:
-            if old_env is not None:
-                os.environ["MEMORY_LLM_EXTRACTION"] = old_env
-            elif not use_llm_facts:
-                os.environ.pop("MEMORY_LLM_EXTRACTION", None)
+            if _llm_changed:
+                if _old_llm_extraction is not None:
+                    os.environ["MEMORY_LLM_EXTRACTION"] = _old_llm_extraction
+                else:
+                    os.environ.pop("MEMORY_LLM_EXTRACTION", None)
     except Exception:
         pass
 

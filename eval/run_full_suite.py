@@ -47,8 +47,9 @@ def _get_template_db() -> Path:
     if bootstrap_temp_db_clean is not None:
         bootstrap_temp_db_clean(_template_db)
     else:
-        conn = sqlite3.connect(str(_template_db))
+        conn = sqlite3.connect(str(_template_db), timeout=30.0)
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout = 30000")
         from infra.db_migrations import run_schema_setup
         from fact import ensure_facts_schema
         run_schema_setup(conn)
@@ -149,7 +150,7 @@ def _parse_junit(junit_path: Path) -> dict:
 
 
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 lock = threading.Lock()
 
@@ -201,12 +202,16 @@ def run_one_test(f):
         xxf = counts["xfailed"]
         xxp = counts["xpassed"]
         ee = counts["errors"]
+    except subprocess.TimeoutExpired as exc:
+        output = (exc.stdout.decode() if exc.stdout else "") + (exc.stderr.decode() if exc.stderr else "") + "\n[TIMEOUT after 900s]"
+        pp, ff, ss, xxf, xxp, ee = 0, 1, 0, 0, 0, 0
+        result = type("", (), {})()
+        result.returncode = -1  # type: ignore[attr-defined]
     except Exception as exc:
         output = str(exc)
         pp, ff, ss, xxf, xxp, ee = 0, 1, 0, 0, 0, 0
-        class DummyResult:
-            returncode = -1
-        result = DummyResult()
+        result = type("", (), {})()
+        result.returncode = -1  # type: ignore[attr-defined]
     finally:
         junit_path.unlink(missing_ok=True)
         temp_db_path.unlink(missing_ok=True)
@@ -225,9 +230,9 @@ def run_one_test(f):
     if is_segfault:
         status = "SEGFAULT"
         ff = (ff or 0) + 1
-    elif result.returncode == 5 and pp == 0 and ff == 0:
+    elif result.returncode == 5 and pp == 0 and ff == 0:  # type: ignore[attr-defined]
         status = f"EMPTY ({dur:.1f}s)"
-    elif ff == 0 and result.returncode == 0:
+    elif ff == 0 and result.returncode == 0:  # type: ignore[attr-defined]
         status = f"OK ({dur:.1f}s)"
     else:
         status = f"FAIL ({ff}f {ee}e) {dur:.1f}s"
@@ -250,11 +255,32 @@ def run_one_test(f):
 
         print(f"  {f.name} ... {status}", flush=True)
 
-# Run up to 6 tests concurrently (subprocess isolation prevents threading issues)
+# Run up to 6 tests concurrently (subprocess isolation prevents threading issues).
+# Use as_completed with per-future timeout so a single stuck worker doesn't hang the whole suite.
+import threading as _threading
+
+_SUITE_DEADLINE_S = 3600
+
+def _suite_watchdog():
+    _threading.Event().wait(timeout=_SUITE_DEADLINE_S)
+    print(f"\n⚠ SUITE WATCHDOG: {_SUITE_DEADLINE_S}s elapsed — terminating", flush=True)
+    import faulthandler
+    faulthandler.dump_traceback()
+    os._exit(2)
+
+_watchdog_thread = _threading.Thread(target=_suite_watchdog, daemon=True, name="suite-watchdog")
+_watchdog_thread.start()
+
 with ThreadPoolExecutor(max_workers=6) as executor:
-    # M13 fix: consume the iterator to surface exceptions from workers
-    for _ in executor.map(run_one_test, test_files):
-        pass
+    future_to_file = {executor.submit(run_one_test, f): f for f in test_files}
+    for future in as_completed(future_to_file, timeout=_SUITE_DEADLINE_S):
+        f = future_to_file[future]
+        try:
+            future.result(timeout=1020)
+        except Exception as exc:
+            print(f"  {f.name} ... WORKER ERROR: {exc}", flush=True)
+
+_watchdog_thread.join(timeout=0)
 
 # Write results file
 with open(results_file, "w") as r:

@@ -39,24 +39,38 @@ from infra.embedding_search import (
 def _rebuild_vec_index(db_path: str, force: bool = False):
     import importlib.util
 
+    rebuild_path = REPO_ROOT / "rebuild_vec_index.py"
+    if not rebuild_path.exists():
+        raise FileNotFoundError(f"rebuild_vec_index.py not found at {rebuild_path}")
     spec = importlib.util.spec_from_file_location(
-        "rebuild_vec_index", str(REPO_ROOT / "rebuild_vec_index.py")
+        "rebuild_vec_index", str(rebuild_path)
     )
-    assert spec is not None
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for {rebuild_path}")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    try:
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    except Exception as e:
+        raise RuntimeError(f"Failed to exec rebuild_vec_index module: {e}") from e
     return mod.rebuild_vec_index(db_path, force=force)
 
 
 def _rebuild_chunk_vec_index(db_path: str, force: bool = False):
     import importlib.util
 
+    rebuild_path = REPO_ROOT / "rebuild_vec_index.py"
+    if not rebuild_path.exists():
+        raise FileNotFoundError(f"rebuild_vec_index.py not found at {rebuild_path}")
     spec = importlib.util.spec_from_file_location(
-        "rebuild_vec_index", str(REPO_ROOT / "rebuild_vec_index.py")
+        "rebuild_vec_index", str(rebuild_path)
     )
-    assert spec is not None
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for {rebuild_path}")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    try:
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    except Exception as e:
+        raise RuntimeError(f"Failed to exec rebuild_vec_index module: {e}") from e
     return mod.rebuild_chunk_vec_index(db_path, force=force)
 
 
