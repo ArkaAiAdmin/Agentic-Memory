@@ -348,8 +348,14 @@ class SQLiteWriteQueue:
                 except Exception:
                     pass
 
+    def _ensure_running(self) -> None:
+        """Ensure the background worker thread is active and accepting tasks."""
+        if self._shutdown.is_set() or not self._thread.is_alive():
+            self.restart()
+
     def start_session(self, db_path: Union[str, Path]) -> ProxyConnection:
         """Start a write session proxy that executes transactions on the write queue thread."""
+        self._ensure_running()
         cmd_queue: queue.Queue = queue.Queue()
         resp_queue: queue.Queue = queue.Queue()
         future: concurrent.futures.Future = concurrent.futures.Future()
@@ -378,6 +384,7 @@ class SQLiteWriteQueue:
         Returns:
             Future resolving to (last_rowid, rowcount) tuple.
         """
+        self._ensure_running()
         future: concurrent.futures.Future = concurrent.futures.Future()
         with self._pending_lock:
             self._pending_futures.add(future)
@@ -398,6 +405,7 @@ class SQLiteWriteQueue:
         Returns:
             Future resolving to the callback's return value.
         """
+        self._ensure_running()
         future: concurrent.futures.Future = concurrent.futures.Future()
         with self._pending_lock:
             self._pending_futures.add(future)

@@ -71,6 +71,12 @@ def _setup_test_env(tmpdir: str):
     orig_infra_config_paths = getattr(infra.memory_config, "get_memory_paths", None)
     orig_infra_infra_resolve = getattr(infra.infrastructure, "resolve_active_memory_dir", None)
     orig_infra_resolve = getattr(infrastructure, "resolve_active_memory_dir", None)
+    orig_env_db = os.environ.get("MEMORY_DB_PATH")
+    orig_journal_env = os.environ.get("MEMORY_WRITE_JOURNAL_ENABLED")
+
+    db_path = tmp / "memory.db"
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
+    os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = "0"
 
     mock_paths = lambda: (tmp, tmp, tmp)
     mock_resolve = lambda **_: tmp
@@ -86,18 +92,25 @@ def _setup_test_env(tmpdir: str):
     if orig_infra_resolve is not None:
         infrastructure.resolve_active_memory_dir = mock_resolve
 
-    rebuild_index(tmp, tmp / "memory.db")
+    connection_pool.clear()
+    rebuild_index(tmp, db_path)
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=10000;")
+
     return (
         orig_global, orig_resolve, orig_paths,
         orig_mem_common_paths, orig_infra_mem_common_paths,
-        orig_infra_config_paths, orig_infra_infra_resolve, orig_infra_resolve
+        orig_infra_config_paths, orig_infra_infra_resolve, orig_infra_resolve,
+        orig_env_db, orig_journal_env
     )
 
 
 def _restore_test_env(
     orig_global, orig_resolve, orig_paths,
     orig_mem_common_paths, orig_infra_mem_common_paths,
-    orig_infra_config_paths, orig_infra_infra_resolve, orig_infra_resolve
+    orig_infra_config_paths, orig_infra_infra_resolve, orig_infra_resolve,
+    orig_env_db=None, orig_journal_env=None
 ):
     """Restore original DB path functions."""
     memory_mcp.GLOBAL_MEM_DIR = orig_global
@@ -127,6 +140,16 @@ def _restore_test_env(
         infra.infrastructure.resolve_active_memory_dir = orig_infra_infra_resolve
     if orig_infra_resolve is not None:
         infrastructure.resolve_active_memory_dir = orig_infra_resolve
+
+    connection_pool.clear()
+    if orig_env_db is not None:
+        os.environ["MEMORY_DB_PATH"] = orig_env_db
+    else:
+        os.environ.pop("MEMORY_DB_PATH", None)
+    if orig_journal_env is not None:
+        os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = orig_journal_env
+    else:
+        os.environ.pop("MEMORY_WRITE_JOURNAL_ENABLED", None)
 
 
 def _delete_note_direct(db_path, note_id):
@@ -248,14 +271,14 @@ class TestAdversarialPhase1(unittest.TestCase):
     def test_1_2_note_exists_after_save(self):
         slug = f"adv-1-2-{int(time.time())}"
         nid = self._save(slug)
-        with open_db(self.db_path) as db:
+        with open_db(self.db_path, write=False) as db:
             row = db.execute("SELECT id FROM memories WHERE id=?", (nid,)).fetchone()
         self.assertIsNotNone(row, "Note not found in DB after save")
 
     def test_1_3_fts_created(self):
         slug = f"adv-1-3-{int(time.time())}"
         nid = self._save(slug)
-        with open_db(self.db_path) as db:
+        with open_db(self.db_path, write=False) as db:
             rowid = db.execute(
                 "SELECT rowid FROM memories WHERE id=?", (nid,)
             ).fetchone()[0]
@@ -267,7 +290,7 @@ class TestAdversarialPhase1(unittest.TestCase):
     def test_1_4_file_written(self):
         slug = f"adv-1-4-{int(time.time())}"
         nid = self._save(slug)
-        with open_db(self.db_path) as db:
+        with open_db(self.db_path, write=False) as db:
             source_file = db.execute(
                 "SELECT source_file FROM memories WHERE id=?", (nid,)
             ).fetchone()[0]

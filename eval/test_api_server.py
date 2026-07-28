@@ -63,6 +63,8 @@ class TestAPIServer(unittest.TestCase):
         connection_pool.clear()
         import sqlite3 as _sqlite3
         conn = _sqlite3.connect(str(cls.db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
         conn.execute("PRAGMA foreign_keys=ON")
         run_schema_setup(conn)
         conn.close()
