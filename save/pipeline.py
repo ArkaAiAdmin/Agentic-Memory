@@ -16,6 +16,7 @@ __all__ = [
     "clear_pragma_cache",
     "patch_memory",
     "revert_supersede",
+    "resolve_active_memory_dir",
 ]
 from dataclasses import dataclass
 import json

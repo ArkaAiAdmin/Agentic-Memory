@@ -8,6 +8,7 @@ Tests the full MCP tool flow without touching prod:
   5. cache_stats() returns valid shape.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -86,7 +87,10 @@ class TestLiveMCPSaveAndSearch(unittest.TestCase):
             title_slug="live-mcp-test",
             tags=["test", "mcp"],
         )
-        self.assertIn("Successfully saved memory", result)
+        self.assertIsInstance(result, str)
+        parsed = json.loads(result)
+        self.assertEqual(parsed.get("status"), "success")
+        self.assertEqual(parsed.get("note_id"), "lessons/live-mcp-test")
 
         output = memory_mcp.memory_search(query="Live MCP integration test", limit=5)
         self.assertIsInstance(output, str)
@@ -117,7 +121,10 @@ class TestLiveMCPDeleteAndRestore(unittest.TestCase):
             title_slug="live-delete-test",
             tags=["test"],
         )
-        self.assertIn("Successfully saved memory", result)
+        self.assertIsInstance(result, str)
+        parsed = json.loads(result)
+        self.assertEqual(parsed.get("status"), "success")
+        self.assertEqual(parsed.get("note_id"), "lessons/live-delete-test")
 
         del_result = memory_mcp.memory_delete(note_id="lessons/live-delete-test")
         self.assertIn("Soft-deleted", del_result)
@@ -142,7 +149,10 @@ class TestLiveMCPDeleteAndRestore(unittest.TestCase):
             title_slug="live-restore-test",
             tags=["test"],
         )
-        self.assertIn("Successfully saved memory", result)
+        self.assertIsInstance(result, str)
+        parsed = json.loads(result)
+        self.assertEqual(parsed.get("status"), "success")
+        self.assertEqual(parsed.get("note_id"), "lessons/live-restore-test")
 
         memory_mcp.memory_delete(note_id="lessons/live-restore-test")
 
