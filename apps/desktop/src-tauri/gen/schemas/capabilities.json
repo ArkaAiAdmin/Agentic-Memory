@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capability granting the main window access to core events, the file/save dialog, opening external links, the filesystem plugin.","local":true,"windows":["main"],"permissions":["core:default","dialog:default","shell:allow-open","fs:default","process:default"]}}
