@@ -32,18 +32,19 @@ def _count_tests() -> int:
     return count
 
 
-def _get_test_count_from_suite() -> int | None:
-    """Read test count from the most recent full suite log."""
-    import glob as glob_mod
-    logs = sorted(glob_mod.glob("/tmp/full_suite*.log"), key=lambda p: Path(p).stat().st_mtime, reverse=True)
-    for log in logs:
-        try:
-            text = Path(log).read_text(errors="replace")
-            m = re.search(r"SUMMARY:\s*(\d+)p", text)
-            if m:
-                return int(m.group(1))
-        except Exception:
-            continue
+def _get_test_count_from_pytest() -> int | None:
+    """Run pytest --collect-only and parse the total test count."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", "--no-header", "eval/"],
+            capture_output=True, text=True, timeout=120,
+        )
+        m = re.search(r"(\d+)\s+tests?\s+collected", result.stdout)
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
     return None
 
 
@@ -135,7 +136,7 @@ def main() -> int:
 
     schema = _get_schema_version()
     core_tools = _count_core_tools()
-    test_count = _get_test_count_from_suite() or _count_tests()
+    test_count = _get_test_count_from_pytest() or _count_tests()
     cron_count = _count_cron_scripts()
     hook_count = _count_hooks()
     table_count = _count_tables()

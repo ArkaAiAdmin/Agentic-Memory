@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-4,796\+-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-5,703\+-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v76-orange.svg)](docs/reference/schema.md)
 [![MCP Tools](https://img.shields.io/badge/MCP-25%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
@@ -25,7 +25,7 @@ Built for **Claude Code**, **OpenCode**, **MiMoCode**, and any MCP-compatible ag
 graph TD
     A[Agentic Memory] --> B[Markdown - source]
     A --> C[SQLite FTS5 - derived]
-    A --> D[12-Phase Search Pipeline]
+    A --> D[14-Phase Search Pipeline]
     B --> E[.md files - Git-ready]
     C --> F[Temporal Knowledge Graph]
     D --> G[CQRS + CRDT Multi-Agent Sync]
@@ -85,22 +85,24 @@ curl http://localhost:9878/api/v1/search?q=dark+mode
 
 ## Features
 
-### Search — 12-Phase Hybrid Pipeline
+### Search — 14-Phase Hybrid Pipeline
 
 | Phase | Technique | Purpose |
 |-------|-----------|---------|
-| 0 | Unicode normalization | Input normalization |
-| 1 | FTS5 BM25 | Keyword retrieval |
-| 2 | usearch ANN + model2vec | Semantic vector search |
-| 3 | ColBERT late-interaction | Token-level matching |
-| 4 | Reciprocal Rank Fusion | Merge all retrievers |
-| 5 | Cross-encoder rerank | Neural reranking (weak or deep CE) |
-| 6 | Temporal decay | Recency bias |
-| 7 | Neural forget curve | Surprise-based retention |
-| 8 | KG concept boost | Knowledge graph boost |
-| 9 | Final scoring | Weighted combination |
-| 10 | Result envelope | Output formatting |
-| 11 | Error counter | Per-phase observability |
+| 1 | Query parsing + expansion | Normalization, reasoning expansion |
+| 2 | Skill-first lookup | Conditional early return on skill match |
+| 3 | Cache check | Return cached results if fresh |
+| 4 | DB setup + filter construction | Open connection, build filters |
+| 5 | FTS5 BM25 + KG facts | Keyword + fact retrieval |
+| 6 | Embedding fallback | Semantic vector search (usearch + model2vec) |
+| 7 | Hybrid fusion (RRF) | Merge sparse + dense results |
+| 8 | Temporal filtering | Decay old memories, exclude outdated |
+| 9 | Chunk enhancement + session clustering | Enrich with sub-document chunks |
+| 10 | KG boost + multi-hop traversal | Concept centrality, graph expansion |
+| 11 | Reranking | Cross-encoder + ColBERT late-interaction |
+| 12 | Build output items | Assemble result objects |
+| 13 | Postprocessing | Safety gates, quality filters, profiling |
+| 14 | Finalization | Access recording, telemetry, envelope |
 
 Each phase is independently isolated — no single failure kills the search.
 
@@ -172,14 +174,14 @@ agentic-memory/
 ├── cron/                        # 47+ cron jobs + consolidated scheduler
 ├── hooks/                       # 6 lifecycle hooks
 ├── migrations/                  # 57 reversible migrations
-├── eval/                        # 362 test files, 5,294+ test functions
+├── eval/                        # 363 test files, 5,703+ test functions
 ├── ts-sdk/                      # TypeScript SDK
 ├── mcp_*.py                     # 31 MCP modules
 ├── mcp_health.py                # System health MCP tool
 └── dashboard.py                 # Streamlit observability
 ```
 
-**Production stats:** ~147K LOC, 362 test files, 5,294+ test functions, schema v74, 150 reversible migrations, 7 CORE MCP tools, 1 consolidated scheduler, 7 lifecycle hooks.
+**Production stats:** ~147K LOC, 363 test files, 5,703+ test functions, schema v76, 77 reversible migrations, 24 CORE MCP tools, 1 consolidated scheduler, 7 lifecycle hooks.
 
 ---
 
@@ -323,7 +325,7 @@ pip install agentic-memory[all]         # Everything
 | **LangChain** | Yes | Yes | Yes | Yes |
 | **CrewAI** | Yes | Yes | Yes | No |
 | **OKF support** | Yes | No | No | No |
-| **Test coverage** | 5,294+ tests | ~500 | ~2,000 | ~300 |
+| **Test coverage** | 5,703+ tests | ~500 | ~2,000 | ~300 |
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
 ---
