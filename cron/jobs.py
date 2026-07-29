@@ -120,7 +120,7 @@ JOBS: dict[str, dict] = {
         "freq": "1h",
         "offset_min": 7,
         "script": "cron/enqueue_task.py",
-        "args": ["--task-type", "cron_auto_retry_dead_tasks"],
+        "args": ["--task-type", "cron_retry_dead_tasks"],
         "timeout": 60,
     },
     "policy_hash_status": {

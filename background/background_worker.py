@@ -50,6 +50,7 @@ _REPO_ROOT = os.path.dirname(_BG_DIR)
 sys.path.insert(0, _REPO_ROOT)
 from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task
 from infra.infrastructure import resolve_active_memory_dir
+from memory_integrity import repair_kg_orphans, repair_vec_orphans
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -767,16 +768,15 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
         # vec_keys/embeddings for rows that no longer exist at all (hard
         # deleted).  Soft-deleted rows preserve their embeddings so that
         # un-delete later is cheap.
-        n_orphan_vec = conn.execute(
-            "DELETE FROM memory_vec_keys WHERE memory_id NOT IN "
-            "(SELECT id FROM memories)"
-        ).rowcount
-        n_orphan_emb = conn.execute(
-            "DELETE FROM memory_embeddings WHERE memory_id NOT IN "
-            "(SELECT id FROM memories)"
-        ).rowcount
+        #
+        # H2 fix: delegate orphan cleanup to the saga-aware helpers so the
+        # file-lock / write-lock are acquired properly and the operation
+        # is recorded as operational maintenance (Rule 1).
+        repair_kg_orphans(db_path)
+        vec_result = repair_vec_orphans(db_path)
+        n_orphan_vec = vec_result.get("deleted_vec_keys", 0)
+        n_orphan_emb = vec_result.get("deleted_embeddings", 0)
         if n_orphan_vec or n_orphan_emb:
-            conn.commit()
             logger.info(
                 "vec_drift_check: cleaned orphan rows (vec_keys: -%d, embeddings: -%d)",
                 n_orphan_vec,
@@ -880,6 +880,7 @@ def process_one_task(
     payload = task["payload"]
 
     # Resolve cron script paths from CRON_SCRIPT_MAP for cron-style task types.
+    cron_script_missing = False
     if not payload.get("script") and ttype in CRON_SCRIPT_MAP:
         payload = {**payload, "script": CRON_SCRIPT_MAP[ttype]}
         handler = HANDLERS.get("run_script")
@@ -898,12 +899,17 @@ def process_one_task(
             handler = HANDLERS.get("run_script")
         else:
             handler = HANDLERS.get(ttype)
+            cron_script_missing = True
     else:
         handler = HANDLERS.get(ttype)
 
     if not handler:
-        fail_task(conn, task_id, f"unknown task type: {ttype}")
-        logger.warning("worker: unknown task type %s (id=%d)", ttype, task_id)
+        if cron_script_missing:
+            fail_task(conn, task_id, f"script not found for cron task: {ttype}")
+            logger.warning("worker: script not found for cron task %s (id=%d)", ttype, task_id)
+        else:
+            fail_task(conn, task_id, f"unknown task type: {ttype}")
+            logger.warning("worker: unknown task type %s (id=%d)", ttype, task_id)
         return True
 
     # Lazy-resolve None entries in HANDLERS (used to break circular imports).
@@ -1189,22 +1195,18 @@ def run_worker(
     import sqlite3 as _worker_sqlite3
 
     def _worker_conn(path):
-        """Direct SQLite connection bypassing the write queue.
+        """Get a direct DB connection from the pool (bypasses write queue).
 
         The worker is the single long-lived writer to memory.db.
         Going through the write queue causes ABBA deadlocks: the
         queue thread holds db_path_flock while the worker tries to
-        acquire it via open_db(write=True).
+        acquire it via open_db(write=True).  The pool uses raw
+        sqlite3.connect, not the write queue, so it is safe.
         """
-        c = _worker_sqlite3.connect(str(path), timeout=30)
-        c.execute("PRAGMA journal_mode=WAL")
-        c.execute("PRAGMA busy_timeout=30000")
-        return c
-    # signal.signal only works in the main thread.
+        from infra.db import connection_pool
+        return connection_pool.get(str(path), timeout=30)
+
     import threading as _threading
-    if _threading.current_thread() is _threading.main_thread():
-        signal.signal(signal.SIGTERM, _handle_signal)
-        signal.signal(signal.SIGINT, _handle_signal)
 
     logger.info(
         "worker: starting (db=%s, interval=%ds, once=%s, drain=%s, "
@@ -1304,7 +1306,8 @@ def run_worker(
                             rate,
                         )
                 finally:
-                    conn.close()
+                    from infra.db import safe_close_db
+                    safe_close_db(conn)
             elapsed = time.time() - t_drain
             logger.info(
                 "worker: drain complete — processed %d tasks in %.1fs (%.1f tasks/sec)",
@@ -1325,7 +1328,8 @@ def run_worker(
                             break
                         batch_processed += 1
                     finally:
-                        conn.close()
+                        from infra.db import safe_close_db as _sc
+                        _sc(conn)
                 if once:
                     break
                 if batch_processed == 0:
@@ -1338,7 +1342,8 @@ def run_worker(
                                 if _check_high_priority_pending(check_conn):
                                     break
                             finally:
-                                check_conn.close()
+                                from infra.db import safe_close_db
+                                safe_close_db(check_conn)
                         except Exception:
                             pass
                         time.sleep(1)
@@ -1389,6 +1394,12 @@ def main():
     # With different lock scopes both paths work: no more silent no-op
     # drain ticks or "database is locked" while the persistent worker
     # processes a long task.
+    # signal.signal only works in the main thread.
+    import threading as _threading
+    if _threading.current_thread() is _threading.main_thread():
+        signal.signal(signal.SIGTERM, _handle_signal)
+        signal.signal(signal.SIGINT, _handle_signal)
+
     _lock_name = "background_worker_drain" if (args.drain or args.once) else "background_worker_persistent"
     _no_flock = os.environ.get("MEMORY_CRON_NO_FLOCK", "") == "1"
     if _no_flock:

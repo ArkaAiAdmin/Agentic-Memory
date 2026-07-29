@@ -71,8 +71,6 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # the missing piece for time-travel queries ("what did we know on
 # date X?") and automatic supersession when a new fact contradicts
 # an old one.  See migrations/018_fact_temporal.sql.
-# gap where the saga rollback path left orphan rows in those tables.
-# See migrations/017_kg_cascade.sql.
 # 2026-06-23 (follow-up): bumped to 19 for kg_facts entity FKs.
 # kg_facts.subject_entity_id and object_entity_id were FKs to
 # kg_entities(id) with no ON DELETE clause. kg_dedup.merge_entities()
@@ -134,7 +132,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-25: bumped to 74 — recreate two indexes silently destroyed by
 # table-recreation migrations (017 destroyed idx_backlinks_source_id,
 # 042 destroyed idx_memories_active partial index).
-SCHEMA_VERSION = 75
+SCHEMA_VERSION = 76
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the
@@ -284,7 +282,7 @@ def _get_applied_migrations(conn: AnyConnection) -> set[int]:
         # ``migrate_down`` but the version row was bumped past it
         # by accident).
         available_nums = {num for num, _ in _get_available_migrations()}
-        return {n for n in range(1, version + 1) if n in available_nums}
+        return {n for n in range(0, version + 1) if n in available_nums}
     except sqlite3.OperationalError:
         return set()
 
@@ -524,7 +522,7 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         logger.info("  schema_version would advance to %d", SCHEMA_VERSION)
         return
 
-    # Step 6: Apply pending migrations in a single transaction
+    # Step 6: Apply pending migrations, each in its own transaction
     try:
         # NOTE (M49): PRAGMA foreign_keys = OFF inside a transaction is a
         # no-op in SQLite.  This pragma only takes effect outside a
@@ -536,12 +534,12 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
             conn.execute("PRAGMA foreign_keys = OFF")
         except Exception:
             pass
-        with conn:
-            deferred: set[int] = set()  # migrations with forward-ref failures
-            for num, path in pending:
-                logger.info("Applying migration %03d: %s", num, path.name)
-                statements = _parse_sql_file(path)
-                migration_deferred = False
+        deferred: set[int] = set()  # migrations with forward-ref failures
+        for num, path in pending:
+            logger.info("Applying migration %03d: %s", num, path.name)
+            statements = _parse_sql_file(path)
+            migration_deferred = False
+            with conn:
                 for stmt in statements:
                     # Pre-flight: skip ALTER TABLE ADD COLUMN when the
                     # column already exists.  This eliminates noisy
@@ -599,26 +597,27 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                             )
                             raise
 
-            # Build checksums for newly applied migrations, then write
-            # version + checksums to schema_version.  Exclude deferred
-            # and unattempted migrations so they re-run on next startup.
-            applied = {num for num, _ in pending} - deferred
-            checksums = _get_checksums(conn)
-            for num, path in pending:
-                if num not in deferred:
-                    checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
+        # Build checksums for newly applied migrations, then write
+        # version + checksums to schema_version.  Exclude deferred
+        # and unattempted migrations so they re-run on next startup.
+        applied = {num for num, _ in pending} - deferred
+        checksums = _get_checksums(conn)
+        for num, path in pending:
+            if num not in deferred:
+                checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
 
-            if applied:
-                highest_applied = max(applied)
-                # When there are deferred migrations (forward-ref errors),
-                # do NOT bump version past them — they need to be retried
-                # on next startup.  Only bump to the cap when ALL pending
-                # migrations succeeded.
-                if deferred:
-                    target_version = highest_applied
-                else:
-                    max_pending = max((num for num, _ in pending), default=SCHEMA_VERSION)
-                    target_version = min(SCHEMA_VERSION, max_pending)
+        if applied:
+            highest_applied = max(applied)
+            # When there are deferred migrations (forward-ref errors),
+            # do NOT bump version past them — they need to be retried
+            # on next startup.  Only bump to the cap when ALL pending
+            # migrations succeeded.
+            if deferred:
+                target_version = highest_applied
+            else:
+                max_pending = max((num for num, _ in pending), default=SCHEMA_VERSION)
+                target_version = min(SCHEMA_VERSION, max_pending)
+            with conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
                     (target_version, json.dumps(checksums)),

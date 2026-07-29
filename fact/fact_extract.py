@@ -745,8 +745,6 @@ def index_facts_for_memory(
             temporal_kg_enabled = bool(get_config().feature_temporal_kg)
         except Exception:
             logger.warning("feature_temporal_kg read failed; defaulting to ON")
-    if os.environ.get("MEMORY_TEMPORAL_KG") == "0":
-        temporal_kg_enabled = False
 
     if temporal_kg_enabled:
         # T2.5: extract event_time once per memory and apply it to

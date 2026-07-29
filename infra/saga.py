@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
 import sqlite3
 import sys
 import threading
@@ -524,6 +525,7 @@ class Saga:
                             # transaction for the compensating undo writes.
                             try:
                                 self.conn.rollback()
+                                self.conn._cmd_queue = queue.Queue()
                             except Exception as proxy_rb_err:
                                 logger.warning("saga proxy rollback failed: %r", proxy_rb_err)
                     # H17: use _SAGA_STEP_FAILED sentinel instead of True

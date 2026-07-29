@@ -178,7 +178,7 @@ class TestGetAppliedMigrations(unittest.TestCase):
             conn.commit()
             self.assertEqual(
                 migration_runner._get_applied_migrations(conn),
-                {1, 2, 3, 4, 5, 6, 7},
+                {0, 1, 2, 3, 4, 5, 6, 7},
             )
         finally:
             conn.close()

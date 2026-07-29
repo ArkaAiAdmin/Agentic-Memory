@@ -92,6 +92,16 @@ def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
+    # Graceful shutdown on SIGTERM/SIGINT.
+    _shutdown = False
+
+    def _handle_signal(signum: int, _frame: object) -> None:
+        nonlocal _shutdown
+        _shutdown = True
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     # Flock guard — only one reconciler process at a time.
     try:
         from cron._flock import acquire_lock_or_exit
@@ -102,16 +112,6 @@ def main() -> None:
         logger.warning("flock guard skipped: %s", exc)
 
     target_base, journal_path = _resolve_paths()
-
-    # Graceful shutdown on SIGTERM/SIGINT.
-    _shutdown = False
-
-    def _handle_signal(signum: int, _frame: object) -> None:
-        nonlocal _shutdown
-        _shutdown = True
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
 
     if args.drain:
         # One-shot: process up to --max-entries and exit.

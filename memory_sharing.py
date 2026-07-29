@@ -95,6 +95,10 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
     try:
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({_SHARED_TABLE})").fetchall()}
         if "tenant_id" not in cols:
+            # H7: tenant_id added by migration 000 (base schema).  This
+            # safety net is dead code for all modern DBs; only triggers
+            # on pre-000 databases that somehow bypassed the migration
+            # runner.  Kept as a harmless backward-compat guard.
             conn.execute(f"ALTER TABLE {_SHARED_TABLE} ADD COLUMN tenant_id TEXT DEFAULT 'default'")
             conn.execute(f"UPDATE {_SHARED_TABLE} SET tenant_id = 'default' WHERE tenant_id IS NULL")
         if "target_agent_id" not in cols:

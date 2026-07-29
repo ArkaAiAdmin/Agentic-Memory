@@ -78,10 +78,12 @@ _ENFORCED_CORE_MODULES = [
 # endpoints perform coordinated KG/memory deletes that have no save_memory
 # equivalent, so they are exempt from the "must use save_memory" rule. However
 # Rule 1 still requires that every raw content-table write is followed by the
-# saga-aware cleanup helpers (repair_kg_orphans / cleanup_memory_relations),
-# so dependent rows (kg_facts, backlinks, orphan entities) stay consistent.
+# saga-aware cleanup helpers (repair_kg_orphans / cleanup_memory_relations /
+# repair_vec_orphans), so dependent rows (kg_facts, backlinks, orphan entities,
+# vec_keys, embeddings) stay consistent.
 _OPERATIONAL_KG_MODULES = {
     "infra/api_server.py",
+    "background/background_worker.py",
 }
 
 
@@ -156,8 +158,12 @@ def test_rule1_operational_kg_uses_saga_cleanup(mod: str):
         pytest.skip(f"{mod} not present")
     src = _read(path)
     uses_cleanup = (
-        "repair_kg_orphans" in src
-        and ("cleanup_memory_relations" in src or "repair_kg_orphans" in src)
+        ("repair_kg_orphans" in src or "repair_vec_orphans" in src)
+        and (
+            "cleanup_memory_relations" in src
+            or "repair_kg_orphans" in src
+            or "repair_vec_orphans" in src
+        )
     )
     assert uses_cleanup, (
         f"{mod}: operational KG writes must use repair_kg_orphans / "

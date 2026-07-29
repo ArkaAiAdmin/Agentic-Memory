@@ -6,7 +6,7 @@
   {"cmd": "venv/bin/python -m cron.cron_watchdog", "schedule": "*/30 * * * *"},
   {"cmd": "venv/bin/python -m cron.cron_sync", "schedule": "0 * * * *"},
   {"cmd": "venv/bin/python -m cron.cron_crdt_sync", "schedule": "0 * * * *"},
-  {"cmd": "venv/bin/python -m cron.cron_auto_retry_dead_tasks", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_retry_dead_tasks", "schedule": "0 * * * *"},
   {"cmd": "venv/bin/python -m cron.cron_policy_hash_status", "schedule": "0 * * * *"},
   {"cmd": "venv/bin/python -m cron.cron_daily_digest", "schedule": "0 * * * *"},
   {"cmd": "venv/bin/python -m cron.cron_promote_drafts", "schedule": "0 */6 * * *"},

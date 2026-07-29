@@ -173,6 +173,13 @@ def _get_journal_conn(journal_path: Path, timeout: float = 10.0) -> sqlite3.Conn
         new_conn.row_factory = sqlite3.Row
         _local.conns[key] = new_conn
         conn = new_conn
+        # H6: register new journal connections with the connection pool
+        # so they participate in pool-lifecycle cleanup (clear/close_all).
+        try:
+            from infra.db import connection_pool
+            connection_pool._track_journal_conn(conn)
+        except Exception:
+            pass
     # idempotent schema bootstrap — safe on every return path so that
     # threads/processes reusing a pooled conn always see the schema.
     try:
@@ -227,6 +234,7 @@ def init_journal_db(journal_path: Path) -> None:
             fact_type       TEXT DEFAULT 'observation',
             defer_expensive INTEGER DEFAULT 1,
             context         TEXT DEFAULT 'generic',
+            data_subject_sub TEXT,
             status          TEXT NOT NULL DEFAULT 'pending',
             error           TEXT,
             created_at      TEXT NOT NULL DEFAULT (datetime('now')),
@@ -279,6 +287,10 @@ def _ensure_journal_columns(conn: sqlite3.Connection) -> None:
         # the entry is re-dispatched on restart and _check_already_materialized
         # can decide whether to re-run hooks or skip them.
         conn.execute("ALTER TABLE write_journal ADD COLUMN hooks_completed INTEGER DEFAULT 0")
+    if "data_subject_sub" not in cols:
+        # C3 fix: GDPR subject tag for per-subject erasure via the CQRS
+        # journal path.
+        conn.execute("ALTER TABLE write_journal ADD COLUMN data_subject_sub TEXT")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS journal_failed (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -461,8 +473,8 @@ def enqueue_write(
            (note_id, agent_id, category, title_slug, content, tags,
              pinned, is_global, importance, tenant_id,
              epistemic_source, belief_status, asserting_agent_id, fact_type,
-             defer_expensive, context, content_hash, retry_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+             defer_expensive, context, data_subject_sub, content_hash, retry_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
         (
             note_id,
             agent_id,
@@ -480,6 +492,7 @@ def enqueue_write(
             req.fact_type,
             1 if req.defer_expensive else 0,
             req.context,
+            req.data_subject_sub,
             content_hash,
         ),
     )
@@ -514,7 +527,7 @@ def dequeue_pending_for_worker(
             "SELECT id, note_id, agent_id, category, title_slug, content, "
             "tags, pinned, is_global, importance, tenant_id, "
             "epistemic_source, belief_status, asserting_agent_id, fact_type, "
-            "defer_expensive, context, status, created_at "
+            "defer_expensive, context, data_subject_sub, status, created_at "
             "FROM write_journal WHERE status='pending' AND tenant_id = ? "
             "AND (id % ?) = ? "
             "ORDER BY id LIMIT ?"
@@ -525,7 +538,7 @@ def dequeue_pending_for_worker(
             "SELECT id, note_id, agent_id, category, title_slug, content, "
             "tags, pinned, is_global, importance, tenant_id, "
             "epistemic_source, belief_status, asserting_agent_id, fact_type, "
-            "defer_expensive, context, status, created_at "
+            "defer_expensive, context, data_subject_sub, status, created_at "
             "FROM write_journal WHERE status='pending' "
             "AND (id % ?) = ? "
             "ORDER BY id LIMIT ?"
@@ -851,6 +864,8 @@ def process_pending_journal_entries(
     n_workers: int = 1,
 ) -> int:
     """Dequeue and process pending entries in journal."""
-    entries = dequeue_pending_for_worker(journal_path, worker_id, n_workers)
+    entries = dequeue_pending_for_worker(
+        journal_path, batch_size=50, worker_id=worker_id, n_workers=n_workers
+    )
     return len(entries)
 

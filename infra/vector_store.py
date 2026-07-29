@@ -173,10 +173,9 @@ class USearchVectorStore:
         self._idx = _build_usearch_index(ndim, metric)
 
     def __len__(self) -> int:
-        try:
-            return int(self._idx.size)  # type: ignore[union-attr]
-        except AttributeError:
-            return 0
+        if self._idx is None:
+            raise RuntimeError("Vector store not initialized (usearch not installed)")
+        return int(self._idx.size)  # type: ignore[union-attr]
 
     def add(self, key: int, vector) -> None:
         if self._idx is None:

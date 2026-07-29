@@ -57,16 +57,6 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Vector clock utilities — canonical implementation in crdt.vv_utils.
-# ---------------------------------------------------------------------------
-from crdt.vv_utils import (
-    vv_dominates as dominates,
-    merge_vectors,
-    parse_version_vector,
-)
-
-
-# ---------------------------------------------------------------------------
 # Phase 5A: Cached schema probe (avoids opening a second DB connection)
 # ---------------------------------------------------------------------------
 _schema_cache = threading.local()
@@ -126,114 +116,7 @@ def _capture_pre_state_main(conn: AnyConnection, note_id: str) -> Optional[dict]
     }
 
 
-def _write_merged_markdown(
-    db_path: "str | Path",
-    note_id: str,
-    content: str,
-    conn: AnyConnection,
-) -> None:
-    """Write the merged CRDT content to the note's markdown file.
-
-    Remediation #5 (2026-06-22): without this, the .md file
-    remains the pre-merge content even though the DB has the
-    merged state, so the markdown-vs-DB consistency check
-    (``memory_integrity.find_orphan_files``) cannot detect the
-    drift.  safe_atomic_write gives us concurrent-edit detection
-    (Scenario 4 fix): if a local edit happened during the CRDT
-    merge, the local edit is preserved as
-    ``<path>.conflict-<pid>-<ts>``.
-
-    Best-effort: if the write fails (e.g. disk full, permission
-    error), we log and return — the DB write is the source of
-    truth and the .md can be regenerated later via
-    ``recover_orphan_files`` or the next save.
-    """
-    import logging as _logging
-    from pathlib import Path
-
-    logger = _logging.getLogger(__name__)
-    try:
-        # Look up the source_file path (set by save_memory and
-        # stored relative to memory_root).
-        row = conn.execute(
-            "SELECT source_file FROM tenant_memories WHERE id=?",
-            (note_id,),
-        ).fetchone()
-        if not row or not row[0]:
-            logger.debug(
-                "crdt: note %s has no source_file; skipping .md write",
-                note_id,
-            )
-            return
-        source_file = row[0]
-        # db_path is memory/memory.db; memory_root is the parent
-        # of memory.db (where the .md files live).
-        memory_root = Path(db_path).parent
-        # Convention: source_file is "<category>/<slug>.md" (set
-        # by save_pipeline).  When the caller didn't supply one
-        # (e.g. crdt_save default), the row has "<category>/<slug>"
-        # without the .md extension — append it here so the path
-        # matches what save_pipeline would have written.
-        if not source_file.endswith(".md"):
-            source_file = source_file + ".md"
-        md_path = memory_root / source_file
-        # Build the full markdown body: frontmatter + content.
-        # We re-use _build_memory_file from save_pipeline to keep
-        # the frontmatter format consistent with save_memory.
-        try:
-            from save_pipeline import _build_memory_file
-        except Exception as e:
-            logger.warning("_write_merged_markdown failed: %s", e)
-            _build_memory_file = None  # type: ignore[assignment]
-        if _build_memory_file is not None:
-            try:
-                # _build_memory_file signature: (content, category,
-                # title_slug, tags_list, pinned, now_iso=None)
-                # We can recover the slug from the note_id.
-                # note_id format: "<category>/<slug>".
-                category_str = (
-                    note_id.split("/", 1)[0] if "/" in note_id else "imported"
-                )
-                slug = note_id.split("/", 1)[-1]
-                markdown, _fm, now_iso, _md = _build_memory_file(
-                    content,
-                    category_str,
-                    slug,
-                    tags_list=[],
-                    pinned=False,
-                )
-                body = markdown
-            except Exception as build_exc:
-                logger.debug(
-                    "crdt: _build_memory_file failed (%s); falling back to raw content",
-                    build_exc,
-                )
-                body = content
-        else:
-            body = content
-        # safe_atomic_write (Scenario 4 fix): if a local edit
-        # happened during the CRDT merge, the local edit is
-        # preserved as <path>.conflict-<pid>-<ts>.
-        from infra.memory_common import safe_atomic_write
-
-        try:
-            safe_atomic_write(md_path, body, encoding="utf-8")
-            logger.info("crdt: wrote merged content to %s", md_path)
-        except Exception as write_exc:
-            # Best-effort: the DB has the merged state, the .md
-            # can be regenerated later.
-            logger.warning(
-                "crdt: failed to write merged .md %s: %s. "
-                "Run --recover-orphan-files to regenerate.",
-                md_path,
-                write_exc,
-            )
-    except Exception as outer_exc:
-        logger.warning(
-            "crdt: _write_merged_markdown failed for %s: %s",
-            note_id,
-            outer_exc,
-        )
+from crdt.crdt_common import _write_note_markdown_file
 
 
 def crdt_save(
@@ -676,7 +559,7 @@ def crdt_save(
             # CRDT merge, the local edit is preserved as
             # ``<path>.conflict-<pid>-<ts>``.
             if applied and not rejected:
-                _write_merged_markdown(
+                _write_note_markdown_file(
                     db_path=db_path,
                     note_id=note_id,
                     content=content,
@@ -689,7 +572,7 @@ def crdt_save(
                         (conflict_id,),
                     ).fetchone()
                     if _row:
-                        _write_merged_markdown(
+                        _write_note_markdown_file(
                             db_path=db_path,
                             note_id=conflict_id,
                             content=_row[0],

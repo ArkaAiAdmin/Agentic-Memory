@@ -28,7 +28,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from infra.infrastructure import _normalize_unicode
+from infra.infrastructure import _normalize_unicode as normalize_unicode
 from infra.memory_common import connection_pool, safe_close_db
 
 logger = logging.getLogger(__name__)
@@ -1411,7 +1411,7 @@ def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybri
 
     Returns (normalized_query, fts_query, bare_query_text, graph_rag_terms).
     """
-    normalized_query = _normalize_unicode(query)
+    normalized_query = normalize_unicode(query)
     phrases = re.findall('"([^"]*)"', normalized_query)
     bare = re.sub('"[^"]*"', " ", normalized_query)
     bare_words = re.findall("[\\w@\\#\\.\\+\\-]+", bare, flags=re.UNICODE)

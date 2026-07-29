@@ -58,23 +58,20 @@ except Exception:
 import sys as _sys
 from pathlib import Path as _Path
 
-_cd_dir = _Path(__file__).resolve().parent.parent
-if str(_cd_dir) not in _sys.path:
-    _sys.path.insert(0, str(_cd_dir))
+_cd_dir = str(_Path(__file__).resolve().parent.parent)
 try:
     from infra.memory_common import find_project_root, safe_close_db, connection_pool
 except ImportError:
-    # P0-7 fix (2026-06-23): if memory_common is genuinely not
-    # importable, fail loudly rather than silently using a divergent
-    # fallback. The previous fallback duplicated find_project_root /
-    # safe_close_db / _FallbackConnectionPool implementations that
-    # could drift from the real ones. Run ``pip install -e .`` or
-    # set PYTHONPATH to the install root to fix this.
-    raise ImportError(
-        "contradiction_detector.py requires memory_common to be importable. "
-        "Ensure the agentic-memory install is on PYTHONPATH or run from the "
-        "install root (e.g., ~/.config/agentic-memory)."
-    ) from None
+    if _cd_dir not in _sys.path:
+        _sys.path.insert(0, _cd_dir)
+    try:
+        from infra.memory_common import find_project_root, safe_close_db, connection_pool
+    except ImportError as _e:
+        raise ImportError(
+            "contradiction_detector.py requires memory_common to be importable. "
+            "Ensure the agentic-memory install is on PYTHONPATH or run from the "
+            "install root (e.g., ~/.config/agentic-memory)."
+        ) from _e
 
 
 logger = logging.getLogger(__name__)

@@ -183,16 +183,29 @@ _CTR_WEIGHTS_TTL = 300  # 5 minutes
 
 
 def _sp_lazy(name: str, default: object = None) -> object:
-    """Read a lazy config flag from search_pipeline's __getattr__.
+    """Read a lazy config flag from get_config().
 
-    The lazy config resolver lives in search_pipeline. This helper looks
-    up the flag there, falling back to ``default`` if it's not set
-    (e.g. during testing or before the config singleton is initialized).
+    Maps module-level flag names to config attributes and reads them
+    directly from get_config() instead of going through
+    search_pipeline.__getattr__.
     """
     try:
-        import search_pipeline as sp
-        return getattr(sp, name, default)
-    except ImportError:
+        from infra._lazy_imports import get_config
+        cfg = get_config()
+        _CONFIG_MAP = {
+            "_TEMPORAL_DECAY_MODE": "temporal_decay_mode",
+            "_FORGETTING_CURVE_ENABLED": "forgetting_curve",
+            "_FORGETTING_CURVE_HALF_LIFE": "forgetting_curve_half_life",
+            "_TEMPORAL_DECAY_HALF_LIFE": "temporal_half_life",
+        }
+        attr = _CONFIG_MAP.get(name)
+        if attr is not None:
+            val = getattr(cfg, attr, default)
+            if name in ("_TEMPORAL_DECAY_HALF_LIFE", "_FORGETTING_CURVE_HALF_LIFE"):
+                return float(val) if val is not None else default
+            return val
+        return default
+    except Exception:
         return default
 
 
@@ -632,7 +645,7 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
         with _exploration_lock:
             if not _EXPLORATION_MODE_RESOLVED:
                 try:
-                    from config import get_config
+                    from infra._lazy_imports import get_config
                     cfg = get_config()
                     _EXPLORATION_MODE = os.environ.get("MEMORY_EXPLORATION_MODE", getattr(cfg, "exploration_mode", "off")).lower()
                 except Exception as e:
@@ -740,7 +753,7 @@ def get_ctr_weights(db_path: Any) -> Optional[dict[str, float]]:
                     _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled, db_path_str, st_ino)
                 return None
 
-            from config import get_config
+            from infra._lazy_imports import get_config
 
             _cfg = get_config()
             cutoff = time.time() - _cfg.ctr_data_window_days * 86400
@@ -824,7 +837,7 @@ class TemporalAttentionModel:
 
 
     def __init__(self, weights=None):
-        from config import get_config
+        from infra._lazy_imports import get_config
 
         if not getattr(get_config(), 'temporal_ssm_enabled', False):
             raise RuntimeError(
@@ -911,7 +924,7 @@ class TemporalAttentionModel:
         zero-weight instance is returned whose ``score()`` is neutral (0.5)
         until trained.
         """
-        from config import get_config
+        from infra._lazy_imports import get_config
 
         raw = getattr(get_config(), "temporal_ssm_weights", "")
         weights = None
@@ -944,7 +957,7 @@ def _get_ssm_model() -> Optional["TemporalAttentionModel"]:
     if _SSM_MODEL is not None:
         return _SSM_MODEL
     try:
-        from config import get_config
+        from infra._lazy_imports import get_config
 
         if not getattr(get_config(), "temporal_ssm_enabled", False):
             return None

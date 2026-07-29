@@ -269,29 +269,25 @@ def _enqueue_to_inbox(entry: dict) -> bool:
     try:
         inbox.parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps(entry, ensure_ascii=False) + "\n"
-        # P0-4 fix: check the inbox size BEFORE writing.  ``stat`` is
-        # cheaper than writing and rolling back.  We compare against
-        # the post-this-write size, so we add len(line) to the current
-        # size — the cap is "inbox file size after this enqueue".
+        # M13 fix: acquire an exclusive file lock, check the size of the
+        # already-open fd (no TOCTOU vs a prior stat(2)), then write or
+        # refuse.  The lock is released when ``f`` is closed.
         max_bytes = _inbox_max_bytes()
-        current_size = 0
-        if inbox.exists():
-            try:
-                current_size = inbox.stat().st_size
-            except OSError as exc:
-                logger.debug("auto-save daemon: cannot stat inbox %s: %s", inbox, exc)
-                current_size = 0
-        if current_size + len(line.encode("utf-8")) >= max_bytes:
-            logger.warning(
-                "auto-save: inbox at %d bytes, refusing enqueue of %d bytes "
-                "(cap is %d). Caller will fall back to sync path.",
-                current_size,
-                len(line.encode("utf-8")),
-                max_bytes,
-            )
-            return False
-        with open(inbox, "a", encoding="utf-8") as f:
-            f.write(line)
+        line_bytes = line.encode("utf-8")
+        with open(inbox, "ab") as f:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX)
+            current_size = os.fstat(f.fileno()).st_size
+            if current_size + len(line_bytes) >= max_bytes:
+                logger.warning(
+                    "auto-save: inbox at %d bytes, refusing enqueue of %d bytes "
+                    "(cap is %d). Caller will fall back to sync path.",
+                    current_size,
+                    len(line_bytes),
+                    max_bytes,
+                )
+                return False
+            f.write(line_bytes)
         return True
     except Exception as e:
         logger.warning("auto-save: failed to enqueue to inbox: %s", e)

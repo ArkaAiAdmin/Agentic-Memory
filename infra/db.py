@@ -141,6 +141,8 @@ class _ConnectionPool:
         # keys in the pool; inter-process serialization uses flock files.
         self._reval_thread = threading.Thread(target=self._revalidate_loop, daemon=True)
         self._reval_thread.start()
+        # H6: tracked journal connections for pool-lifecycle cleanup.
+        self._journal_conns: dict[int, sqlite3.Connection] = {}
 
     def _revalidate_loop(self) -> None:
         import time
@@ -262,6 +264,34 @@ class _ConnectionPool:
                 f"all active, cannot allocate another"
             )
 
+    def _track_journal_conn(self, conn: sqlite3.Connection) -> None:
+        """Register a journal connection for pool-lifecycle cleanup."""
+        with self._lock:
+            if id(conn) not in self._journal_conns:
+                self._journal_conns[id(conn)] = conn
+
+    def _untrack_journal_conn(self, conn: sqlite3.Connection) -> None:
+        """Remove a journal connection from lifecycle tracking."""
+        with self._lock:
+            self._journal_conns.pop(id(conn), None)
+
+    def get_write_journal_conn(self, journal_path: Path, timeout: float = 10.0) -> sqlite3.Connection:
+        """Get a journal DB connection, tracked by the pool for lifecycle cleanup."""
+        from infra.write_journal import _get_journal_conn
+        conn = _get_journal_conn(journal_path, timeout=timeout)
+        self._track_journal_conn(conn)
+        return conn
+
+    def _close_journal_conns(self) -> None:
+        """Close all tracked journal connections."""
+        for conn in self._journal_conns.values():
+            try:
+                conn.close()
+            except Exception:
+                logger.warning("db: journal connection close_failed during pool cleanup")
+                pass
+        self._journal_conns.clear()
+
     def clear(self) -> None:
         """Close all pooled connections. Used by test fixtures."""
         with self._lock:
@@ -276,6 +306,7 @@ class _ConnectionPool:
             self._migrated.clear()
             self._lru.clear()
             self._depth.clear()
+        self._close_journal_conns()
 
     def _ensure_full_schema(self, conn: AnyConnection) -> None:
         """Run all Python schema migrations on a new connection.
@@ -587,6 +618,7 @@ class _ConnectionPool:
             self._depth.clear()
             self._lru.clear()
             self._inodes.clear()
+        self._close_journal_conns()
 
     def get_state(self) -> dict:
         """Return a snapshot of pool state for monitoring."""

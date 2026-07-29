@@ -28,6 +28,7 @@ __all__ = [
     "repair_fts_drift",
     "find_kg_orphans",
     "repair_kg_orphans",
+    "repair_vec_orphans",
 ]
 
 import argparse
@@ -1374,6 +1375,84 @@ def repair_kg_orphans(db_path: Path, *, dry_run: bool = False) -> dict[str, Any]
                     result["deleted_backlinks"] += int(cur.rowcount or 0)
         except sqlite3.DatabaseError as exc:
             logger.warning("repair_kg_orphans: backlinks delete failed: %s", exc)
+        db.commit()
+    return result
+
+
+def repair_vec_orphans(db_path: Path, *, dry_run: bool = False) -> dict[str, Any]:
+    """Delete orphan memory_vec_keys and memory_embeddings rows.
+
+    H2 fix (2026-07-29): the background worker's ``_check_and_reconcile_vec_drift``
+    used to raw-DELETE these tables directly, bypassing the saga.  This helper
+    centralises the cleanup behind ``open_db`` so the file-lock and write-lock
+    are acquired properly, matching the ``repair_kg_orphans`` pattern.
+
+    Args:
+        db_path: path to memory.db
+        dry_run: if True, report what would be deleted without writing.
+
+    Returns:
+        dict with keys:
+          - was_orphaned (bool): True iff any orphan rows were found
+          - deleted_vec_keys (int)
+          - deleted_embeddings (int)
+          - orphans (dict): the full per-table list of orphans
+    """
+    db_path = Path(db_path)
+    result: dict[str, Any] = {
+        "was_orphaned": False,
+        "deleted_vec_keys": 0,
+        "deleted_embeddings": 0,
+        "orphans": {"memory_vec_keys": [], "memory_embeddings": []},
+    }
+    if not db_path.exists():
+        return result
+    with open_db(db_path, write=not dry_run) as db:
+        vec_orphans = [
+            row[0]
+            for row in db.execute(
+                "SELECT vk.memory_id FROM memory_vec_keys vk "
+                "LEFT JOIN memories m ON m.id = vk.memory_id "
+                "WHERE m.id IS NULL"
+            ).fetchall()
+        ]
+        emb_orphans = [
+            row[0]
+            for row in db.execute(
+                "SELECT e.memory_id FROM memory_embeddings e "
+                "LEFT JOIN memories m ON m.id = e.memory_id "
+                "WHERE m.id IS NULL"
+            ).fetchall()
+        ]
+        result["orphans"] = {
+            "memory_vec_keys": vec_orphans,
+            "memory_embeddings": emb_orphans,
+        }
+        if not vec_orphans and not emb_orphans:
+            return result
+        result["was_orphaned"] = True
+        if dry_run:
+            return result
+        try:
+            if vec_orphans:
+                placeholders = ",".join("?" for _ in vec_orphans)
+                cur = db.execute(
+                    f"DELETE FROM memory_vec_keys WHERE memory_id IN ({placeholders})",
+                    vec_orphans,
+                )
+                result["deleted_vec_keys"] = int(cur.rowcount or 0)
+        except sqlite3.DatabaseError as exc:
+            logger.warning("repair_vec_orphans: vec_keys delete failed: %s", exc)
+        try:
+            if emb_orphans:
+                placeholders = ",".join("?" for _ in emb_orphans)
+                cur = db.execute(
+                    f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})",
+                    emb_orphans,
+                )
+                result["deleted_embeddings"] = int(cur.rowcount or 0)
+        except sqlite3.DatabaseError as exc:
+            logger.warning("repair_vec_orphans: embeddings delete failed: %s", exc)
         db.commit()
     return result
 

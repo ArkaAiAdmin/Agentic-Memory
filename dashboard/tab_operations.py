@@ -87,7 +87,7 @@ def _render_scheduled_jobs() -> None:
         # ── Hourly tier ──
         ("sync", "cron_sync", "Cross-agent sync", "every 1 h", "\U0001f504"),
         ("crdt-sync", "cron_crdt_sync", "CRDT merge sync", "every 1 h", "\U0001f504"),
-        ("auto-retry", "cron_auto_retry_dead_tasks", "Retry dead tasks", "every 1 h", "\U0001f504"),
+        ("auto-retry", "cron_retry_dead_tasks", "Retry dead tasks", "every 1 h", "\U0001f504"),
         ("policy-hash", "cron_policy_hash_status", "Policy alignment check", "every 1 h", "\U0001f512"),
         # ── Daily tier ──
         ("heartbeat", "cron_heartbeat", "Daemon liveness + tier rebalance", "daily", "\U0001fa78"),

@@ -145,6 +145,7 @@ class FieldUpdate:
 # Imported here to eliminate duplication (previously inlined to avoid
 # import cycles; the leaf module crdt.vv_utils has no such risk).
 # ---------------------------------------------------------------------------
+from crdt.crdt_common import _write_note_markdown_file  # noqa: E402
 from crdt.vv_utils import vv_dominates as _vv_dominates  # noqa: E402
 
 
@@ -389,7 +390,7 @@ def apply_field_updates_to_db(
             continue
         if row is None:
             try:
-                is_del = 1 if upd.value == "__TOMBSTONE__" else 0
+                is_del = 1 if upd.value == TOMBSTONE else 0
                 conn.execute(
                     "INSERT OR IGNORE INTO memory_field_crdt "
                     "(memory_id, field_name, value, version_vector, logical_clock, "
@@ -424,7 +425,7 @@ def apply_field_updates_to_db(
         # a stale tombstone, the live write should win (prevents permanent
         # tombstoning). The VV-dominance check handles the causal case;
         # the LWW tiebreak handles the concurrent case.
-        if existing_deleted and not upd.value == "__TOMBSTONE__":
+        if existing_deleted and not upd.value == TOMBSTONE:
             if _vv_dominates(upd.version_vector, existing_vv):
                 pass  # causal dominance — allow un-tombstone
             else:
@@ -452,7 +453,7 @@ def apply_field_updates_to_db(
         winner = _merge_two(existing, upd)
         if winner is upd:
             try:
-                is_del = 1 if upd.value == "__TOMBSTONE__" else 0
+                is_del = 1 if upd.value == TOMBSTONE else 0
                 conn.execute(
                     "UPDATE memory_field_crdt SET value = ?, version_vector = ?, "
                     "logical_clock = ?, last_writer_agent = ?, is_deleted = ?, "
@@ -901,7 +902,7 @@ def crdt_field_save(
                 applied = apply_field_updates_to_db(conn, field_updates, tenant_id=_note_tenant_id)
                 result["applied"] = True
                 result["fields_applied"] = [u.field_name for u in applied]
-                _finalize_crdt_save(db_path_obj, note_id, content, conn)
+                _write_note_markdown_file(db_path_obj, note_id, content, conn)
                 # WAL done + commit for multi-process safety
                 try:
                     _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
@@ -958,7 +959,7 @@ def crdt_field_save(
                 _write_note_level_vv(conn, note_id, new_vv, new_clock)
                 result["applied"] = True
                 result["fields_applied"] = [u.field_name for u in applied]
-                _finalize_crdt_save(db_path_obj, note_id, content, conn)
+                _write_note_markdown_file(db_path_obj, note_id, content, conn)
                 try:
                     _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
                 except Exception:
@@ -970,6 +971,7 @@ def crdt_field_save(
             # Existing dominates incoming: stale write.
             if _vv_dominates(existing_vv, incoming_vv):
                 result["rejected"] = True
+                result["fields_applied"] = []
                 logger.info(
                     "crdt_field: rejected stale write for %s (local=%s, remote=%s)",
                     note_id,
@@ -992,7 +994,7 @@ def crdt_field_save(
             result["applied"] = bool(applied)
             result["fields_applied"] = [u.field_name for u in applied]
             if result["applied"]:
-                _finalize_crdt_save(db_path_obj, note_id, content, conn)
+                _write_note_markdown_file(db_path_obj, note_id, content, conn)
             try:
                 _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
             except Exception:
@@ -1039,7 +1041,7 @@ def crdt_field_delete_note(conn: AnyConnection, note_id: str, tenant_id: str = "
                     FieldUpdate(
                         memory_id=note_id,
                         field_name=field_name,
-                        value="__TOMBSTONE__",
+                        value=TOMBSTONE,
                         version_vector=vv,
                         logical_clock=clock + 1,
                         last_writer_agent=agent_id,
@@ -1051,7 +1053,7 @@ def crdt_field_delete_note(conn: AnyConnection, note_id: str, tenant_id: str = "
                     FieldUpdate(
                         memory_id=note_id,
                         field_name=field_name,
-                        value="__TOMBSTONE__",
+                        value=TOMBSTONE,
                         version_vector={"deleter": 1},
                         logical_clock=1,
                         last_writer_agent="deleter",
@@ -1209,110 +1211,7 @@ def _restore_crdt_pre_state(
             logger.warning("crdt undo: unlink .md for %s failed: %r", note_id, exc)
 
 
-def _finalize_crdt_save(
-    db_path: str | Path | None,
-    note_id: str,
-    content: str,
-    conn: AnyConnection,
-) -> None:
-    """Write the merged content to disk after a successful CRDT merge.
 
-    Remediation #5 (2026-06-22): without this, the .md file
-    remains the pre-merge content even though the DB has the
-    merged state, so the markdown-vs-DB consistency check
-    (``memory_integrity.find_orphan_files``) cannot detect the
-    drift.  safe_atomic_write gives us concurrent-edit detection
-    (Scenario 4 fix): if a local edit happened during the CRDT
-    merge, the local edit is preserved as
-    ``<path>.conflict-<pid>-<ts>``.
-
-    Best-effort: if the write fails (e.g. disk full, permission
-    error), we log and return — the DB write is the source of
-    truth and the .md can be regenerated later via
-    ``recover_orphan_files`` or the next save.
-
-    If ``db_path`` is None, the .md write is skipped (the caller
-    didn't have a path, e.g. when a connection was passed directly).
-    """
-    from pathlib import Path as _Path
-
-    if db_path is None:
-        logger.debug(
-            "crdt_field: no db_path provided; skipping .md write for %s",
-            note_id,
-        )
-        return
-    try:
-        row = conn.execute(
-            "SELECT source_file FROM tenant_memories WHERE id=?",
-            (note_id,),
-        ).fetchone()
-        if not row or not row[0]:
-            logger.debug(
-                "crdt_field: note %s has no source_file; skipping .md write",
-                note_id,
-            )
-            return
-        source_file = row[0]
-        # db_path is memory/memory.db; memory_root is the parent
-        # of memory.db (where the .md files live).
-        memory_root = _Path(db_path).parent
-        # Convention: source_file is "<category>/<slug>.md" (set
-        # by save_pipeline).  When the caller didn't supply one
-        # (e.g. crdt_field_save default), the row has
-        # "<category>/<slug>" without the .md extension — append
-        # it here so the path matches what save_pipeline would
-        # have written.
-        if not source_file.endswith(".md"):
-            source_file = source_file + ".md"
-        md_path = memory_root / source_file
-        # Build the full markdown body: frontmatter + content.
-        # We re-use _build_memory_file from save_pipeline to keep
-        # the frontmatter format consistent with save_memory.
-        body: str = content  # fallback to raw content if _build_memory_file fails
-        try:
-            from save_pipeline import _build_memory_file
-
-            category_str = note_id.split("/", 1)[0] if "/" in note_id else "imported"
-            slug = note_id.split("/", 1)[-1]
-            markdown, _fm, _now, _md = _build_memory_file(
-                content,
-                category_str,
-                slug,
-                tags_list=[],
-                pinned=False,
-            )
-            body = markdown
-        except Exception as build_exc:
-            logger.debug(
-                "crdt_field: _build_memory_file failed (%s); "
-                "falling back to raw content",
-                build_exc,
-            )
-            body = content
-        # safe_atomic_write (Scenario 4 fix): if a local edit
-        # happened during the CRDT merge, the local edit is
-        # preserved as <path>.conflict-<pid>-<ts>.
-        from infra.memory_common import safe_atomic_write
-
-        try:
-            safe_atomic_write(md_path, body, encoding="utf-8")
-            logger.info("crdt_field: wrote merged content to %s", md_path)
-        except Exception as write_exc:
-            # Best-effort: the DB has the merged state, the .md
-            # can be regenerated later.
-            logger.warning(
-                "crdt_field: failed to write merged .md %s: %s. "
-                "Run --recover-orphan-files to regenerate.",
-                md_path,
-                write_exc,
-            )
-    except Exception as outer_exc:
-        logger.warning(
-            "crdt_field: _finalize_crdt_save failed for %s: %s",
-            note_id,
-            outer_exc,
-        )
 
 
 def _seed_note_into_field_crdt_if_needed(

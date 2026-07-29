@@ -135,13 +135,15 @@ def remove_kg_relations_for_note(
                 SELECT e.id FROM kg_entities e
                 WHERE NOT EXISTS (
                     SELECT 1 FROM kg_facts f
-                    WHERE f.subject = e.name OR f.object = e.name
+                    WHERE f.subject_entity_id = e.id OR f.object_entity_id = e.id
+                       OR (f.subject_entity_id IS NULL AND f.object_entity_id IS NULL AND (f.subject = e.name OR f.object = e.name))
                 )
             ) OR target_id IN (
                 SELECT e.id FROM kg_entities e
                 WHERE NOT EXISTS (
                     SELECT 1 FROM kg_facts f
-                    WHERE f.subject = e.name OR f.object = e.name
+                    WHERE f.subject_entity_id = e.id OR f.object_entity_id = e.id
+                       OR (f.subject_entity_id IS NULL AND f.object_entity_id IS NULL AND (f.subject = e.name OR f.object = e.name))
                 )
             )
             """
@@ -157,6 +159,23 @@ def remove_kg_relations_for_note(
         counts["kg_entities"] = int(cur.rowcount or 0)
     except sqlite3.OperationalError as exc:
         logger.warning("remove_kg_relations_for_note(%s) kg_entities: %r", note_id, exc)
+    # Clean CRDT append entries for entities and edges tied to this note
+    try:
+        cur = conn.execute(
+            "DELETE FROM kg_entity_crdt_append WHERE entity_id IN (SELECT id FROM kg_entities WHERE name = ? AND entity_type = 'memory')",
+            (note_id,),
+        )
+        counts["kg_entity_crdt_append"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_kg_relations_for_note(%s) kg_entity_crdt_append: %r", note_id, exc)
+    try:
+        cur = conn.execute(
+            "DELETE FROM kg_edge_crdt_append WHERE edge_id IN (SELECT id FROM kg_edges WHERE source_id IN (SELECT id FROM kg_entities WHERE name = ? AND entity_type = 'memory') OR target_id IN (SELECT id FROM kg_entities WHERE name = ? AND entity_type = 'memory'))",
+            (note_id, note_id),
+        )
+        counts["kg_edge_crdt_append"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_kg_relations_for_note(%s) kg_edge_crdt_append: %r", note_id, exc)
     return counts
 
 
@@ -196,6 +215,9 @@ def cleanup_memory_relations(conn: AnyConnection, note_id: str) -> dict[str, int
     return {
         "kg_facts": kg["kg_facts"],
         "kg_edges": kg["kg_edges"],
+        "kg_entities": kg.get("kg_entities", 0),
+        "kg_entity_crdt_append": kg.get("kg_entity_crdt_append", 0),
+        "kg_edge_crdt_append": kg.get("kg_edge_crdt_append", 0),
         "backlinks": backlinks,
     }
 
@@ -285,7 +307,8 @@ def remove_kg_facts_selective(
 
     # Clean backlinks
     try:
-        cur = conn.execute("DELETE FROM backlinks WHERE source_id = ?", (note_id,))
+        slug = note_id.split("/", 1)[1] if "/" in note_id else note_id
+        cur = conn.execute("DELETE FROM backlinks WHERE source_id IN (?, ?)", (note_id, slug))
         counts["backlinks"] = int(cur.rowcount or 0)
     except Exception as exc:
         logger.warning("remove_kg_facts_selective(%s) backlinks: %r", note_id, exc)

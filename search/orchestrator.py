@@ -1002,9 +1002,9 @@ def search_memories(
     if mode in ("fact_lookup", "fts"):
         # Lightweight parse: skip semantic expansion (~10s), graph RAG (~1s),
         # reasoning expansion (~1s), and drift enforcement.
-        from search.query_parser import _normalize_unicode, _STOP_WORDS
+        from search.query_parser import normalize_unicode, _STOP_WORDS
         import re as _re
-        normalized_query = _normalize_unicode(query)
+        normalized_query = normalize_unicode(query)
         _bare_tokens = [w for w in _re.findall("[\\w@\\#\\.\\+\\-]+", normalized_query, flags=_re.UNICODE)
                         if w.lower() not in _STOP_WORDS and len(w) > 1]
         if _bare_tokens:

@@ -13,6 +13,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from background.auto_save import (
+    _batch_interval_s,
+    _batch_size,
+    _daemon_idle_s,
+)
 from background.circuit_breaker import (
     _DAEMON_LOCKS,
     _DAEMON_STOP_REQUESTED,
@@ -31,22 +36,6 @@ from background.inbox import (
 )
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_BATCH_INTERVAL_S = 0.5
-_DEFAULT_BATCH_SIZE = 50
-_DEFAULT_DAEMON_IDLE_S = 300
-
-
-def _batch_interval_s() -> float:
-    return _DEFAULT_BATCH_INTERVAL_S
-
-
-def _batch_size() -> int:
-    return _DEFAULT_BATCH_SIZE
-
-
-def _daemon_idle_s() -> float:
-    return _DEFAULT_DAEMON_IDLE_S
 
 
 def _log_structured(level: str, event: str, **fields: object) -> None:

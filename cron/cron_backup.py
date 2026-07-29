@@ -116,9 +116,9 @@ def do_backup(backup_dir: Path | None = None) -> dict:
                     "backup attempt %d/3 failed (%s); retrying in %ds",
                     attempt + 1,
                     exc,
-                    [0, 5, 15][attempt + 1],
+                    [0, 5, 15][attempt],
                 )
-                time.sleep([0, 5, 15][attempt + 1])
+                time.sleep([0, 5, 15][attempt])
     if last_err is not None:
         # All retries failed. Surface the error so the operator can
         # diagnose; do NOT continue silently thinking the backup
@@ -164,7 +164,7 @@ def do_backup(backup_dir: Path | None = None) -> dict:
         "backup_path": str(gz_path),
         "backup_size": backup_size,
         "removed": removed,
-        "total_backups": len(all_backups) + 1,
+        "total_backups": len(all_backups),
     }
 
 

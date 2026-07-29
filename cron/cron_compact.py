@@ -49,10 +49,13 @@ def run(script, args=None, timeout=120):
             cmd, timeout=timeout, stderr=subprocess.STDOUT, text=True
         )
         print(out)
+        return True
     except subprocess.CalledProcessError as e:
         print(f"ERROR: {e.output}")
+        return False
     except subprocess.TimeoutExpired:
         print(f"TIMEOUT after {timeout}s")
+        return False
 
 
 def check_integrity(db_path):
@@ -105,21 +108,21 @@ def main() -> int:
     # so each step has its own connection lifecycle and its own log
     # line in the cron log, and so a slow consolidation can't block
     # the rest of the pipeline.
-    run("tier_migration.py")
-    run("cron_consolidate.py")
-    # rebuild_index.py needs source_dir and db_path args
-    run("rebuild_index.py", [str(source_dir), str(db_path)])
-    # Backfill KG entities, edges, facts, and backlinks from markdown
-    # sources. --incremental is cheap (skips already-populated tables).
-    run("backfill_all.py", ["--incremental"])
-    # Rebuild vector index (auto — was manual before)
-    run("rebuild_vec_index.py", [str(db_path)], timeout=300)
-    # KG entity dedup (auto — merge same-name + semantic similar entities)
-    run("kg_dedup.py", [str(db_path), "--semantic"])
-    # Cross-session learning (extract reusable patterns)
-    run("cross_session_learn.py", ["--days=3"])
-    # Embedding recomputation (auto-rebuild if model changed)
-    run("embedding_recompute.py")
+    steps = [
+        ("tier_migration.py",),
+        ("cron_consolidate.py",),
+        ("rebuild_index.py", [str(source_dir), str(db_path)]),
+        ("backfill_all.py", ["--incremental"]),
+        ("rebuild_vec_index.py", [str(db_path)], 300),
+        ("kg_dedup.py", [str(db_path), "--semantic"]),
+        ("cross_session_learn.py", ["--days=3"]),
+        ("cron_embedding_recompute.py", ["--once"]),
+    ]
+    for step in steps:
+        ok = run(*step)
+        if not ok:
+            print(f"FAILED: {step[0]} — aborting compact pipeline")
+            return 1
 
     # Post-rebuild integrity check
     check_integrity(db_path)

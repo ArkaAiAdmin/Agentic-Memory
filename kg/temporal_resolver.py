@@ -26,9 +26,9 @@ How it works:
 This turns contradictions from a problem into structured temporal data.
 Instead of deleting old knowledge, we timestamp it and keep it searchable.
 
-Also propagates contradictions through the knowledge graph:
-If note A contradicts note B, and both share entity E, all facts
-involving E are re-evaluated.
+Also propagates contradiction resolution through the knowledge graph:
+if note A contradicts note B and shares entities with it, KG edges
+for those entities are invalidated (Phase 1b).
 """
 
 from __future__ import annotations
@@ -187,41 +187,6 @@ def resolve_temporal_contradiction(
                         )
             except sqlite3.OperationalError:
                 pass  # kg_edges table may not exist
-
-        # Phase 2: Graph propagation — traverse entities mentioned in the
-        # closed notes and find other notes that share those entities.
-        if entity_name:
-            entities_to_check = [entity_name]
-        else:
-            # Extract entities from the closed notes' source files
-            entities_to_check = []
-            patterns = re.findall(r"\b([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)\b", new_content)
-            for match in patterns:
-                if len(match) > 3:
-                    entities_to_check.append(match)
-
-        for entity in entities_to_check[:10]:  # cap at 10 entities
-            try:
-                # Find notes that mention this entity
-                related = conn.execute(
-                    "SELECT id FROM memories WHERE content LIKE ? AND deleted_at IS NULL",
-                    (f"%{entity}%",),
-                ).fetchall()
-                related_ids = [r[0] for r in related if r[0] != new_note_id]
-                if related_ids:
-                    conn.executemany(
-                        "UPDATE memories SET valid_to=? WHERE id=? AND valid_to IS NULL",
-                        [(now_iso, rid) for rid in related_ids],
-                    )
-                    entity_propagation[entity] = len(related_ids)
-                    resolved += len(related_ids)
-                    logger.info(
-                        "temporal_resolver: propagated '%s' to %d related notes",
-                        entity,
-                        len(related_ids),
-                    )
-            except sqlite3.OperationalError:
-                pass
 
         conn.commit()
 

@@ -256,13 +256,13 @@ import mcp_surface.mcp_sharing  # noqa: E402,F401
 import mcp_surface.mcp_health  # noqa: E402,F401
 import mcp_surface.mcp_coordination  # noqa: E402,F401 — task management, file locking, messaging
 
-# Keep all admin tools visible — they are useful for IDE integration.
-# Only remove truly deprecated tools.
-for _admin_name in tool_registry.DEPRECATED:
+# Remove deprecated and admin tools from direct MCP surface.
+# Admin tools are accessible via the memory_maintenance router.
+for _admin_name in list(tool_registry.DEPRECATED) + list(tool_registry.ADMIN_TOOLS):
     try:
         mcp.remove_tool(_admin_name)
     except Exception as e:
-        logger.debug("skip deprecated removal: %s (%s)", _admin_name, e)
+        logger.debug("skip tool removal: %s (%s)", _admin_name, e)
 
 
 if __name__ == "__main__":

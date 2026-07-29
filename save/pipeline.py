@@ -1148,6 +1148,7 @@ def _acquire_db_connection(
     if direct:
         import sqlite3 as _sqlite3
         conn = _sqlite3.connect(str(db_path_obj), timeout=30)
+        conn.row_factory = _sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
         from infra.db_migrations import run_schema_setup
@@ -1185,8 +1186,9 @@ def _acquire_db_connection(
             except Exception as audit_exc:
                 logger.warning("audit.enqueue_audit failed after DB error: %s", audit_exc)
             raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {e}")
-    # Should not reach here, but satisfy the type checker.
-    raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {last_err}")
+    if last_err:
+        raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {last_err}")
+    raise SaveValidationError(ErrorCode.DB_ERROR, "saving memory: unreachable — no error captured")
 
 
 def _resolve_save_paths(
@@ -1513,11 +1515,11 @@ def _persist_via_saga(
         tenant_id=tenant_id,
         epistemic_source=epistemic_source,
         belief_status=belief_status,
-            asserting_agent_id=asserting_agent_id,
-            evidence_chain=evidence_chain,
-            fact_type=fact_type,
-            data_subject_sub=data_subject_sub,
-        )
+        asserting_agent_id=asserting_agent_id,
+        evidence_chain=evidence_chain,
+        fact_type=fact_type,
+        data_subject_sub=data_subject_sub,
+    )
     return note_id, conn
 
 
@@ -1666,6 +1668,7 @@ def save_memory_journal(
     asserting_agent_id: str = "",
     evidence_chain: list | None = None,
     fact_type: str = "observation",
+    data_subject_sub: str | None = None,
 ) -> str:
     """Write a memory note via the CQRS write journal.
 
@@ -1714,6 +1717,7 @@ def save_memory_journal(
             asserting_agent_id=asserting_agent_id,
             evidence_chain=evidence_chain,
             fact_type=fact_type,
+            data_subject_sub=data_subject_sub,
         )
 
     _start_time = time.time()
@@ -1737,6 +1741,41 @@ def save_memory_journal(
     else:
         db_path_obj = target_base / "memory.db"
     journal_path = db_path_obj.parent / "journal.db"
+
+    # CHANGE 6: resolve the GDPR data-subject tag.  If the caller supplied one
+    # use it verbatim; otherwise fall back to a stable per-principal default so
+    # per-subject erasure is always possible.
+    _resolved_data_subject_sub: str | None = req.data_subject_sub
+    if not _resolved_data_subject_sub:
+        _principal_id = None
+        try:
+            from agent_context import get_agent
+            _rbac_ctx = get_agent()
+            _principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+        except (ImportError, AttributeError):
+            pass
+        _resolved_data_subject_sub = _default_data_subject_sub(req.tenant_id or "default", _principal_id)
+    req = SaveRequest(
+        content=req.content,
+        category=req.category,
+        title_slug=req.title_slug,
+        tags=req.tags,
+        pinned=req.pinned,
+        is_global=req.is_global,
+        safety_wiring=req.safety_wiring,
+        db_path=req.db_path,
+        importance=req.importance,
+        note_id=req.note_id,
+        context=req.context,
+        defer_expensive=req.defer_expensive,
+        tenant_id=req.tenant_id,
+        epistemic_source=req.epistemic_source,
+        belief_status=req.belief_status,
+        asserting_agent_id=req.asserting_agent_id,
+        evidence_chain=req.evidence_chain,
+        fact_type=req.fact_type,
+        data_subject_sub=_resolved_data_subject_sub,
+    )
 
     from infra.write_journal import enqueue_write, init_journal_db
     init_journal_db(journal_path)
@@ -1862,10 +1901,14 @@ def materialize_journal_entry(
             time.sleep(min(0.1 * (2 ** retry_count), 2.0))
     if returned:
         return str(note_id)
-    msg = f"materialization failed after {JOURNAL_MAX_RETRIES} retries: {last_err}"
-    logger.error("ALERT write_journal: %s — dead-lettering entry %s", msg, note_id)
-    mark_dead_letter(journal_path, entry["id"], msg)
-    raise RuntimeError(msg)
+    if last_err:
+        msg = f"materialization failed after {JOURNAL_MAX_RETRIES} retries: {last_err}"
+        logger.error("ALERT write_journal: %s — dead-lettering entry %s", msg, note_id)
+        mark_dead_letter(journal_path, entry["id"], msg)
+        raise RuntimeError(msg)
+    raise RuntimeError(
+        f"materialization failed after {JOURNAL_MAX_RETRIES} retries: unreachable — no error captured"
+    )
 
 
 def _check_already_materialized(db_path: Path, note_id: str, journal_path: Optional[Path] = None) -> bool:
@@ -1958,6 +2001,7 @@ def _materialize_journal_once(
         belief_status=entry.get("belief_status", "active"),
         asserting_agent_id=entry.get("asserting_agent_id", ""),
         fact_type=entry.get("fact_type", "observation"),
+        data_subject_sub=entry.get("data_subject_sub"),
     )
     note_id = entry.get("note_id", "")
 
@@ -2034,6 +2078,7 @@ def _materialize_journal_once(
             defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
             epistemic_source=req.epistemic_source, belief_status=req.belief_status,
             asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
+            data_subject_sub=req.data_subject_sub,
         )
         # W8 (2026-07-19): close the saga's write-queue session BEFORE
         # running post-save hooks.

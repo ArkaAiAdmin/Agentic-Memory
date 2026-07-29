@@ -284,10 +284,19 @@ def _migrate_kg_edges_tenant_id(conn) -> None:
     except sqlite3.OperationalError:
         return
     if "tenant_id" not in cols:
+        # H7: canonical DDL moved to migration 076.  Only ALTER TABLE as
+        # a fallback if the migration has not yet been applied.
+        _m076 = False
         try:
-            conn.execute("ALTER TABLE kg_edges ADD COLUMN tenant_id TEXT DEFAULT 'default'")
-        except sqlite3.OperationalError:
+            _row = conn.execute("SELECT version FROM schema_version WHERE id=1").fetchone()
+            _m076 = _row is not None and _row[0] >= 76
+        except Exception:
             pass
+        if not _m076:
+            try:
+                conn.execute("ALTER TABLE kg_edges ADD COLUMN tenant_id TEXT DEFAULT 'default'")
+            except sqlite3.OperationalError:
+                pass
     # Index for tenant isolation queries on kg_edges.
     try:
         conn.execute(
@@ -962,7 +971,59 @@ def run_schema_setup(conn: AnyConnection) -> None:
             _migrate_memory_audit_log(conn)
             return
     except sqlite3.OperationalError:
-        pass
+        row = None
+
+    # H5: existing DB behind current schema.  Skip Python CREATE TABLE
+    # IF NOT EXISTS (which may use stale column lists) and run only SQL
+    # migrations + post-migration setup.  Tables already exist from a
+    # prior run_schema_setup.
+    if row is not None and row[0] > 0:
+        try:
+            conn.execute("PRAGMA foreign_keys = OFF")
+        except Exception:
+            pass
+        with conn:
+            _migrate_memory_audit_log(conn)
+            _migrate_ensure_chunks_table(conn)
+            _migrate_ensure_skill_columns(conn)
+            _stable_snapshot = None
+            try:
+                import infra.migration_runner as _mr
+                _stable_snapshot = _mr.SCHEMA_STABLE
+                if _stable_snapshot:
+                    _mr.SCHEMA_STABLE = False
+            except Exception:
+                pass
+            try:
+                db_path = getattr(conn, "_db_path", None) or getattr(conn, "name", None)
+                if db_path and isinstance(db_path, (str, Path)) and str(db_path) != ":memory:":
+                    from infra.db_path_flock import db_path_flock
+                    with db_path_flock(Path(db_path)):
+                        _run_sql_migrations(conn)
+                else:
+                    _run_sql_migrations(conn)
+            finally:
+                if _stable_snapshot is not None:
+                    try:
+                        _mr.SCHEMA_STABLE = _stable_snapshot
+                    except Exception:
+                        pass
+            from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
+            _cast_conn = cast("sqlite3.Connection", conn)
+            _migrate_fts5_porter_tokenizer(_cast_conn)
+            _migrate_ensure_fts_triggers(_cast_conn)
+            _migrate_memory_ctr_feedback(conn)
+            _migrate_concept_drift(conn)
+            _migrate_add_fk_constraints(conn)
+            _migrate_audit_tenant_index(conn)
+            _migrate_fix_kg_edges_fk(conn)
+            _migrate_kg_edges_tenant_id(conn)
+            _migrate_schema_version(conn)
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
+        return
 
     # Fresh or stale DBs need all migrations up to SCHEMA_VERSION, but
     # SCHEMA_STABLE=True in migration_runner would reject any migration

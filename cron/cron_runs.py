@@ -27,11 +27,45 @@ def _get_db(db_path: str | Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_table(db_path: str | Path | None = None) -> None:
+    """Create the cron_runs table if it doesn't exist."""
+    conn = _get_db(db_path)
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS cron_runs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_name     TEXT NOT NULL,
+                started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                completed_at TEXT,
+                status       TEXT NOT NULL DEFAULT 'running'
+                    CHECK (status IN ('running', 'completed', 'failed', 'skipped')),
+                duration_ms  INTEGER,
+                error        TEXT,
+                output       TEXT
+            )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_name, started_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cron_runs_started ON cron_runs(started_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cron_runs_status ON cron_runs(status, started_at DESC)"
+        )
+        conn.commit()
+    except Exception as e:
+        logger.warning("cron_runs._ensure_table failed: %s", e)
+    finally:
+        conn.close()
+
+
 def record_start(
     job_name: str,
     db_path: str | Path | None = None,
 ) -> int:
     """Record that a cron job started. Returns the row ID."""
+    _ensure_table(db_path)
     conn = _get_db(db_path)
     try:
         cursor = conn.execute(

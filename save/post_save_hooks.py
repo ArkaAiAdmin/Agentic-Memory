@@ -342,7 +342,6 @@ def _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, c
     try:
         pending = _auto_backlink_multi_part(db_path_obj, note_id, category, title_slug, conn=conn)
         if pending:
-            from pathlib import Path
             return [(Path(db_path_obj).parent / f"{pid}.md", new_content) for pid, new_content in pending]
     except Exception as _abe:
         logger.debug("save_memory: auto-backlink failed: %s", _abe)

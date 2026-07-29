@@ -105,7 +105,17 @@ def ensure_kg_schema(conn: AnyConnection) -> None:
             row[1] for row in conn.execute("PRAGMA table_info(kg_entities)").fetchall()
         }
         if "centrality" not in cols_entities:
-            conn.execute("ALTER TABLE kg_entities ADD COLUMN centrality REAL DEFAULT 0.0")
+            # H7: canonical DDL moved to migration 076.  Only ALTER TABLE as
+            # a fallback if the migration has not yet been applied.
+            _migration_076_applied = False
+            try:
+                _row = conn.execute("SELECT version FROM schema_version WHERE id=1").fetchone()
+                _migration_076_applied = _row is not None and _row[0] >= 76
+            except Exception:
+                pass
+            if not _migration_076_applied:
+                logger.debug("ensure_kg_schema: kg_entities.centrality safety net (pre-076)")
+                conn.execute("ALTER TABLE kg_entities ADD COLUMN centrality REAL DEFAULT 0.0")
         if "community_id" not in cols_entities:
             try:
                 conn.execute("ALTER TABLE kg_entities ADD COLUMN community_id INTEGER DEFAULT 0")

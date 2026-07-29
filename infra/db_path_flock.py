@@ -99,13 +99,6 @@ from pathlib import Path
 from typing import Protocol
 
 
-class _SupportsClose(Protocol):
-    """Anything with a close() method — satisfies the file-like protocol."""
-
-    def close(self) -> None: ...
-
-
-
 
 logger = logging.getLogger(__name__)
 
