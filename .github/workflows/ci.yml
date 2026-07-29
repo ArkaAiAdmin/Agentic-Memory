@@ -1,168 +1,153 @@
 name: CI
 
-# Runs on every push to main/development and every PR.
-# Checks: ruff lint, mypy typecheck, pytest, coverage gate, drift checks.
-# Extended/integration tests run weekly (see extended-tests.yml).
-
 on:
   push:
-    branches: [main, development]
+    branches: [master]
   pull_request:
-    branches: [main, development]
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Ruff Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install ruff
-        run: pip install ruff
-      - name: Lint
-        run: ruff check .
-
-  lint-dashboard:
-    name: Dashboard DB-Access Gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install deps
-        run: pip install pandas streamlit plotly requests --quiet
-      - name: Dashboard DB-access lint
-        run: python eval/lint_dashboard_db_access.py
-
+  # ── TypeScript ────────────────────────────────────────────────────────
   typecheck:
-    name: Mypy Typecheck
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install mypy + deps
-        run: |
-          pip install mypy --quiet
-          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
-      - name: Typecheck
-        run: mypy
-        env:
-          MYPYPATH: .
 
-  drift-checks:
-    name: Drift Checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: pnpm/action-setup@v4
         with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install deps
-        run: |
-          pip install -e ".[dev]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
-      - name: Tool registry drift check
-        run: python scripts/tool_drift_check.py
-      - name: Documentation drift check
-        run: python scripts/doc_drift_check.py
-      - name: Schema version check
-        run: python scripts/schema_version_check.py
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
 
   test:
-    name: pytest
+    name: Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
-      - name: Run tests with coverage
-        env:
-          MEMORY_RERANKER_DISABLED: "1"
-          MEMORY_CTR_TUNING: "0"
-          MEMORY_KNOWLEDGE_GRAPH: "1"
-          MEMORY_EMBEDDINGS: "0"
-        run: |
-          . venv/bin/activate
-          python -m pytest eval/ \
-            --tb=short -q \
-            -n auto \
-            --dist=loadfile \
-            -p no:cacheprovider \
-            --cov=infra \
-            --cov=background \
-            --cov=search \
-            --cov=save \
-            --cov=mcp_* \
-            --cov-fail-under=70 \
-            --cov-report=xml:coverage.xml \
-            --cov-report=term-missing
-        timeout-minutes: 45
 
-  build-wheel:
-    name: Build sdist + wheel
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r test
+
+  # ── Rust ──────────────────────────────────────────────────────────────
+  cargo-check:
+    name: Cargo Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version: "3.12"
-      - name: Build package
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install system dependencies
         run: |
-          pip install build --quiet
-          python -m build
-      - uses: actions/upload-artifact@v4
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+
+      - name: Cargo check
+        working-directory: apps/desktop/src-tauri
+        run: cargo check --workspace
+
+  cargo-test:
+    name: Cargo Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          name: dist
-          path: dist/
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+
+      - name: Cargo test
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --workspace
+
+  # ── Bundle (on push to master only) ──────────────────────────────────
+  bundle:
+    name: Bundle (${{ matrix.os }})
+    needs: [typecheck, test, cargo-check, cargo-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: macos-latest
+            target: macos
+          - os: windows-latest
+            target: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install system dependencies (Linux)
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri app
+        working-directory: apps/desktop
+        run: pnpm tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/**/*.dmg
+            apps/desktop/src-tauri/target/release/bundle/**/*.app.tar.gz
+            apps/desktop/src-tauri/target/release/bundle/**/*.deb
+            apps/desktop/src-tauri/target/release/bundle/**/*.AppImage
+            apps/desktop/src-tauri/target/release/bundle/**/*.msi
           retention-days: 7
-
-  # CHANGE 7 — RBAC enforcement under the SECURE default (closed auth mode).
-  # The main `test` job keeps MEMORY_AUTH_MODE=open so functional tests stay
-  # green; this dedicated job flips the process into fail-closed mode and runs
-  # only the auth/security subset (which uses the closed_auth_env /
-  # mock_admin_principal / ClosedClient fixtures from eval/conftest.py) so the
-  # real mcp_authorize path is exercised in CI without disturbing the rest.
-  security-closed-auth:
-    name: Security — closed auth mode
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        run: |
-          python -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
-      - name: Run auth/security tests under closed auth mode
-        env:
-          MEMORY_AUTH_MODE: "closed"
-          MEMORY_RERANKER_DISABLED: "1"
-          MEMORY_CTR_TUNING: "0"
-          MEMORY_KNOWLEDGE_GRAPH: "1"
-          MEMORY_EMBEDDINGS: "0"
-        run: |
-          . venv/bin/activate
-          python -m pytest eval/test_closed_auth_client.py eval/test_authz_fail_closed.py \
-            eval/test_rbac_admin_authz.py eval/test_contradiction_tenant_scope.py \
-            --tb=short -q -p no:cacheprovider
-        timeout-minutes: 30

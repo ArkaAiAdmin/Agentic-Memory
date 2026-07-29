@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "lint": "eslint . --report-unused-disable-directives --max-warnings 0 --config ../../eslint.config.js"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

@@ -4,44 +4,62 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { terminal as terminalIpc } from "../../ipc/client";
+import { useAppStore } from "../../stores/appStore";
+import { getThemeById } from "../../services/themes";
 
 interface TerminalTab {
   id: string;
   ptyId: string | null;
   term: Terminal;
   fitAddon: FitAddon;
+  unsubOutput: (() => void) | null;
+  unsubExit: (() => void) | null;
+  divRef: HTMLDivElement | null;
 }
 
 export function TerminalPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<Map<string, TerminalTab>>(new Map());
+  const terminalRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [tabList, setTabList] = useState<string[]>([]);
+  const theme = useAppStore((s) => s.theme);
 
-  // Initialize default terminal tab
-  useEffect(() => {
-    createTab();
-    return () => {
-      // Cleanup all terminals on unmount
-      for (const [id, tab] of tabsRef.current) {
-        tab.term.dispose();
-        if (tab.ptyId) {
-          terminalIpc.destroy(tab.ptyId).catch(() => {});
-        }
-      }
-      tabsRef.current.clear();
+  const getTerminalTheme = useCallback(() => {
+    const palette = getThemeById(theme);
+    return {
+      background: palette.terminalBg,
+      foreground: palette.terminalFg,
+      cursor: palette.editorCursor,
+      selectionBackground: palette.editorSelection,
+      black: palette.terminalBlack,
+      red: palette.terminalRed,
+      green: palette.terminalGreen,
+      yellow: palette.terminalYellow,
+      blue: palette.terminalBlue,
+      magenta: palette.terminalMagenta,
+      cyan: palette.terminalCyan,
+      white: palette.terminalWhite,
+      brightBlack: palette.terminalBlack,
+      brightRed: palette.terminalRed,
+      brightGreen: palette.terminalGreen,
+      brightYellow: palette.terminalYellow,
+      brightBlue: palette.terminalBlue,
+      brightMagenta: palette.terminalMagenta,
+      brightCyan: palette.terminalCyan,
+      brightWhite: palette.terminalWhite,
     };
-  }, []);
+  }, [theme]);
 
   const createTab = useCallback(async () => {
     if (!containerRef.current) return;
 
     const id = `term-${Date.now()}`;
     const termDiv = document.createElement("div");
-    termDiv.id = `terminal-${id}`;
     termDiv.style.height = "100%";
-    termDiv.style.display = id === activeTabId ? "block" : "none";
+    termDiv.style.display = "none";
     containerRef.current.appendChild(termDiv);
+    terminalRefs.current.set(id, termDiv);
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
@@ -49,30 +67,10 @@ export function TerminalPanel() {
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
-      fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      theme: {
-        background: "#0d1117",
-        foreground: "#c9d1d9",
-        cursor: "#58a6ff",
-        selectionBackground: "#264f78",
-        black: "#0d1117",
-        red: "#ff7b72",
-        green: "#3fb950",
-        yellow: "#d29922",
-        blue: "#58a6ff",
-        magenta: "#bc8cff",
-        cyan: "#39c5cf",
-        white: "#c9d1d9",
-        brightBlack: "#484f58",
-        brightRed: "#ffa198",
-        brightGreen: "#56d364",
-        brightYellow: "#e3b341",
-        brightBlue: "#79c0ff",
-        brightMagenta: "#d2a8ff",
-        brightCyan: "#56d4dd",
-        brightWhite: "#f0f6fc",
-      },
+      fontSize: 12,
+      fontFamily: "var(--font-mono)",
+      lineHeight: 1.4,
+      theme: getTerminalTheme(),
       allowProposedApi: true,
       scrollback: 10000,
     });
@@ -81,107 +79,89 @@ export function TerminalPanel() {
     term.loadAddon(webLinksAddon);
     term.open(termDiv);
 
-    // Fit after a short delay to ensure container is sized
-    requestAnimationFrame(() => {
-      try { fitAddon.fit(); } catch {}
-    });
+    requestAnimationFrame(() => { try { fitAddon.fit(); } catch { /* ignore fit errors */ } });
 
-    const tab: TerminalTab = { id, ptyId: null, term, fitAddon };
+    const tab: TerminalTab = { id, ptyId: null, term, fitAddon, unsubOutput: null, unsubExit: null, divRef: termDiv };
     tabsRef.current.set(id, tab);
     setTabList((prev) => [...prev, id]);
     setActiveTabId(id);
+    termDiv.style.display = "block";
 
-    // Create PTY in Tauri backend
     try {
-      const cwd = "/"; // Default to root; in production, use project root
-      const ptyId = await terminalIpc.create(cwd, 80, 24);
+      const ptyId = await terminalIpc.create("/", 80, 24);
       tab.ptyId = ptyId;
-
-      // Listen for PTY output
-      terminalIpc.onOutput((data) => {
-        if (data.ptyId === ptyId) {
-          term.write(data.data);
-        }
-      });
-
-      // Listen for PTY exit
-      terminalIpc.onExit((data) => {
-        if (data.ptyId === ptyId) {
-          term.write(`\r\n[Process exited with code ${data.exitCode}]\r\n`);
-        }
-      });
-
-      // Send terminal input to PTY
-      term.onData((data) => {
-        if (tab.ptyId) {
-          terminalIpc.write(tab.ptyId, data).catch(() => {});
-        }
-      });
-
-      // Handle resize
-      term.onResize(({ cols, rows }) => {
-        if (tab.ptyId) {
-          terminalIpc.resize(tab.ptyId, cols, rows).catch(() => {});
-        }
-      });
+      tab.unsubOutput = await terminalIpc.onOutput((data) => { if (data.ptyId === ptyId) term.write(data.data); });
+      tab.unsubExit = await terminalIpc.onExit((data) => { if (data.ptyId === ptyId) term.write(`\r\n[exited ${data.exitCode}]\r\n`); });
+      term.onData((data) => { if (tab.ptyId) terminalIpc.write(tab.ptyId, data).catch(() => {}); });
+      term.onResize(({ cols, rows }) => { if (tab.ptyId) terminalIpc.resize(tab.ptyId, cols, rows).catch(() => {}); });
     } catch (err) {
-      term.write(`\r\n[Failed to create PTY: ${err}]\r\n`);
+      term.write(`\r\n[error: ${err}]\r\n`);
     }
-  }, [activeTabId]);
+  }, [getTerminalTheme]);
+
+  useEffect(() => {
+    createTab();
+    return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      for (const [, tab] of tabsRef.current) {
+        tab.unsubOutput?.();
+        tab.unsubExit?.();
+        tab.term.dispose();
+        if (tab.ptyId) terminalIpc.destroy(tab.ptyId).catch(() => {});
+      }
+      tabsRef.current.clear();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      terminalRefs.current.clear();
+    };
+  }, [createTab]);
+
+  // Update terminal theme when theme changes
+  useEffect(() => {
+    for (const [, tab] of tabsRef.current) {
+      // eslint-disable-next-line react-hooks/immutability
+      tab.term.options.theme = getTerminalTheme();
+    }
+  }, [theme, getTerminalTheme]);
 
   const switchTab = useCallback((id: string) => {
-    // Hide all tabs
-    for (const [tabId, tab] of tabsRef.current) {
-      const el = document.getElementById(`terminal-${tabId}`);
-      if (el) el.style.display = "none";
+    for (const [, div] of terminalRefs.current) {
+      // eslint-disable-next-line react-hooks/immutability
+      div.style.display = "none";
     }
-
-    // Show selected tab
     const activeTab = tabsRef.current.get(id);
     if (activeTab) {
-      const el = document.getElementById(`terminal-${id}`);
+      const el = terminalRefs.current.get(id);
       if (el) el.style.display = "block";
       requestAnimationFrame(() => activeTab.fitAddon.fit());
     }
-
     setActiveTabId(id);
   }, []);
 
-  const closeTab = useCallback(
-    (id: string) => {
-      const tab = tabsRef.current.get(id);
-      if (tab) {
-        tab.term.dispose();
-        if (tab.ptyId) {
-          terminalIpc.destroy(tab.ptyId).catch(() => {});
-        }
-        const el = document.getElementById(`terminal-${id}`);
-        if (el) el.remove();
-        tabsRef.current.delete(id);
-        setTabList((prev) => prev.filter((t) => t !== id));
-
-        // Switch to another tab if closing active
-        if (activeTabId === id) {
-          const remaining = Array.from(tabsRef.current.keys());
-          if (remaining.length > 0) {
-            switchTab(remaining[remaining.length - 1]);
-          } else {
-            setActiveTabId(null);
-          }
-        }
+  const closeTab = useCallback((id: string) => {
+    const tab = tabsRef.current.get(id);
+    if (tab) {
+      tab.unsubOutput?.();
+      tab.unsubExit?.();
+      tab.term.dispose();
+      if (tab.ptyId) terminalIpc.destroy(tab.ptyId).catch(() => {});
+      const div = terminalRefs.current.get(id);
+      if (div) div.remove();
+      terminalRefs.current.delete(id);
+      tabsRef.current.delete(id);
+      setTabList((prev) => prev.filter((t) => t !== id));
+      if (activeTabId === id) {
+        const remaining = Array.from(tabsRef.current.keys());
+        if (remaining.length > 0) switchTab(remaining[remaining.length - 1]);
+        else setActiveTabId(null);
       }
-    },
-    [activeTabId, switchTab],
-  );
+    }
+  }, [activeTabId, switchTab]);
 
-  // Fit on resize
   useEffect(() => {
     const handleResize = () => {
       if (activeTabId) {
         const tab = tabsRef.current.get(activeTabId);
-        if (tab) {
-          requestAnimationFrame(() => tab.fitAddon.fit());
-        }
+        if (tab) requestAnimationFrame(() => tab.fitAddon.fit());
       }
     };
     window.addEventListener("resize", handleResize);
@@ -189,80 +169,47 @@ export function TerminalPanel() {
   }, [activeTabId]);
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        background: "#0d1117",
-      }}
-    >
-      {/* Tab bar */}
-      <div
-        style={{
-          display: "flex",
-          background: "#161b22",
-          borderBottom: "1px solid #21262d",
-          alignItems: "center",
-        }}
-      >
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg-primary)", overflow: "hidden" }}>
+      <div style={{
+        display: "flex", alignItems: "center", background: "var(--bg-secondary)",
+        borderBottom: "1px solid var(--border-default)", minHeight: 32, flexShrink: 0,
+      }} role="tablist" aria-label="Terminal tabs">
         <div style={{ display: "flex", overflow: "auto", flex: 1 }}>
           {tabList.map((id, i) => (
-            <div
-              key={id}
-              onClick={() => switchTab(id)}
-              style={{
-                padding: "4px 12px",
-                fontSize: 11,
-                cursor: "pointer",
-                color: activeTabId === id ? "#c9d1d9" : "#666",
-                background: activeTabId === id ? "#0d1117" : "transparent",
-                borderBottom:
-                  activeTabId === id ? "2px solid #58a6ff" : "2px solid transparent",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                whiteSpace: "nowrap",
-              }}
-            >
+            <div key={id} onClick={() => switchTab(id)} style={{
+              padding: "5px 12px", fontSize: 11, cursor: "pointer",
+              color: activeTabId === id ? "var(--text-primary)" : "var(--text-tertiary)",
+              background: activeTabId === id ? "var(--bg-tertiary)" : "transparent",
+              borderBottom: activeTabId === id ? "2px solid var(--accent)" : "2px solid transparent",
+              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", transition: "all 0.1s",
+            }} role="tab" aria-selected={activeTabId === id} tabIndex={activeTabId === id ? 0 : -1}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  switchTab(id);
+                }
+              }}>
+              <span style={{ fontSize: 10 }}>▸</span>
               <span>Terminal {i + 1}</span>
               {tabList.length > 1 && (
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(id);
-                  }}
-                  style={{
-                    fontSize: 10,
-                    color: "#666",
-                    cursor: "pointer",
-                    padding: "0 2px",
-                  }}
-                >
-                  ×
-                </span>
+                <span onClick={(e) => { e.stopPropagation(); closeTab(id); }}
+                  style={{ fontSize: 10, color: "var(--text-tertiary)", cursor: "pointer", padding: "0 2px", borderRadius: "var(--radius-xs)" }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = "var(--error)"}
+                  onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-tertiary)"}
+                >×</span>
               )}
             </div>
           ))}
         </div>
-        <button
-          onClick={() => createTab()}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#666",
-            cursor: "pointer",
-            padding: "4px 8px",
-            fontSize: 14,
-          }}
-          title="New Terminal"
-        >
-          +
-        </button>
+        <button onClick={() => createTab()} style={{
+          background: "none", border: "none", color: "var(--text-tertiary)",
+          cursor: "pointer", padding: "4px 10px", fontSize: 14, borderRadius: "var(--radius-sm)",
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.color = "var(--text-primary)"}
+        onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-tertiary)"}
+        title="New Terminal">+</button>
       </div>
-
-      {/* Terminal container */}
-      <div ref={containerRef} style={{ flex: 1, overflow: "hidden" }} />
+      <div ref={containerRef} style={{ flex: 1, overflow: "hidden", padding: "4px 0" }} />
     </div>
   );
 }

@@ -26,20 +26,42 @@ import type {
 } from "@ami/shared";
 import { memoryEventBus, kgEventBus } from "./events.js";
 
+export class MemoryBridgeError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = "MemoryBridgeError";
+  }
+}
+
+export class MemoryBridgeNotAvailableError extends MemoryBridgeError {
+  constructor() {
+    super(
+      "Memory bridge is not available because Tauri is not detected. " +
+      "Run `cargo tauri dev` to start the desktop app with full functionality.",
+    );
+    this.name = "MemoryBridgeNotAvailableError";
+  }
+}
+
 async function invokeCommand<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (typeof window === "undefined") {
+    throw new MemoryBridgeNotAvailableError();
+  }
+  const hasTauri = (window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__;
+  if (!hasTauri) {
+    throw new MemoryBridgeNotAvailableError();
+  }
   try {
-    if (typeof window === "undefined" || (!(window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI__)) {
-      return "mock-proc-1" as unknown as T;
-    }
     const { invoke } = await import("@tauri-apps/api/core");
     return await (invoke as <R>(command: string, payload?: Record<string, unknown>) => Promise<R>)<T>(cmd, args);
-  } catch {
-    return "mock-proc-1" as unknown as T;
+  } catch (err) {
+    throw new MemoryBridgeError(`Tauri command '${cmd}' failed`, err);
   }
 }
 
 const ipcMemoryBridge = {
-  start: (memoryDir: string) => invokeCommand<string>("start_memory_bridge", { memoryDir }),
+  start: (memoryDir: string, agentId?: string) =>
+    invokeCommand<string>("start_memory_bridge", { memoryDir, agentId }),
   stop: (processId: string) => invokeCommand<void>("stop_memory_bridge", { processId }),
 };
 
@@ -69,7 +91,6 @@ interface JsonRpcNotification {
 
 const MCP_INITIALIZE = "initialize";
 const MCP_TOOLS_CALL = "tools/call";
-const MCP_TOOLS_LIST = "tools/list";
 
 // ── Memory Bridge Implementation ──────────────────────────────────────────
 
@@ -85,10 +106,17 @@ export class MemoryBridgeClient {
   >();
   private buffer = "";
   private _started = false;
+  private _starting = false;
   private memoryDir: string | null = null;
+  private _agentId: string = "IDE";
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private lastStdoutLen = 0;
   private lastStderrLen = 0;
+  private readonly maxRetries: number;
+
+  constructor(maxRetries: number = 2) {
+    this.maxRetries = maxRetries;
+  }
 
   get isRunning(): boolean {
     return this._started;
@@ -96,66 +124,162 @@ export class MemoryBridgeClient {
 
   /**
    * Start the memory subprocess via the Rust backend.
+   * Spawns a new process with unique agent ID to avoid conflicts.
+   * Retries up to 3 times with exponential backoff.
    */
-  async start(memoryDir: string): Promise<void> {
-    if (this._started) return;
+  /** Get the current agent ID this bridge was started with. */
+  get agentId(): string {
+    return this._agentId;
+  }
+
+  async start(memoryDir: string, agentId?: string): Promise<void> {
+    if (this._started || this._starting) return;
+    this._starting = true;
     this.memoryDir = memoryDir;
+    if (agentId) this._agentId = agentId;
 
-    const processId = await ipcMemoryBridge.start(memoryDir);
-    this.processId = processId;
-    this.lastStdoutLen = 0;
-    this.lastStderrLen = 0;
+    let lastError: Error | null = null;
 
-    // Start polling stdout/stderr from Rust
-    this.pollHandle = setInterval(async () => {
-      if (!this.processId) return;
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        const [stdout, stderr, alive] = await Promise.all([
-          ipcProcess.getStdout(this.processId),
-          ipcProcess.getStderr(this.processId),
-          ipcProcess.isAlive(this.processId),
+        console.log(`[MemoryBridge] Starting (attempt ${attempt}/${this.maxRetries}) with memoryDir:`, memoryDir, "agentId:", this._agentId);
+        const processId = await ipcMemoryBridge.start(memoryDir, this._agentId);
+        console.log("[MemoryBridge] Process started, ID:", processId);
+        this.processId = processId;
+        this.lastStdoutLen = 0;
+        this.lastStderrLen = 0;
+
+        // Start polling stdout/stderr from Rust
+        this.pollHandle = setInterval(async () => {
+          if (!this.processId) return;
+          try {
+            const [stdout, stderr, alive] = await Promise.all([
+              ipcProcess.getStdout(this.processId),
+              ipcProcess.getStderr(this.processId),
+              ipcProcess.isAlive(this.processId),
+            ]);
+
+            // Feed new stdout chunks into the JSON-RPC parser
+            const newStdout = stdout.slice(this.lastStdoutLen);
+            if (newStdout) {
+              this.handleStdout(newStdout);
+              this.lastStdoutLen = stdout.length;
+            }
+
+            // Log new stderr
+            const newStderr = stderr.slice(this.lastStderrLen);
+            if (newStderr) {
+              console.warn("[MemoryBridge] stderr:", newStderr.trim());
+              this.lastStderrLen = stderr.length;
+            }
+
+            // Detect unexpected exit → attempt reconnection
+            if (!alive && this._started) {
+              console.warn("[MemoryBridge] Process exited unexpectedly, attempting reconnect...");
+              this._started = false;
+              this.rejectAllPending("Process exited");
+              if (this.pollHandle) clearInterval(this.pollHandle);
+              this.pollHandle = null;
+              // Auto-reconnect after 2s
+              setTimeout(() => this.reconnect(), 2000);
+            }
+          } catch {
+            // Polling errors are non-fatal; next tick may recover
+          }
+        }, 500);
+
+        // Wait for Python process to finish importing modules before sending
+        // the MCP initialize request. Give it 5s — imports are fast from venv.
+        await new Promise(r => setTimeout(r, 5000));
+
+        // Capture stderr + alive status BEFORE attempting handshake
+        let preHandshakeStderr = "";
+        let preHandshakeAlive = true;
+        if (this.processId) {
+          try {
+            const [stderrSnap, aliveSnap] = await Promise.all([
+              ipcProcess.getStderr(this.processId),
+              ipcProcess.isAlive(this.processId),
+            ]);
+            preHandshakeStderr = stderrSnap.slice(this.lastStderrLen);
+            preHandshakeAlive = aliveSnap;
+          } catch { /* best-effort */ }
+        }
+
+        if (!preHandshakeAlive) {
+          const errDetail = preHandshakeStderr
+            ? `\nPython stderr:\n${preHandshakeStderr.trim()}`
+            : "\n(no stderr captured)";
+          throw new Error(`Python process exited during startup${errDetail}`);
+        }
+
+        // MCP handshake with timeout (15s — should be enough after import)
+        await Promise.race([
+          this.initialize(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("MCP handshake timed out")), 15_000),
+          ),
         ]);
-
-        // Feed new stdout chunks into the JSON-RPC parser
-        const newStdout = stdout.slice(this.lastStdoutLen);
-        if (newStdout) {
-          this.handleStdout(newStdout);
-          this.lastStdoutLen = stdout.length;
+        this._starting = false;
+        this._started = true;
+        return; // Success
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        // Capture stderr for diagnostic — this is the KEY missing piece
+        let stderrContent = "";
+        if (this.processId) {
+          try {
+            stderrContent = await ipcProcess.getStderr(this.processId);
+          } catch { /* process may already be gone */ }
+        }
+        const stderrSnippet = stderrContent
+          ? `\nPython stderr:\n${stderrContent.slice(-2000).trim()}`
+          : "";
+        console.error(`[MemoryBridge] Attempt ${attempt} failed:`, lastError.message + stderrSnippet);
+        // Enrich the error so the user sees stderr in the UI
+        if (stderrSnippet && !lastError.message.includes("Python stderr")) {
+          lastError = new Error(lastError.message + stderrSnippet);
         }
 
-        // Log new stderr
-        const newStderr = stderr.slice(this.lastStderrLen);
-        if (newStderr) {
-          console.error("[MemoryBridge] stderr:", newStderr.trim());
-          this.lastStderrLen = stderr.length;
-        }
+        if (this.pollHandle) clearInterval(this.pollHandle);
+        this.pollHandle = null;
 
-        // Detect unexpected exit
-        if (!alive && this._started) {
-          console.warn("[MemoryBridge] Process exited unexpectedly");
-          this._started = false;
-          this.rejectAllPending("Process exited");
-          if (this.pollHandle) clearInterval(this.pollHandle);
+        // Kill the orphaned process so it releases the flock
+        if (this.processId) {
+          try {
+            await ipcMemoryBridge.stop(this.processId);
+            console.log("[MemoryBridge] Killed orphan process:", this.processId);
+          } catch {
+            // Best-effort cleanup
+          }
         }
-      } catch {
-        // Polling errors are non-fatal; next tick may recover
+        this.processId = null;
+
+        if (attempt < this.maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000; // 2s, 4s
+          console.log(`[MemoryBridge] Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+        }
       }
-    }, 50);
+    }
 
-    // MCP handshake with timeout
+    // All retries exhausted
+    this._starting = false;
+    this._started = false;
+    throw lastError ?? new Error("Failed to start memory bridge after retries");
+  }
+
+  /**
+   * Attempt to reconnect if the process dies mid-session.
+   */
+  private async reconnect(): Promise<void> {
+    if (this._started || !this.memoryDir) return;
+    console.log("[MemoryBridge] Reconnecting...");
     try {
-      await Promise.race([
-        this.initialize(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("MCP handshake timed out")), 10_000),
-        ),
-      ]);
-      this._started = true;
+      await this.start(this.memoryDir);
+      console.log("[MemoryBridge] Reconnected successfully");
     } catch (err) {
-      console.error("[MemoryBridge] Failed to initialize:", err);
-      this._started = false;
-      if (this.pollHandle) clearInterval(this.pollHandle);
-      throw err;
+      console.error("[MemoryBridge] Reconnection failed:", err);
     }
   }
 
@@ -188,17 +312,21 @@ export class MemoryBridgeClient {
    */
   async healthCheck(): Promise<HealthStatus> {
     try {
-      const result = await this.callTool("memory_health", {});
+      const result = await this.callTool("memory_health_check", {});
+      // memory_health_check returns: { db: { accessible }, vec_index: {...}, schema_version, ... }
+      const dbAccessible = result?.db?.accessible ?? (result?.raw ? true : false);
+      const hasErrors = result?.vec_index?.error || result?.fts?.error;
       return {
-        status: result.healthy ? "healthy" : "degraded",
+        status: dbAccessible ? (hasErrors ? "degraded" : "healthy") : "unhealthy",
         python_process: this._started,
-        db_accessible: result.db_accessible ?? true,
-        embeddings_loaded: result.embeddings_loaded ?? true,
-        version: result.version ?? "unknown",
+        db_accessible: dbAccessible,
+        embeddings_loaded: !result?.vec_index?.error,
+        version: result?.schema_version ? `v${result.schema_version}` : "unknown",
       };
     } catch {
+      // Even if health check fails, if the process is running, report degraded (not unhealthy)
       return {
-        status: "unhealthy",
+        status: this._started ? "degraded" : "unhealthy",
         python_process: this._started,
         db_accessible: false,
         embeddings_loaded: false,
@@ -215,38 +343,102 @@ export class MemoryBridgeClient {
       mode: query.mode ?? "hybrid",
       limit: query.limit ?? 15,
       category: query.category,
-      tags: query.tags,
-      min_importance: query.min_importance,
-      session_id: query.session_id,
-      project: query.project,
+      include_global: true, // Search across all agents, not just this agent's namespace
     });
+
+    // The MCP tool returns human-readable text (not JSON), so callTool wraps it as { raw: "..." }.
+    // Parse the raw text output to extract result items.
+    let results: SearchResult[] = [];
+    console.log("[MemoryBridge] search result shape:", JSON.stringify(result).slice(0, 300));
+    if (result.results && Array.isArray(result.results)) {
+      // Structured JSON response (ideal)
+      results = result.results;
+    } else if (result.raw && typeof result.raw === "string") {
+      // Parse text output: lines like "1. [note_id] category/title — content..."
+      results = this.parseTextSearchResults(result.raw);
+    }
 
     memoryEventBus.emit({
       type: "memory.searched",
       query: query.query,
-      resultCount: result.results?.length ?? 0,
+      resultCount: results.length,
     });
 
-    return result.results ?? [];
+    return results;
+  }
+
+  /**
+   * Parse human-readable search output from the MCP tool into structured results.
+   * Format: numbered lines like "1. [id] category/slug — content preview..."
+   */
+  private parseTextSearchResults(raw: string): SearchResult[] {
+    const results: SearchResult[] = [];
+    // Match lines like: "  1. [abc123] lessons/some-title (score=0.85, importance=3)"
+    // or "  1. content preview here... [category: lessons, tags: ...]"
+    const lines = raw.split("\n");
+    let currentResult: Partial<SearchResult> | null = null;
+
+    for (const line of lines) {
+      // Match numbered result line: "  N. [note_id] ..."
+      const match = line.match(/^\s*\d+\.\s*\[([^\]]+)\]\s*(.+)/);
+      if (match) {
+        if (currentResult?.note_id) {
+          results.push(currentResult as SearchResult);
+        }
+        const noteId = match[1];
+        const rest = match[2];
+        // Try to split "category/title — content"
+        const catMatch = rest.match(/^(\w+)\/([^—–-]+)[—–-]\s*(.*)/);
+        currentResult = {
+          note_id: noteId,
+          category: (catMatch?.[1] ?? "lessons") as any,
+          content: catMatch?.[3]?.trim() ?? rest,
+          score: 0,
+          tags: [],
+          source: "fts",
+          metadata: {},
+          created_at: Date.now(),
+        } as Partial<SearchResult>;
+      } else if (currentResult && line.trim() && !line.startsWith("Search results") && !line.startsWith("---")) {
+        // Continuation line — append to content
+        currentResult.content = (currentResult.content || "") + " " + line.trim();
+      }
+    }
+    if (currentResult?.note_id) {
+      results.push(currentResult as SearchResult);
+    }
+    return results;
   }
 
   async save(payload: SavePayload): Promise<NoteId> {
+    if (!payload.content) {
+      console.warn("[MemoryBridge] save called without content, returning 'unknown'");
+      return "unknown" as NoteId;
+    }
     const result = await this.callTool("memory_save", {
       content: payload.content,
       category: payload.category,
       tags: payload.tags ?? [],
-      metadata: payload.metadata ?? {},
       importance: payload.importance,
-      project: payload.project,
     });
+
+    let noteId: string;
+    if (result && typeof result.note_id === "string") {
+      noteId = result.note_id;
+    } else if (result && typeof result.raw === "string") {
+      const m = result.raw.match(/saved (?:memory|note):?\s*\S+\/(.*?)(?:\.md)?(?:\s|$)/i);
+      noteId = m ? m[1] : result.raw;
+    } else {
+      noteId = "unknown";
+    }
 
     memoryEventBus.emit({
       type: "memory.saved",
-      noteId: result.note_id,
+      noteId,
       category: payload.category,
     });
 
-    return result.note_id;
+    return noteId as NoteId;
   }
 
   async recall(
@@ -256,6 +448,7 @@ export class MemoryBridgeClient {
     const result = await this.callTool("memory_recall", {
       query,
       session_id: sessionId,
+      include_global: true,
     });
     return result;
   }
@@ -318,7 +511,7 @@ export class MemoryBridgeClient {
   async reviewBeliefs(params: {
     minConfidence?: number;
   }): Promise<BeliefAssertion[]> {
-    const result = await this.callTool("memory_beliefs", {
+    const result = await this.callTool("memory_review_beliefs", {
       min_confidence: params.minConfidence ?? 0.0,
     });
     return result.beliefs ?? [];
@@ -331,6 +524,114 @@ export class MemoryBridgeClient {
       hours: params.hours ?? 2,
     });
     return result.entries ?? [];
+  }
+
+  // ── Multi-Agent Coordination Operations ─────────────────────────────
+
+  /**
+   * Execute multi-agent coordination tool (memory_coordinate).
+   * Supports actions: create_task, claim_task, update_task_status, release_task, complete_task, list_tasks, lock_file, unlock_file, check_lock, send_message, read_messages, get_project_state, update_project_state.
+   */
+  async coordinate(action: string, params: Record<string, unknown> = {}): Promise<any> {
+    return await this.callTool("memory_coordinate", {
+      action,
+      ...params,
+    });
+  }
+
+  async coordinateTask(
+    action: "create_task" | "claim_task" | "update_task_status" | "release_task" | "complete_task" | "list_tasks",
+    params: Record<string, unknown> = {},
+  ): Promise<any> {
+    return await this.coordinate(action, params);
+  }
+
+  async coordinateLock(
+    action: "lock_file" | "unlock_file" | "check_lock",
+    params: Record<string, unknown> = {},
+  ): Promise<any> {
+    return await this.coordinate(action, params);
+  }
+
+  async coordinateMessage(
+    action: "send_message" | "read_messages",
+    params: Record<string, unknown> = {},
+  ): Promise<any> {
+    return await this.coordinate(action, params);
+  }
+
+  async coordinateState(
+    action: "get_project_state" | "update_project_state",
+    params: Record<string, unknown> = {},
+  ): Promise<any> {
+    return await this.coordinate(action, params);
+  }
+
+  // ── Memory Sharing Operations ──────────────────────────────────────────
+
+  /**
+   * Share a memory entry with another agent or globally (memory_share CORE tool).
+   */
+  async shareMemory(noteId: string, shareWith?: string): Promise<any> {
+    return await this.callTool("memory_share", {
+      note_id: noteId,
+      share_with: shareWith ?? "",
+      action: "share",
+    });
+  }
+
+  // ── Maintenance Router Operations (ADMIN Tools) ───────────────────────
+
+  /**
+   * Execute admin/maintenance operations via the memory_maintenance CORE tool router.
+   */
+  async maintenance(operation: string, params: Record<string, unknown> = {}): Promise<any> {
+    return await this.callTool("memory_maintenance", {
+      operation,
+      ...params,
+    });
+  }
+
+  async listAgents(): Promise<any> {
+    return await this.maintenance("agent_list");
+  }
+
+  async initAgent(
+    agentId: string,
+    options?: { displayName?: string; parentAgent?: string; namespace?: string },
+  ): Promise<any> {
+    return await this.maintenance("agent_init", {
+      agent_id: agentId,
+      display_name: options?.displayName ?? "",
+      parent_agent: options?.parentAgent ?? "",
+      namespace: options?.namespace ?? "",
+    });
+  }
+
+  async clearAgent(): Promise<any> {
+    return await this.maintenance("agent_clear", {
+      confirm: true,
+    });
+  }
+
+  async listSharedMemories(shareAgentId?: string): Promise<any> {
+    return await this.maintenance("shared_list", {
+      share_agent_id: shareAgentId,
+    });
+  }
+
+  async importSharedMemory(sharedId: string, targetAgentId: string): Promise<any> {
+    return await this.maintenance("shared_import", {
+      shared_id: sharedId,
+      target_agent_id: targetAgentId,
+      confirm: true,
+    });
+  }
+
+  // ── Delete ────────────────────────────────────────────────────────────
+
+  async delete(noteId: string): Promise<void> {
+    await this.callTool("memory_delete", { note_id: noteId });
   }
 
   // ── Event Subscription ────────────────────────────────────────────────
@@ -356,7 +657,7 @@ export class MemoryBridgeClient {
     });
   }
 
-  private async callTool(
+  async callTool(
     name: string,
     args: Record<string, unknown>,
   ): Promise<any> {
@@ -366,6 +667,11 @@ export class MemoryBridgeClient {
     });
 
     const resp = response as any;
+    // DEBUG: log raw MCP response shape
+    console.log("[MemoryBridge] callTool raw response keys:", Object.keys(resp), "content type:", typeof resp?.content, "content length:", resp?.content?.length);
+    if (resp?.content?.[0]) {
+      console.log("[MemoryBridge] content[0]:", JSON.stringify(resp.content[0]).slice(0, 500));
+    }
     if (resp?.content) {
       const textContent = resp.content.find(
         (c: any) => c.type === "text",
@@ -382,33 +688,32 @@ export class MemoryBridgeClient {
     return response ?? {};
   }
 
-  private sendRequest(
+  private async sendRequest(
     method: string,
     params?: unknown,
   ): Promise<unknown> {
+    const id = ++this.requestId;
+    const request: JsonRpcRequest = {
+      jsonrpc: "2.0",
+      id,
+      method,
+      params,
+    };
+
+    // Use stdio transport via Rust IPC
     return new Promise((resolve, reject) => {
       if (!this.processId) {
         reject(new Error("Memory process not running"));
         return;
       }
 
-      const id = ++this.requestId;
-      const request: JsonRpcRequest = {
-        jsonrpc: "2.0",
-        id,
-        method,
-        params,
-      };
-
       this.pendingRequests.set(id, { resolve, reject });
 
       const line = JSON.stringify(request) + "\n";
 
-      // Write to process stdin via Rust IPC
       ipcProcess
         .writeStdin(this.processId, line)
         .then(() => {
-          // Timeout after 60 seconds
           setTimeout(() => {
             if (this.pendingRequests.has(id)) {
               this.pendingRequests.delete(id);
@@ -487,7 +792,7 @@ export class MemoryBridgeClient {
   }
 
   private rejectAllPending(reason: string): void {
-    for (const [id, pending] of this.pendingRequests) {
+    for (const [, pending] of this.pendingRequests) {
       pending.reject(new Error(reason));
     }
     this.pendingRequests.clear();

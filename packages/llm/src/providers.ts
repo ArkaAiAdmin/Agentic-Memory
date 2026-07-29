@@ -44,6 +44,27 @@ export const PROVIDER_DEFAULTS: Record<ProviderConfig["type"], { baseUrl: string
   litellm: { baseUrl: "http://localhost:4000", defaultModel: "gpt-4o" },
 };
 
+// ── Injectable fetch transport ───────────────────────────────────────────
+//
+// Cloud LLM endpoints reject browser-origin requests (CORS) and expose keys to
+// the webview network stack. The desktop app injects a Rust-backed fetch (via
+// `setFetchImpl`) that proxies the call through the native backend. In non-Tauri
+// contexts (tests, web) this falls back to the global `fetch`.
+
+export type FetchImpl = (url: string, init?: RequestInit) => Promise<Response>;
+
+let fetchImpl: FetchImpl = (url, init) => fetch(url, init);
+
+/** Override the HTTP transport used by all providers (e.g. a Tauri proxy). */
+export function setFetchImpl(fn: FetchImpl): void {
+  fetchImpl = fn;
+}
+
+/** The active HTTP transport. Defaults to the global `fetch`. */
+export function getFetchImpl(): FetchImpl {
+  return fetchImpl;
+}
+
 // ── SSE Stream Utilities ───────────────────────────────────────────────────
 
 async function* sseStream(
@@ -121,12 +142,10 @@ abstract class BaseHttpProvider implements LLMProvider {
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
-    const res = await fetch(url, {
+    const res = await fetchImpl(url, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      // @ts-ignore - Tauri webview may not have all fetch options
-      // but standard fetch should work
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "Unknown error");
@@ -205,13 +224,33 @@ export class AnthropicProvider extends BaseHttpProvider {
       model: params.model,
       max_tokens: params.maxTokens ?? 4096,
       system: params.systemPrompt || undefined,
-      messages: params.messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-        ...(m.tool_calls?.length
-          ? { content: m.tool_calls.map((tc) => ({ type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments })) }
-          : {}),
-      })),
+      messages: params.messages.map((m) => {
+        if (m.role === "tool") {
+          return {
+            role: "user",
+            content: [{
+              type: "tool_result",
+              tool_use_id: m.tool_call_id,
+              content: m.content,
+            }],
+          };
+        }
+        if (m.role === "assistant" && m.tool_calls?.length) {
+          return {
+            role: m.role,
+            content: m.tool_calls.map((tc) => ({
+              type: "tool_use",
+              id: tc.id,
+              name: tc.name,
+              input: tc.arguments,
+            })),
+          };
+        }
+        return {
+          role: m.role,
+          content: m.content,
+        };
+      }),
       stream: true,
       tools: params.tools.length
         ? params.tools.map((t) => ({
@@ -228,7 +267,7 @@ export class AnthropicProvider extends BaseHttpProvider {
       "x-api-key": this.apiKey,
     };
 
-    const res = await fetch(url, {
+    const res = await fetchImpl(url, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -331,7 +370,7 @@ export class GoogleProvider extends BaseHttpProvider {
       ];
     }
 
-    const res = await fetch(url, {
+    const res = await fetchImpl(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -349,7 +388,16 @@ export class GoogleProvider extends BaseHttpProvider {
 // ── LM Studio Provider ─────────────────────────────────────────────────────
 
 export class LMStudioProvider extends BaseHttpProvider {
-  getModelLimits(model: string): { context: number; output: number } {
+  constructor(apiKey: string, baseUrl: string) {
+    // Auto-append /v1 if user provides bare host URL (e.g. http://192.168.0.6:1234)
+    let normalizedUrl = baseUrl.replace(/\/$/, "");
+    if (!normalizedUrl.endsWith("/v1")) {
+      normalizedUrl += "/v1";
+    }
+    super(apiKey, normalizedUrl);
+  }
+
+  getModelLimits(_model: string): { context: number; output: number } {
     return { context: 32768, output: 4096 };
   }
 
@@ -382,7 +430,7 @@ export class LMStudioProvider extends BaseHttpProvider {
 // ── Ollama Provider ────────────────────────────────────────────────────────
 
 export class OllamaProvider extends BaseHttpProvider {
-  getModelLimits(model: string): { context: number; output: number } {
+  getModelLimits(_model: string): { context: number; output: number } {
     return { context: 32768, output: 4096 };
   }
 
@@ -417,8 +465,8 @@ export class OllamaProvider extends BaseHttpProvider {
 // ── LiteLLM Proxy Provider ─────────────────────────────────────────────────
 
 export class LiteLLMProxyProvider extends BaseHttpProvider {
-  getModelLimits(model: string): { context: number; output: number } {
-    return { context: 128000, output: 4096 };
+  getModelLimits(_model: string): { context: number; output: number } {
+    return { context: 32768, output: 4096 };
   }
 
   async *chat(params: ChatParams): AsyncIterable<ChatChunk> {
@@ -453,9 +501,9 @@ export const providerRegistry: Record<
   ProviderConfig["type"],
   (config: ProviderConfig) => LLMProvider
 > = {
-  openai: (config) => new OpenAIProvider(config.apiKey || "", PROVIDER_DEFAULTS.openai.baseUrl),
-  anthropic: (config) => new AnthropicProvider(config.apiKey || "", PROVIDER_DEFAULTS.anthropic.baseUrl),
-  google: (config) => new GoogleProvider(config.apiKey || "", PROVIDER_DEFAULTS.google.baseUrl),
+  openai: (config) => new OpenAIProvider(config.apiKey || "", config.baseUrl || PROVIDER_DEFAULTS.openai.baseUrl),
+  anthropic: (config) => new AnthropicProvider(config.apiKey || "", config.baseUrl || PROVIDER_DEFAULTS.anthropic.baseUrl),
+  google: (config) => new GoogleProvider(config.apiKey || "", config.baseUrl || PROVIDER_DEFAULTS.google.baseUrl),
   lmstudio: (config) => new LMStudioProvider(config.apiKey || "", config.baseUrl || PROVIDER_DEFAULTS.lmstudio.baseUrl),
   ollama: (config) => new OllamaProvider(config.apiKey || "", config.baseUrl || PROVIDER_DEFAULTS.ollama.baseUrl),
   litellm: (config) => new LiteLLMProxyProvider(config.apiKey || "", config.baseUrl || PROVIDER_DEFAULTS.litellm.baseUrl),

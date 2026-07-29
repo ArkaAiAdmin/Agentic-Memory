@@ -10,5 +10,11 @@ export type {
   BridgeEvent,
   HealthCheckResult,
   MemoryBridgeConfig,
+  CoordinateAction,
+  TaskParams,
+  LockParams,
+  MessageParams,
+  ProjectStateParams,
+  AgentInitOptions,
 } from "./types.js";
 export { DEFAULT_BRIDGE_CONFIG } from "./types.js";

@@ -1,7 +1,20 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useAgent } from "../../hooks/useAgent";
-import { useAppStore, type ChatMessage } from "../../stores/appStore";
-import { nanoid } from "nanoid";
+import { useAppStore } from "../../stores/appStore";
+import {
+  setApprovalCallback,
+  allowAlways,
+  type ToolApprovalRequest,
+  type ToolApprovalDecision,
+} from "../../services/toolApproval";
+import { ToolCallCard } from "./ToolCallCard";
+import { ModeSelector } from "./ModeSelector";
+import { MentionAutocomplete, useMention } from "./MentionAutocomplete";
+import { MessageBubble } from "./MessageBubble";
+import { TypingIndicator, Button } from "../ui";
+import chatStyles from "../../styles/chat.module.css";
+import { exportChatAsMarkdown, downloadBlob } from "../../services/exportData";
+import "highlight.js/styles/github-dark.css";
 
 interface ChatPanelProps {
   sessionId?: string;
@@ -13,199 +26,219 @@ export function ChatPanel({ sessionId = "default" }: ChatPanelProps) {
     sendMessage,
     isStreaming,
     isInitialized,
+    abort,
   } = useAgent(sessionId);
   const [input, setInput] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState<
+    Map<string, { request: ToolApprovalRequest; resolve: (d: ToolApprovalDecision) => void }>
+  >(new Map());
 
-  // Auto-scroll to bottom
+  const mention = useMention(input, (item) => {
+    const lastAtIndex = input.lastIndexOf("@");
+    const before = input.slice(0, lastAtIndex);
+    const after = input.slice(lastAtIndex + 1 + mention.query.length);
+    setInput(`${before}@${item.value} ${after}`);
+  });
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+    setApprovalCallback(async (request) => {
+      return new Promise<ToolApprovalDecision>((resolve) => {
+        setPendingApprovals((prev) => {
+          const next = new Map(prev);
+          next.set(request.id, { request, resolve });
+          return next;
+        });
+      });
+    });
+    return () => setApprovalCallback(null);
+  }, []);
+
+  const handleApproval = useCallback((requestId: string, decision: ToolApprovalDecision) => {
+    setPendingApprovals((prev) => {
+      const entry = prev.get(requestId);
+      if (entry) {
+        if (decision === "always_allow") allowAlways(entry.request.toolName);
+        entry.resolve(decision);
+        const next = new Map(prev);
+        next.delete(requestId);
+        return next;
+      }
+      return prev;
+    });
+  }, []);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Handle scroll position for "scroll to bottom" button
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    setShowScrollBtn(!isNearBottom && chatMessages.length > 0);
+  }, [chatMessages.length]);
+
+  // Auto-scroll when new messages come in
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+    if (isNearBottom) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, [chatMessages, pendingApprovals]);
+
+  const scrollToBottom = useCallback(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
-
     const prompt = input.trim();
     setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     await sendMessage(prompt);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
+  // Auto-grow textarea
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  };
+
+  const providerConfig = useAppStore((s) => s.providerConfig);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       {/* Header */}
-      <div
-        style={{
-          padding: "8px 12px",
-          borderBottom: "1px solid #2a2a4a",
-          fontSize: 12,
-          fontWeight: 600,
-          color: "#888",
-        }}
-      >
-        Agent Chat
-        {isStreaming && (
-          <span style={{ color: "#4caf50", marginLeft: 8 }}>● streaming</span>
-        )}
-        {!isInitialized && !isStreaming && (
-          <span style={{ color: "#ff9800", marginLeft: 8 }}>● initializing</span>
-        )}
+      <div className={chatStyles.chatInputFooter} style={{
+        padding: "10px 16px", borderBottom: "1px solid var(--border-default)",
+        justifyContent: "space-between", margin: 0,
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 8 }}>
+          Chat
+          {isStreaming && (
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s ease-in-out infinite" }} />
+              <span style={{ color: "var(--success)", fontSize: 10 }}>streaming</span>
+            </span>
+          )}
+          {!isInitialized && !isStreaming && (
+            <span style={{ color: "var(--warning)", fontSize: 10 }}>initializing...</span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {chatMessages.length > 0 && (
+            <button
+              onClick={() => {
+                const md = exportChatAsMarkdown(chatMessages);
+                downloadBlob(md, `chat-${new Date().toISOString().slice(0, 10)}.md`, "text/markdown");
+              }}
+              style={{
+                padding: "2px 8px", fontSize: 10, borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-default)", background: "transparent",
+                color: "var(--text-tertiary)", cursor: "pointer",
+              }}
+              title="Export as Markdown"
+            >
+              Export
+            </button>
+          )}
+          {isStreaming && (
+            <Button variant="ghost" size="sm" onClick={abort}>
+              Stop
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
-        {chatMessages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div
-        style={{
-          padding: 12,
-          borderTop: "1px solid #2a2a4a",
-          display: "flex",
-          gap: 8,
-        }}
-      >
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Message the agent..."
-          disabled={isStreaming}
-          style={{
-            flex: 1,
-            background: "#16213e",
-            border: "1px solid #2a2a4a",
-            borderRadius: 6,
-            padding: 8,
-            color: "#e0e0e0",
-            fontSize: 13,
-            resize: "none",
-            minHeight: 36,
-            maxHeight: 120,
-            fontFamily: "inherit",
-          }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={isStreaming || !input.trim()}
-          style={{
-            background: isStreaming ? "#333" : "#4a9eff",
-            border: "none",
-            borderRadius: 6,
-            color: "#fff",
-            padding: "8px 16px",
-            cursor: isStreaming ? "not-allowed" : "pointer",
-            fontSize: 13,
-            fontWeight: 600,
-          }}
+      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          role="log"
+          aria-live="polite"
+          style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}
         >
-          Send
-        </button>
-      </div>
-    </div>
-  );
-}
+          {chatMessages.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-tertiary)" }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>💬</div>
+              <div style={{ fontSize: 14, color: "var(--text-secondary)", fontWeight: 500 }}>Start a conversation</div>
+              <div style={{ fontSize: 12, marginTop: 6, maxWidth: 280, margin: "6px auto 0" }}>
+                The agent uses memory for context-aware responses. Type a message or use @ to mention files.
+              </div>
+            </div>
+          )}
+          {chatMessages.map((msg) => (
+            <MessageBubble key={msg.id} message={msg} />
+          ))}
+          {isStreaming && chatMessages[chatMessages.length - 1]?.role === "assistant" && !chatMessages[chatMessages.length - 1]?.content && (
+            <div className={chatStyles.thinking}>
+              <TypingIndicator />
+            </div>
+          )}
+          {Array.from(pendingApprovals.entries()).map(([id, { request }]) => (
+            <div key={id} style={{ padding: "8px 18px" }}>
+              <ToolCallCard request={request} onDecide={handleApproval} />
+            </div>
+          ))}
+        </div>
 
-// ── Message Bubble ────────────────────────────────────────────────────────
-
-function MessageBubble({ message }: { message: ChatMessage }) {
-  const isUser = message.role === "user";
-
-  return (
-    <div
-      style={{
-        marginBottom: 12,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: isUser ? "flex-end" : "flex-start",
-      }}
-    >
-      {/* Role label */}
-      <span
-        style={{
-          fontSize: 10,
-          color: "#666",
-          marginBottom: 2,
-          padding: "0 4px",
-        }}
-      >
-        {isUser ? "You" : "Agent"}
-      </span>
-
-      {/* Message content */}
-      <div
-        style={{
-          background: isUser ? "#4a9eff" : "#2a2a4a",
-          color: isUser ? "#fff" : "#e0e0e0",
-          padding: "8px 12px",
-          borderRadius: 8,
-          maxWidth: "85%",
-          fontSize: 13,
-          lineHeight: 1.5,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      >
-        {message.content || (
-          <span style={{ color: "#666" }}>...</span>
+        {/* Scroll to bottom */}
+        {showScrollBtn && (
+          <button className={chatStyles.scrollToBottom} onClick={scrollToBottom}>
+            ↓ New messages
+          </button>
         )}
       </div>
 
-      {/* Tool calls */}
-      {message.toolCalls?.map((tc, i) => (
-        <div
-          key={i}
-          style={{
-            marginTop: 4,
-            background: "#1a1a2e",
-            border: "1px solid #2a2a4a",
-            borderRadius: 6,
-            padding: "6px 10px",
-            fontSize: 11,
-            maxWidth: "85%",
-          }}
-        >
-          <div style={{ color: "#82aaff", fontWeight: 600 }}>
-            🔧 {tc.name}
-            <span
-              style={{
-                marginLeft: 8,
-                color:
-                  tc.status === "completed"
-                    ? "#4caf50"
-                    : tc.status === "error"
-                      ? "#f44336"
-                      : "#ff9800",
-              }}
-            >
-              {tc.status}
-            </span>
+      {/* Input area */}
+      <div className={chatStyles.chatInput}>
+        <MentionAutocomplete isOpen={mention.isOpen} query={mention.query} onSelect={mention.onSelect} onClose={mention.onClose} />
+
+        <div className={chatStyles.chatInputBox}>
+          <div style={{ marginBottom: 6 }}>
+            <ModeSelector />
           </div>
-          {tc.result && (
-            <pre
-              style={{
-                marginTop: 4,
-                color: "#888",
-                fontSize: 10,
-                overflow: "auto",
-                maxHeight: 100,
-              }}
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Message the agent... (@ for mentions, Shift+Enter for newline)"
+            disabled={isStreaming}
+            aria-label="Chat message input"
+            className={chatStyles.chatTextarea}
+            rows={1}
+          />
+          <div className={chatStyles.chatInputFooter}>
+            <div className={chatStyles.chatModelPill}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: isInitialized ? "var(--success)" : "var(--warning)" }} />
+              {providerConfig.model || providerConfig.type}
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSend}
+              disabled={isStreaming || !input.trim()}
+              aria-label="Send message"
             >
-              {tc.result.slice(0, 500)}
-            </pre>
-          )}
+              Send
+            </Button>
+          </div>
         </div>
-      ))}
+      </div>
     </div>
   );
 }
+

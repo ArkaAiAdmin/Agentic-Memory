@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::State;
 use crate::AppState;
 
@@ -7,7 +8,7 @@ pub async fn create_pty(
     cols: u16,
     rows: u16,
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let manager = &state.pty_manager;
     manager
@@ -21,13 +22,21 @@ pub async fn create_pty(
 pub async fn write_pty(
     pty_id: String,
     data: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let manager = &state.pty_manager;
-    manager
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?
-        .write(&pty_id, data.as_bytes())
+    use std::io::Write;
+    let data_bytes = data.into_bytes();
+    let instance = {
+        let manager = state.pty_manager.lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        manager.get_instance(&pty_id)
+            .ok_or_else(|| format!("PTY not found: {}", pty_id))?
+            .clone()
+    };
+
+    let mut guard = instance.lock()
+        .map_err(|_| format!("Lock error on PTY instance"))?;
+    guard.writer.write_all(&data_bytes)
         .map_err(|e| format!("Failed to write to PTY: {}", e))
 }
 
@@ -36,7 +45,7 @@ pub async fn resize_pty(
     pty_id: String,
     cols: u16,
     rows: u16,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let manager = &state.pty_manager;
     manager
@@ -49,7 +58,7 @@ pub async fn resize_pty(
 #[tauri::command]
 pub async fn destroy_pty(
     pty_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let manager = &state.pty_manager;
     manager

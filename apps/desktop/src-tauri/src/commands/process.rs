@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::io::Write;
+use std::sync::Arc;
 use tauri::State;
 use crate::AppState;
 
@@ -24,7 +25,7 @@ pub async fn run_command(
     command: String,
     cwd: String,
     env: Option<std::collections::HashMap<String, String>>,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<CommandResult, String> {
     let proc_mgr = &state.process;
     let result = proc_mgr
@@ -44,7 +45,7 @@ pub async fn run_command(
 pub async fn run_background(
     command: String,
     cwd: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let proc_mgr = &state.process;
     proc_mgr
@@ -57,7 +58,7 @@ pub async fn run_background(
 #[tauri::command]
 pub async fn get_output(
     process_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let proc_mgr = &state.process;
     proc_mgr
@@ -70,7 +71,7 @@ pub async fn get_output(
 #[tauri::command]
 pub async fn get_stdout(
     process_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let proc_mgr = &state.process;
     proc_mgr
@@ -83,7 +84,7 @@ pub async fn get_stdout(
 #[tauri::command]
 pub async fn get_stderr(
     process_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let proc_mgr = &state.process;
     proc_mgr
@@ -96,7 +97,7 @@ pub async fn get_stderr(
 #[tauri::command]
 pub async fn get_managed_info(
     process_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<ManagedProcessStatus, String> {
     let proc_mgr = &state.process;
     let info = proc_mgr
@@ -117,7 +118,7 @@ pub async fn get_managed_info(
 #[tauri::command]
 pub async fn is_process_alive(
     process_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<bool, String> {
     let proc_mgr = &state.process;
     let info = proc_mgr
@@ -132,7 +133,7 @@ pub async fn is_process_alive(
 #[tauri::command]
 pub async fn kill_process(
     process_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let proc_mgr = &state.process;
     proc_mgr
@@ -146,7 +147,7 @@ pub async fn kill_process(
 pub async fn write_process_stdin(
     process_id: String,
     data: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let proc_mgr = &state.process;
     let mut guard = proc_mgr
@@ -162,6 +163,9 @@ pub async fn write_process_stdin(
         stdin
             .write_all(data.as_bytes())
             .map_err(|e| format!("Write failed: {}", e))?;
+        stdin
+            .flush()
+            .map_err(|e| format!("Flush failed: {}", e))?;
         Ok(())
     } else {
         Err("Process stdin is not available".to_string())

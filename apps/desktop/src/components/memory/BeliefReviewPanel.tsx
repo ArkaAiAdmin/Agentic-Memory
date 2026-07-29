@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { memoryBridge } from "@ami/memory-bridge";
 import type { BeliefAssertion } from "@ami/shared";
@@ -20,6 +20,8 @@ export function BeliefReviewPanel() {
     "all",
   );
 
+  const staleThreshold = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
   const loadBeliefs = useCallback(async () => {
     if (!memoryBridge.isRunning) return;
     setLoading(true);
@@ -34,13 +36,17 @@ export function BeliefReviewPanel() {
   }, []);
 
   useEffect(() => {
-    loadBeliefs();
+    let cancelled = false;
+    loadBeliefs().then(() => {
+      if (!cancelled) {}
+    }).catch(console.error);
+    return () => { cancelled = true; };
   }, [loadBeliefs]);
 
   const filteredBeliefs = beliefs.filter((b) => {
     if (filter === "low_confidence") return b.confidence < 0.5;
     if (filter === "stale") {
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const thirtyDaysAgo = staleThreshold;
       return b.created_at < thirtyDaysAgo;
     }
     return true;

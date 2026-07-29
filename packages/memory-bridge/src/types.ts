@@ -109,3 +109,52 @@ export const DEFAULT_BRIDGE_CONFIG: MemoryBridgeConfig = {
   startupTimeoutMs: 30_000,
   healthCheckIntervalMs: 60_000,
 };
+
+// ── Coordination & Multi-Agent Types ────────────────────────────────────
+
+export type CoordinateAction =
+  | "create_task"
+  | "claim_task"
+  | "update_task_status"
+  | "release_task"
+  | "complete_task"
+  | "list_tasks"
+  | "lock_file"
+  | "unlock_file"
+  | "check_lock"
+  | "send_message"
+  | "read_messages"
+  | "get_project_state"
+  | "update_project_state";
+
+export interface TaskParams {
+  project_id?: string;
+  task_type?: string;
+  description?: string;
+  assigned_to?: string;
+  task_id?: string;
+  status?: string;
+}
+
+export interface LockParams {
+  file_path: string;
+}
+
+export interface MessageParams {
+  to_agent?: string;
+  message_type?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ProjectStateParams {
+  project_id: string;
+  key?: string;
+  value?: unknown;
+}
+
+export interface AgentInitOptions {
+  displayName?: string;
+  parentAgent?: string;
+  namespace?: string;
+}
+

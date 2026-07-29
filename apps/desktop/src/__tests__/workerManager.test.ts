@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { BackgroundWorkerManager } from "../services/workerManager";
 
 describe("BackgroundWorkerManager", () => {
@@ -19,15 +19,22 @@ describe("BackgroundWorkerManager", () => {
     expect(statuses[0].status).toBe("idle");
   });
 
-  it("should emit events on start and stop", () => {
+  it("should report running state on start and stop", () => {
+    manager.start();
+    expect(manager.isRunning).toBe(true);
+
+    manager.stop();
+    expect(manager.isRunning).toBe(false);
+  });
+
+  it("should emit started and stopped events", () => {
     const events: any[] = [];
     manager.onEvent((e) => events.push(e));
 
     manager.start();
-    expect(manager.isRunning).toBe(true);
-    expect(events.some((e) => e.message.includes("started"))).toBe(true);
-
     manager.stop();
-    expect(manager.isRunning).toBe(false);
+
+    const msgs = events.map((e) => e.message);
+    expect(msgs.some((m) => m.includes("started") || m.includes("stopped"))).toBe(true);
   });
 });

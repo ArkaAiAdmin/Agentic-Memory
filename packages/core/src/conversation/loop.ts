@@ -12,13 +12,9 @@
 import type {
   Message,
   TurnEvent,
-  ToolResult,
-  ToolDefinition,
   SessionId,
-  ContextParams,
 } from "@ami/shared";
 import type { LLMProvider } from "@ami/llm";
-import type { MemoryBridgeClient } from "@ami/memory-bridge";
 import type { ContextBuilder } from "../context/builder.js";
 import type { ToolExecutor } from "../tools/executor.js";
 import type { ToolRegistry } from "../tools/registry.js";
@@ -27,6 +23,7 @@ export interface ConversationConfig {
   model: string;
   maxTurns: number;
   temperature: number;
+  maxTokens?: number;
   systemPrompt?: string;
 }
 
@@ -40,7 +37,6 @@ export class ConversationLoop {
     private readonly contextBuilder: ContextBuilder,
     private readonly toolRegistry: ToolRegistry,
     private readonly toolExecutor: ToolExecutor,
-    private readonly memory: MemoryBridgeClient,
     private readonly sessionId: SessionId,
   ) {}
 
@@ -74,15 +70,12 @@ export class ConversationLoop {
           tools: toolDefs,
           systemPrompt: context.systemPrompt,
           temperature: this.config.temperature,
+          maxTokens: this.config.maxTokens,
         });
 
         // 3. Process streaming response
         let hasToolCalls = false;
-        const toolCalls: Array<{
-          id: string;
-          name: string;
-          args: Record<string, unknown>;
-        }> = [];
+        const toolCallsAccumulators: Map<string, { id: string; name: string; argsBuffer: string }> = new Map();
         let textBuffer = "";
 
         for await (const chunk of response) {
@@ -92,34 +85,20 @@ export class ConversationLoop {
               yield { type: "text", text: chunk.text };
               break;
 
-            case "tool_call":
+            case "tool_call": {
               hasToolCalls = true;
-              // Accumulate tool call arguments (streaming)
-              const existing = toolCalls.find((tc) => tc.id === chunk.id);
+              const existing = toolCallsAccumulators.get(chunk.id);
               if (existing) {
-                // Merge arguments
-                try {
-                  const newArgs = JSON.parse(chunk.arguments);
-                  Object.assign(existing.args, newArgs);
-                } catch {
-                  // Partial JSON — will be completed in next chunk
-                }
+                existing.argsBuffer += chunk.arguments;
               } else {
-                try {
-                  toolCalls.push({
-                    id: chunk.id,
-                    name: chunk.name,
-                    args: JSON.parse(chunk.arguments || "{}"),
-                  });
-                } catch {
-                  toolCalls.push({
-                    id: chunk.id,
-                    name: chunk.name,
-                    args: {},
-                  });
-                }
+                toolCallsAccumulators.set(chunk.id, {
+                  id: chunk.id,
+                  name: chunk.name,
+                  argsBuffer: chunk.arguments || "",
+                });
               }
               break;
+            }
 
             case "done":
               break;
@@ -136,21 +115,18 @@ export class ConversationLoop {
         }
 
         // 5. Process tool calls
-        if (hasToolCalls && toolCalls.length > 0) {
-          for (const tc of toolCalls) {
+        const resolvedToolCalls = [...toolCallsAccumulators.entries()].map(([_callId, acc]) => {
+          let args: Record<string, unknown> = {};
+          try { args = JSON.parse(acc.argsBuffer); } catch { /* use empty */ }
+          return { id: acc.id, name: acc.name, args };
+        });
+
+        if (hasToolCalls && resolvedToolCalls.length > 0) {
+          for (const tc of resolvedToolCalls) {
             yield { type: "tool_call", toolName: tc.name, args: tc.args };
 
-            // Execute tool
             const result = await this.toolExecutor.execute(tc.name, tc.args);
 
-            // Write tool execution to memory (this is the key difference)
-            await this.memory.save({
-              content: `Tool: ${tc.name}\nArgs: ${JSON.stringify(tc.args).slice(0, 500)}\nResult: ${result.preview}`,
-              category: "auto_save",
-              tags: [tc.name, "tool-result"],
-            });
-
-            // Add tool result to messages
             this.messages.push({
               role: "tool",
               content: result.output,

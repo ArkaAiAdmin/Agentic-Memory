@@ -34,7 +34,7 @@ export interface WorkerInfo {
 }
 
 export interface WorkerEvent {
-  type: "started" | "completed" | "error" | "progress";
+  type: "started" | "completed" | "error" | "progress" | "stopped";
   workerType: WorkerType;
   message: string;
   progress?: number;
@@ -52,60 +52,80 @@ interface WorkerDefinition {
   description: string;
 }
 
+function discoverPython(memoryDir: string): { pythonPath: string; scriptDir: string } {
+  const scriptDir = memoryDir;
+  const candidates: string[] = [
+    `${memoryDir}/venv/bin/python`,
+    `${memoryDir}/.venv/bin/python`,
+    "/opt/homebrew/bin/python3",
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/opt/homebrew/opt/python@3.13/bin/python3.13",
+    "/opt/homebrew/opt/python@3.12/bin/python3.12",
+    "/usr/local/bin/python3",
+    "/usr/bin/python3",
+  ];
+  for (const candidate of candidates) {
+    if (typeof window === "undefined" && require("fs").existsSync(candidate)) {
+      return { pythonPath: candidate, scriptDir };
+    }
+  }
+  return { pythonPath: "python3", scriptDir };
+}
+
 const WORKER_DEFINITIONS: WorkerDefinition[] = [
   {
     type: "index_rebuild",
-    command: "python",
-    args: ["-m", "agentic_memory.background.indexer", "--rebuild"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_embedding_recompute.py", "--rebuild"],
     intervalMs: null,
     description: "Rebuild search indices when project files change",
   },
   {
     type: "embedding",
-    command: "python",
-    args: ["-m", "agentic_memory.background.embedding_worker"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_embedding_recompute.py"],
     intervalMs: 30_000,
     description: "Compute embeddings for new memories",
   },
   {
     type: "contradiction",
-    command: "python",
-    args: ["-m", "agentic_memory.background.contradiction_detector"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_resolve_contradictions.py"],
     intervalMs: 60_000,
     description: "Detect contradictions between memories",
   },
   {
     type: "kg_extraction",
-    command: "python",
-    args: ["-m", "agentic_memory.background.kg_extractor"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_kg_backfill.py"],
     intervalMs: 45_000,
     description: "Extract entities and facts from new memories",
   },
   {
     type: "health_check",
-    command: "python",
-    args: ["-m", "agentic_memory.background.health_check"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_health_check.py"],
     intervalMs: 120_000,
     description: "Check memory system health",
   },
   {
     type: "integrity_check",
-    command: "python",
-    args: ["-m", "agentic_memory.background.integrity_check"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_integrity_check.py"],
     intervalMs: 300_000,
     description: "Verify database integrity",
   },
   {
     type: "consolidation",
-    command: "python",
-    args: ["-m", "agentic_memory.background.consolidation"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_consolidate.py"],
     intervalMs: 600_000,
     description: "Consolidate and merge duplicate memories",
   },
   {
     type: "backup",
-    command: "python",
-    args: ["-m", "agentic_memory.background.backup"],
+    command: "PYTHON_DISCOVERED",
+    args: ["cron/cron_backup.py"],
     intervalMs: 3600_000,
     description: "Backup memory database",
   },
@@ -130,13 +150,19 @@ export class BackgroundWorkerManager {
   private workers: Map<WorkerType, InternalWorkerInfo> = new Map();
   private intervals: Map<WorkerType, ReturnType<typeof setInterval>> =
     new Map();
-  private eventHandlers: Set<WorkerEventHandler> = new Set();
+  private eventHandlers: Map<number, WorkerEventHandler> = new Map();
   private memoryDir: string;
+  private pythonPath: string;
+  private scriptDir: string;
   private _running = false;
   private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private handlerIdCounter = 0;
 
   constructor(memoryDir: string) {
     this.memoryDir = memoryDir;
+    const discovered = discoverPython(memoryDir);
+    this.pythonPath = discovered.pythonPath;
+    this.scriptDir = discovered.scriptDir;
 
     for (const def of WORKER_DEFINITIONS) {
       this.workers.set(def.type, {
@@ -152,6 +178,11 @@ export class BackgroundWorkerManager {
     }
   }
 
+  configure(pythonPath: string, scriptDir: string): void {
+    this.pythonPath = pythonPath;
+    this.scriptDir = scriptDir;
+  }
+
   get isRunning(): boolean {
     return this._running;
   }
@@ -159,6 +190,13 @@ export class BackgroundWorkerManager {
   start(): void {
     if (this._running) return;
     this._running = true;
+
+    const hasTauri = typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+    if (!hasTauri) {
+      console.warn("[WorkerManager] Skipping — Tauri not detected (browser-only mode)");
+      return;
+    }
 
     for (const def of WORKER_DEFINITIONS) {
       if (def.intervalMs) {
@@ -178,7 +216,7 @@ export class BackgroundWorkerManager {
   stop(): void {
     this._running = false;
 
-    for (const [type, interval] of this.intervals) {
+    for (const [, interval] of this.intervals) {
       clearInterval(interval);
     }
     this.intervals.clear();
@@ -189,7 +227,7 @@ export class BackgroundWorkerManager {
     }
 
     this.emit({
-      type: "started",
+      type: "stopped",
       workerType: "health_check",
       message: "Background worker manager stopped",
     });
@@ -202,7 +240,12 @@ export class BackgroundWorkerManager {
     const info = this.workers.get(type);
     if (!info) throw new Error(`Worker not initialized: ${type}`);
 
-    const command = [def.command, ...def.args].join(" ");
+    if (info.status === "running") return;
+
+    const resolvedCommand = def.command === "PYTHON_DISCOVERED"
+      ? this.pythonPath
+      : def.command;
+    const command = [resolvedCommand, ...def.args].join(" ");
 
     info.status = "running";
     info.lastError = null;
@@ -249,8 +292,22 @@ export class BackgroundWorkerManager {
   }
 
   onEvent(handler: WorkerEventHandler): () => void {
-    this.eventHandlers.add(handler);
-    return () => this.eventHandlers.delete(handler);
+    const id = ++this.handlerIdCounter;
+    this.eventHandlers.set(id, handler);
+    if (this.eventHandlers.size > 100) {
+      const oldest = this.eventHandlers.keys().next().value;
+      if (oldest !== undefined) {
+        this.eventHandlers.delete(oldest);
+      }
+    }
+    return () => this.eventHandlers.delete(id);
+  }
+
+  dispose(): void {
+    this.stop();
+    this.workers.clear();
+    this.eventHandlers.clear();
+    this.handlerIdCounter = 0;
   }
 
   // ── Internal ────────────────────────────────────────────────────────────
@@ -259,11 +316,11 @@ export class BackgroundWorkerManager {
     const def = WORKER_DEFINITIONS.find((d) => d.type === type);
     if (!def?.intervalMs) return;
 
-    this.runWorker(type).catch(() => {});
+    this.runWorker(type).catch((err) => { console.error("[WorkerManager] Worker failed:", err); });
 
     const interval = setInterval(() => {
       if (this._running) {
-        this.runWorker(type).catch(() => {});
+        this.runWorker(type).catch((err) => { console.error("[WorkerManager] Worker failed:", err); });
       }
     }, def.intervalMs);
 
@@ -271,59 +328,63 @@ export class BackgroundWorkerManager {
   }
 
   private startPolling(): void {
-    this.pollHandle = setInterval(async () => {
+    this.pollHandle = setInterval(() => {
       if (!this._running) return;
 
-      for (const [type, info] of this.workers) {
-        if (!info.processId) continue;
+      (async () => {
+        for (const [type, info] of this.workers) {
+          if (!info.processId) continue;
 
-        try {
-          const alive = await ipcProcess.isAlive(info.processId);
+          try {
+            const alive = await ipcProcess.isAlive(info.processId);
 
-          if (!alive && info.status === "running") {
-            info.status = "idle";
-            info.lastRunAt = Date.now();
-            info.runCount++;
-            info.processId = null;
+            if (!alive && info.status === "running") {
+              info.status = "idle";
+              info.lastRunAt = Date.now();
+              info.runCount++;
+              info.processId = null;
 
-            this.emit({
-              type: "completed",
-              workerType: type,
-              message: `Worker ${type} completed`,
-            });
-            continue;
-          }
-
-          if (alive) {
-            const stdout = await ipcProcess.getStdout(info.processId);
-            const stderr = await ipcProcess.getStderr(info.processId);
-
-            const newStdout = stdout.slice(info.lastStdoutLen);
-            const newStderr = stderr.slice(info.lastStderrLen);
-
-            if (newStdout) {
               this.emit({
-                type: "progress",
+                type: "completed",
                 workerType: type,
-                message: newStdout,
+                message: `Worker ${type} completed`,
               });
-              info.lastStdoutLen = stdout.length;
+              continue;
             }
 
-            if (newStderr) {
-              console.error(`[Worker:${type}] stderr:`, newStderr);
-              info.lastStderrLen = stderr.length;
+            if (alive) {
+              const stdout = await ipcProcess.getStdout(info.processId);
+              const stderr = await ipcProcess.getStderr(info.processId);
+
+              const newStdout = stdout.slice(info.lastStdoutLen);
+              const newStderr = stderr.slice(info.lastStderrLen);
+
+              if (newStdout) {
+                this.emit({
+                  type: "progress",
+                  workerType: type,
+                  message: newStdout,
+                });
+                info.lastStdoutLen = stdout.length;
+              }
+
+              if (newStderr) {
+                console.warn(`[Worker:${type}] stderr:`, newStderr);
+                info.lastStderrLen = stderr.length;
+              }
             }
+          } catch {
+            // Polling errors are non-fatal
           }
-        } catch {
-          // Polling errors are non-fatal
         }
-      }
-    }, 2000);
+      })().catch((err) => {
+        console.error("[WorkerManager] Polling error:", err);
+      });
+    }, 5000);
   }
 
   private emit(event: WorkerEvent): void {
-    for (const handler of this.eventHandlers) {
+    for (const [, handler] of this.eventHandlers) {
       try {
         handler(event);
       } catch (err) {
@@ -336,10 +397,20 @@ export class BackgroundWorkerManager {
 // Singleton
 let instance: BackgroundWorkerManager | null = null;
 
+function getDefaultMemoryDir(): string {
+  if (typeof process !== "undefined" && process.env?.HOME) {
+    return `${process.env.HOME}/.config/agentic-memory`;
+  }
+  if (typeof process !== "undefined" && process.env?.USERPROFILE) {
+    return `${process.env.USERPROFILE}/.config/agentic-memory`;
+  }
+  return "/tmp/agentic-memory";
+}
+
 export function getWorkerManager(memoryDir?: string): BackgroundWorkerManager {
   if (!instance) {
     if (!memoryDir) {
-      memoryDir = "/Users/arka/.config/agentic-memory";
+      memoryDir = getDefaultMemoryDir();
     }
     instance = new BackgroundWorkerManager(memoryDir);
   }

@@ -18,6 +18,15 @@ function createMockMemory(): MemoryBridgeClient {
     reviewBeliefs: vi.fn().mockResolvedValue([]),
     audit: vi.fn().mockResolvedValue([]),
     healthCheck: vi.fn().mockResolvedValue({ status: "healthy", python_process: true, db_accessible: true, embeddings_loaded: true, version: "0.1.0" }),
+    initAgent: vi.fn().mockResolvedValue({ status: "success" }),
+    coordinate: vi.fn().mockResolvedValue({ status: "success", task_id: "task-1" }),
+    coordinateTask: vi.fn().mockResolvedValue({ status: "success", task_id: "task-1" }),
+    coordinateLock: vi.fn().mockResolvedValue({ status: "acquired" }),
+    coordinateMessage: vi.fn().mockResolvedValue({ status: "delivered" }),
+    coordinateState: vi.fn().mockResolvedValue({ status: "updated" }),
+    shareMemory: vi.fn().mockResolvedValue({ status: "shared" }),
+    listAgents: vi.fn().mockResolvedValue({ agents: [] }),
+    clearAgent: vi.fn().mockResolvedValue({ status: "cleared" }),
     isRunning: true,
   } as any;
 }

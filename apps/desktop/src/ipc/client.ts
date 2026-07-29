@@ -5,15 +5,33 @@
  * Uses Tauri's invoke/event system for communication.
  */
 
-// Tauri IPC invoke wrapper with browser fallback guard
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+// Tauri IPC invoke wrapper with browser fallback guard and timeout
+let _tauriWarningShown = false;
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+async function invoke<T>(cmd: string, args?: Record<string, unknown>, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
   try {
-    if (typeof window === "undefined" || (!(window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI__)) {
+    if (typeof window === "undefined") {
+      return getMockFallback<T>(cmd, args);
+    }
+    const hasTauri = (window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__;
+    if (!hasTauri) {
+      if (!_tauriWarningShown) {
+        console.warn("[IPC] Tauri not detected — running in browser-only mode. Git, terminal, and memory bridge features require `cargo tauri dev`.");
+        _tauriWarningShown = true;
+      }
       return getMockFallback<T>(cmd, args);
     }
     const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-    return await tauriInvoke<T>(cmd, args);
-  } catch {
+    
+    return Promise.race([
+      tauriInvoke<T>(cmd, args),
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`IPC call '${cmd}' timed out after ${timeoutMs}ms`)), timeoutMs)
+      ),
+    ]);
+  } catch (err) {
+    console.error("[IPC] invoke failed:", cmd, err);
     return getMockFallback<T>(cmd, args);
   }
 }
@@ -83,6 +101,10 @@ export const fs = {
     return invoke<void>("write_file", { path, content });
   },
 
+  deleteFile(path: string): Promise<void> {
+    return invoke<void>("delete_file", { path });
+  },
+
   listDir(path: string): Promise<Array<{ name: string; isDir: boolean }>> {
     return invoke("list_dir", { path });
   },
@@ -126,7 +148,43 @@ export const terminal = {
 
 // ── Git Commands ──────────────────────────────────────────────────────────
 
+export interface GitCommitInfo {
+  hash: string;
+  shortHash: string;
+  author: string;
+  email: string;
+  date: number; // unix timestamp ms
+  message: string;
+  parents: string[];
+  refs: string[];
+}
+
+export interface GitBranchInfo {
+  name: string;
+  isCurrent: boolean;
+  isRemote: boolean;
+  upstream?: string;
+  lastCommitHash?: string;
+  lastCommitMessage?: string;
+}
+
+export interface GitStashEntry {
+  index: number;
+  message: string;
+  date: number;
+  branch: string;
+}
+
+export interface GitBlameLine {
+  lineNum: number;
+  hash: string;
+  author: string;
+  date: number;
+  content: string;
+}
+
 export const git = {
+  // ── Status & Diff ─────────────────────────────────────────────────────
   status(repoPath: string): Promise<string> {
     return invoke<string>("git_status", { repoPath });
   },
@@ -135,16 +193,111 @@ export const git = {
     return invoke<string>("git_diff", { repoPath, filePath });
   },
 
+  diffStaged(repoPath: string, filePath?: string): Promise<string> {
+    return invoke<string>("git_diff_staged", { repoPath, filePath });
+  },
+
+  diffUnstaged(repoPath: string, filePath?: string): Promise<string> {
+    return invoke<string>("git_diff_unstaged", { repoPath, filePath });
+  },
+
+  // ── Staging ───────────────────────────────────────────────────────────
+  stage(repoPath: string, paths: string[]): Promise<void> {
+    return invoke<void>("git_stage", { repoPath, paths });
+  },
+
+  unstage(repoPath: string, paths: string[]): Promise<void> {
+    return invoke<void>("git_unstage", { repoPath, paths });
+  },
+
+  stageAll(repoPath: string): Promise<void> {
+    return invoke<void>("git_stage_all", { repoPath });
+  },
+
+  unstageAll(repoPath: string): Promise<void> {
+    return invoke<void>("git_unstage_all", { repoPath });
+  },
+
+  discardFile(repoPath: string, filePath: string): Promise<void> {
+    return invoke<void>("git_discard_file", { repoPath, filePath });
+  },
+
+  // ── Commit ────────────────────────────────────────────────────────────
+  commit(repoPath: string, message: string, amend?: boolean): Promise<void> {
+    return invoke<void>("git_commit", { repoPath, message, amend: amend ?? false });
+  },
+
+  // ── Log ────────────────────────────────────────────────────────────────
   log(repoPath: string, limit: number): Promise<string> {
     return invoke<string>("git_log", { repoPath, limit });
   },
 
-  commit(repoPath: string, message: string): Promise<void> {
-    return invoke<void>("git_commit", { repoPath, message });
+  logParsed(repoPath: string, limit: number): Promise<GitCommitInfo[]> {
+    return invoke<GitCommitInfo[]>("git_log_parsed", { repoPath, limit });
   },
 
+  // ── Branches ──────────────────────────────────────────────────────────
   branch(repoPath: string): Promise<string> {
     return invoke<string>("git_branch", { repoPath });
+  },
+
+  branches(repoPath: string): Promise<GitBranchInfo[]> {
+    return invoke<GitBranchInfo[]>("git_branches", { repoPath });
+  },
+
+  createBranch(repoPath: string, name: string, startPoint?: string): Promise<void> {
+    return invoke<void>("git_create_branch", { repoPath, name, startPoint });
+  },
+
+  switchBranch(repoPath: string, name: string): Promise<void> {
+    return invoke<void>("git_switch_branch", { repoPath, name });
+  },
+
+  deleteBranch(repoPath: string, name: string, force?: boolean): Promise<void> {
+    return invoke<void>("git_delete_branch", { repoPath, name, force: force ?? false });
+  },
+
+  mergeBranch(repoPath: string, name: string): Promise<{ success: boolean; message: string }> {
+    return invoke("git_merge_branch", { repoPath, name });
+  },
+
+  // ── Stash ─────────────────────────────────────────────────────────────
+  stashList(repoPath: string): Promise<GitStashEntry[]> {
+    return invoke<GitStashEntry[]>("git_stash_list", { repoPath });
+  },
+
+  stashPush(repoPath: string, message?: string, includeUntracked?: boolean): Promise<void> {
+    return invoke<void>("git_stash_push", { repoPath, message, includeUntracked: includeUntracked ?? false });
+  },
+
+  stashApply(repoPath: string, index: number): Promise<void> {
+    return invoke<void>("git_stash_apply", { repoPath, index });
+  },
+
+  stashPop(repoPath: string, index: number): Promise<void> {
+    return invoke<void>("git_stash_pop", { repoPath, index });
+  },
+
+  stashDrop(repoPath: string, index: number): Promise<void> {
+    return invoke<void>("git_stash_drop", { repoPath, index });
+  },
+
+  // ── Blame ─────────────────────────────────────────────────────────────
+  blame(repoPath: string, filePath: string): Promise<GitBlameLine[]> {
+    return invoke<GitBlameLine[]>("git_blame", { repoPath, filePath });
+  },
+
+  // ── Remote ────────────────────────────────────────────────────────────
+  push(repoPath: string, remote?: string, branch?: string): Promise<{ success: boolean; message: string }> {
+    return invoke("git_push", { repoPath, remote, branch });
+  },
+
+  pull(repoPath: string, remote?: string, branch?: string): Promise<{ success: boolean; message: string }> {
+    return invoke("git_pull", { repoPath, remote, branch });
+  },
+
+  fetch(repoPath: string, remote?: string): Promise<void> {
+    return invoke<void>("git_fetch", { repoPath, remote });
   },
 };
 
@@ -203,21 +356,7 @@ export const process = {
   },
 };
 
-// ── Memory Bridge Commands ──────────────────────────────────────────────────
 
-export const memoryBridge = {
-  start(memoryDir: string, pythonPath?: string): Promise<string> {
-    return invoke<string>("start_memory_bridge", { memoryDir, pythonPath });
-  },
-
-  stop(processId: string): Promise<void> {
-    return invoke<void>("stop_memory_bridge", { processId });
-  },
-
-  getStatus(processId: string): Promise<ManagedProcessStatus> {
-    return invoke("get_memory_bridge_status", { processId });
-  },
-};
 
 // ── File Watcher Events ──────────────────────────────────────────────────
 

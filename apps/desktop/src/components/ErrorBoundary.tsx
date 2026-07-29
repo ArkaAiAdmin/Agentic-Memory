@@ -47,28 +47,28 @@ export class ErrorBoundary extends React.Component<Props, State> {
             justifyContent: "center",
             height: "100%",
             padding: 16,
-            color: "#c9d1d9",
-            background: "#161b22",
+            color: "var(--text-primary)",
+            background: "var(--bg-secondary)",
             fontSize: 12,
             gap: 8,
           }}
         >
-          <span style={{ fontSize: 24 }}>⚠</span>
+          <span style={{ fontSize: 24 }}>!</span>
           <div style={{ fontWeight: 600 }}>
             {this.props.fallbackLabel ?? "Panel"} failed to load
           </div>
-          <div style={{ color: "#8b949e", fontSize: 11, textAlign: "center" }}>
+          <div style={{ color: "var(--text-tertiary)", fontSize: 11, textAlign: "center" }}>
             {this.state.error?.message ?? "Unknown error"}
           </div>
           <button
             onClick={this.handleRetry}
             style={{
               marginTop: 4,
-              background: "#21262d",
-              border: "1px solid #30363d",
-              color: "#c9d1d9",
+              background: "var(--bg-tertiary)",
+              border: "1px solid var(--border-default)",
+              color: "var(--text-primary)",
               padding: "4px 12px",
-              borderRadius: 4,
+              borderRadius: "var(--radius-sm)",
               cursor: "pointer",
               fontSize: 11,
             }}

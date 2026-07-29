@@ -1,157 +1,157 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useRef, useCallback, useState } from "react";
 
-type Direction = "horizontal" | "vertical";
+/**
+ * ResizablePane
+ *
+ * A single fixed-size pane with a draggable handle on one edge. The neighbouring
+ * content is a *sibling* that flexes to fill the remaining space, so this pane
+ * only ever owns its own width/height.
+ *
+ * Size is **controlled**: the parent owns `size` and updates it via `onResize`
+ * (typically persisted in the app store). This fixes two bugs in the previous
+ * design where the container width equalled the pane size (clipping its own
+ * divider) and where collapse was a one-way trip.
+ *
+ * - `side` is the edge that carries the drag handle:
+ *     - left sidebar  → `side="right"`
+ *     - right panel   → `side="left"`
+ *     - bottom panel  → `side="top"`
+ *     - top panel     → `side="bottom"`
+ * - Double-click the handle to reset to `defaultSize`.
+ */
+
+type Side = "left" | "right" | "top" | "bottom";
 
 interface ResizablePaneProps {
-  direction?: Direction;
-  defaultSize?: number;
+  side: Side;
+  size: number;
+  onResize: (size: number) => void;
   minSize?: number;
   maxSize?: number;
-  initialCollapsed?: boolean;
-  collapsedSize?: number;
-  onResize?: (size: number) => void;
-  onToggleCollapse?: (collapsed: boolean) => void;
-  children: [React.ReactNode, React.ReactNode];
+  defaultSize?: number;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
 }
 
 export function ResizablePane({
-  direction = "horizontal",
-  defaultSize = 300,
-  minSize = 150,
-  maxSize = 800,
-  initialCollapsed = false,
-  collapsedSize = 0,
+  side,
+  size,
   onResize,
-  onToggleCollapse,
+  minSize = 150,
+  maxSize = 900,
+  defaultSize,
+  style,
   children,
 }: ResizablePaneProps) {
-  const [size, setSize] = useState(() => (initialCollapsed ? collapsedSize : defaultSize));
-  const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
+  const isHorizontal = side === "left" || side === "right";
   const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
   const startPosRef = useRef(0);
   const startSizeRef = useRef(0);
 
-  const isHorizontal = direction === "horizontal";
+  const clamp = useCallback(
+    (v: number) => Math.min(maxSize, Math.max(minSize, v)),
+    [minSize, maxSize],
+  );
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    startPosRef.current = isHorizontal ? e.clientX : e.clientY;
-    startSizeRef.current = size;
-    setIsDragging(true);
-  }, [isHorizontal, size]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      startPosRef.current = isHorizontal ? e.clientX : e.clientY;
+      startSizeRef.current = size;
+      setIsDragging(true);
 
-  useEffect(() => {
-    if (!isDragging) return;
+      const onMove = (ev: MouseEvent) => {
+        const currentPos = isHorizontal ? ev.clientX : ev.clientY;
+        const rawDelta = currentPos - startPosRef.current;
+        // `left`/`top` handles grow the pane when dragged *away* from the pane.
+        const delta = side === "left" || side === "top" ? -rawDelta : rawDelta;
+        onResize(clamp(startSizeRef.current + delta));
+      };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const currentPos = isHorizontal ? e.clientX : e.clientY;
-      const delta = currentPos - startPosRef.current;
-      const newSize = Math.min(maxSize, Math.max(minSize, startSizeRef.current + delta));
-      setSize(newSize);
-      onResize?.(newSize);
-    };
+      const onUp = () => {
+        setIsDragging(false);
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
 
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [isHorizontal, side, size, onResize, clamp],
+  );
 
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging, isHorizontal, minSize, maxSize, onResize]);
-
-  const toggleCollapse = () => {
-    const next = !isCollapsed;
-    setIsCollapsed(next);
-    setSize(next ? collapsedSize : defaultSize);
-    onToggleCollapse?.(next);
-  };
-
-  const canCollapse = collapsedSize < size && onToggleCollapse !== undefined;
+  const handleDoubleClick = useCallback(() => {
+    if (defaultSize != null) onResize(clamp(defaultSize));
+  }, [defaultSize, onResize, clamp]);
 
   const containerStyle: React.CSSProperties = {
-    display: "flex",
-    flexDirection: isHorizontal ? "row" : "column",
-    height: isHorizontal ? "100%" : "auto",
-    width: isHorizontal ? (isCollapsed ? collapsedSize : size) : "100%",
-    minWidth: isHorizontal ? minSize : 0,
-    maxWidth: isHorizontal ? maxSize : "none",
-    minHeight: isHorizontal ? 0 : minSize,
-    maxHeight: isHorizontal ? "none" : maxSize,
-    overflow: "hidden",
-    userSelect: isDragging ? "none" : "auto",
+    position: "relative",
     flexShrink: 0,
-  };
-
-  const firstChildStyle: React.CSSProperties = {
-    flex: "0 0 auto",
-    width: isHorizontal ? (isCollapsed ? collapsedSize : size) : "100%",
-    height: isHorizontal ? "100%" : (isCollapsed ? collapsedSize : size),
     overflow: "hidden",
-    position: "relative",
-    transition: isDragging ? "none" : "width 0.15s ease, height 0.15s ease",
+    ...(isHorizontal
+      ? { width: size, height: "100%" }
+      : { height: size, width: "100%" }),
+    ...style,
   };
 
-  const dividerStyle: React.CSSProperties = {
-    flex: "0 0 auto",
-    width: isHorizontal ? 4 : "100%",
-    height: isHorizontal ? "100%" : 4,
-    background: isDragging ? "#4a9eff" : "#2a2a4a",
-    cursor: isHorizontal ? "col-resize" : "row-resize",
-    position: "relative",
-    zIndex: 10,
-    transition: isDragging ? "none" : "background 0.15s ease",
-  };
-
-  const secondChildStyle: React.CSSProperties = {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 0,
-    overflow: "hidden",
-  };
-
-  const collapseButtonStyle: React.CSSProperties = {
+  // Absolutely-positioned handle straddling the chosen edge — never clipped,
+  // with a generous hit area even though it renders as a thin line.
+  const handleThickness = 5;
+  const handleStyle: React.CSSProperties = {
     position: "absolute",
-    top: 8,
-    [isHorizontal ? "right" : "bottom"]: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    border: "1px solid #2a2a4a",
-    background: "#16213e",
-    color: "#888",
-    fontSize: 10,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
     zIndex: 20,
-    padding: 0,
-    lineHeight: 1,
+    background: isDragging ? "#4a9eff" : "transparent",
+    transition: isDragging ? "none" : "background 0.15s ease",
+    ...(isHorizontal
+      ? {
+          top: 0,
+          bottom: 0,
+          width: handleThickness,
+          cursor: "col-resize",
+          [side]: -Math.floor(handleThickness / 2),
+        }
+      : {
+          left: 0,
+          right: 0,
+          height: handleThickness,
+          cursor: "row-resize",
+          [side]: -Math.floor(handleThickness / 2),
+        }),
   };
 
   return (
-    <div ref={containerRef} style={containerStyle}>
-      <div style={firstChildStyle}>
-        {children[0]}
-        {canCollapse && !isCollapsed && (
-          <button onClick={toggleCollapse} style={collapseButtonStyle} title={isCollapsed ? "Expand" : "Collapse"}>
-            {isHorizontal ? "‹" : "›"}
-          </button>
-        )}
-        {canCollapse && isCollapsed && (
-          <button onClick={toggleCollapse} style={collapseButtonStyle} title="Expand">
-            {isHorizontal ? "›" : "‹"}
-          </button>
-        )}
-      </div>
-      <div style={dividerStyle} onMouseDown={handleMouseDown} />
-      <div style={secondChildStyle}>{children[1]}</div>
+    <div style={containerStyle}>
+      <div style={{ width: "100%", height: "100%", overflow: "auto" }}>{children}</div>
+      <div
+        style={handleStyle}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
+        title="Drag to resize · double-click to reset"
+        role="separator"
+        aria-label="Resize panel"
+        aria-orientation={isHorizontal ? "vertical" : "horizontal"}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          const delta = (e.key === "ArrowRight" || e.key === "ArrowDown") ? 10
+            : (e.key === "ArrowLeft" || e.key === "ArrowUp") ? -10 : 0;
+          if (delta !== 0) {
+            e.preventDefault();
+            onResize(clamp(size + delta));
+          }
+        }}
+      />
+      {/* Full-screen overlay while dragging so Monaco/xterm don't swallow the
+          mousemove events and the resize cursor stays consistent. */}
+      {isDragging && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            cursor: isHorizontal ? "col-resize" : "row-resize",
+          }}
+        />
+      )}
     </div>
   );
 }

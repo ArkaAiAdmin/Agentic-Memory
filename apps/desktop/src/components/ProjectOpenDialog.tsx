@@ -2,129 +2,94 @@ import React, { useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import type { Project } from "@ami/shared";
 
-/**
- * Project Open Dialog
- *
- * Allows users to open a project directory.
- * In a full Tauri implementation, this uses the native file picker dialog.
- * Falls back to a text input for the path.
- */
-
-export function ProjectOpenDialog({
-  onClose,
-}: {
-  onClose: () => void;
-}) {
-  const { addProject, setActiveProject, theme } = useAppStore();
+export function ProjectOpenDialog({ onClose }: { onClose: () => void }) {
+  const { addProject, setActiveProject } = useAppStore();
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const isDark = theme === "dark";
-
-  const handleOpen = async () => {
-    if (!path.trim()) {
-      setError("Please enter a project path");
-      return;
-    }
-
+  const openPath = async (targetPath: string) => {
+    if (!targetPath.trim()) { setError("Please enter a project path"); return; }
     setLoading(true);
     setError(null);
-
     try {
-      // In Tauri, we'd use the native dialog:
-      // const { open } = await import("@tauri-apps/plugin-dialog");
-      // const selected = await open({ directory: true, multiple: false });
-
-      // For now, validate the path via IPC
       const { fs } = await import("../ipc/client");
-      const entries = await fs.listDir(path.trim());
-
-      // Extract project name from path
-      const parts = path.trim().replace(/\/$/, "").split("/");
+      const entries = await fs.listDir(targetPath.trim());
+      const parts = targetPath.trim().replace(/\/$/, "").split("/");
       const name = parts[parts.length - 1] || "Untitled";
-
       const project: Project = {
-        root: path.trim(),
+        root: targetPath.trim(),
         name,
-        files: entries.map((e) => ({
-          path: `${path.trim()}/${e.name}`,
-          name: e.name,
-          isDirectory: e.isDir,
-        })),
+        files: entries.map((e) => ({ path: `${targetPath.trim()}/${e.name}`, name: e.name, isDirectory: e.isDir })),
       };
-
       addProject(project);
       setActiveProject(project.root);
       onClose();
     } catch (err) {
-      setError(
-        `Cannot open directory: ${err instanceof Error ? err.message : "Unknown error"}`,
-      );
+      setError(`Cannot open: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setLoading(false);
     }
   };
+
+  const handleOpen = () => openPath(path);
 
   const handleBrowse = async () => {
     try {
       const dialog = await import("@tauri-apps/plugin-dialog");
       const selected = await dialog.open({ directory: true, multiple: false });
       if (selected) {
-        setPath(selected as string);
+        const selectedPath = selected as string;
+        setPath(selectedPath);
+        // Auto-open the project immediately after selecting via native dialog
+        try {
+          await openPath(selectedPath);
+        } catch (openErr) {
+          console.error("[ProjectOpen] openPath failed:", openErr);
+          // Path is already filled — user can retry with the button
+        }
       }
-    } catch {
-      // Tauri dialog not available — user types path manually
-      setError("Native dialog not available. Enter path manually.");
+    } catch (err) {
+      console.error("[ProjectOpen] Browse dialog failed:", err);
+      setError(`Dialog error: ${err instanceof Error ? err.message : "Unknown"}. Enter path manually.`);
     }
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "rgba(0, 0, 0, 0.6)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
-      <div
-        style={{
-          background: isDark ? "#161b22" : "#fff",
-          borderRadius: 12,
-          padding: 24,
-          width: 480,
-          maxWidth: "90vw",
-          boxShadow: "0 16px 48px rgba(0, 0, 0, 0.4)",
-        }}
-      >
-        <h2
-          style={{
-            margin: "0 0 16px",
-            fontSize: 16,
-            fontWeight: 600,
-            color: isDark ? "#c9d1d9" : "#24292f",
-          }}
-        >
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      background: "rgba(0, 0, 0, 0.6)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      backdropFilter: "blur(4px)",
+    }} role="dialog" aria-modal="true" aria-label="Open Project">
+      <div style={{
+        background: "var(--bg-elevated)",
+        borderRadius: "var(--radius-lg)",
+        padding: 28,
+        width: 480,
+        maxWidth: "90vw",
+        boxShadow: "var(--shadow-lg)",
+        border: "1px solid var(--border-default)",
+      }}>
+        <h2 style={{
+          margin: "0 0 20px",
+          fontSize: 16,
+          fontWeight: 600,
+          color: "var(--text-primary)",
+          letterSpacing: -0.3,
+        }}>
           Open Project
         </h2>
 
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: 12,
-              color: isDark ? "#8b949e" : "#57606a",
-              marginBottom: 4,
-            }}
-          >
-            Project directory path
+        <div style={{ marginBottom: 16 }}>
+          <label style={{
+            display: "block",
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            marginBottom: 6,
+            fontWeight: 500,
+          }}>
+            Project directory
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -135,86 +100,75 @@ export function ProjectOpenDialog({
               placeholder="/path/to/project"
               style={{
                 flex: 1,
-                padding: "8px 12px",
-                borderRadius: 6,
-                border: `1px solid ${isDark ? "#30363d" : "#d0d7de"}`,
-                background: isDark ? "#0d1117" : "#f6f8fa",
-                color: isDark ? "#c9d1d9" : "#24292f",
+                padding: "10px 14px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border-default)",
+                background: "var(--bg-tertiary)",
+                color: "var(--text-primary)",
                 fontSize: 13,
-                outline: "none",
               }}
             />
-            <button
-              onClick={handleBrowse}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 6,
-                border: `1px solid ${isDark ? "#30363d" : "#d0d7de"}`,
-                background: isDark ? "#21262d" : "#e1e4e8",
-                color: isDark ? "#c9d1d9" : "#24292f",
-                cursor: "pointer",
-                fontSize: 12,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Browse...
+            <button onClick={handleBrowse} style={{
+              padding: "10px 14px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border-default)",
+              background: "var(--bg-tertiary)",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 500,
+            }}>
+              Browse
             </button>
           </div>
         </div>
 
         {error && (
-          <div
-            style={{
-              color: "#f85149",
-              fontSize: 12,
-              marginBottom: 12,
-              padding: "6px 10px",
-              background: "rgba(248, 81, 73, 0.1)",
-              borderRadius: 6,
-            }}
-          >
+          <div style={{
+            color: "var(--error)",
+            fontSize: 12,
+            marginBottom: 16,
+            padding: "8px 12px",
+            background: "var(--error-muted)",
+            borderRadius: "var(--radius-sm)",
+          }}>
             {error}
           </div>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-            marginTop: 16,
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
+          <button onClick={onClose} style={{
+            padding: "10px 20px",
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--border-default)",
+            background: "var(--bg-tertiary)",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            fontSize: 13,
+            fontWeight: 500,
+            transition: "all 0.12s",
           }}
-        >
-          <button
-            onClick={onClose}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 6,
-              border: `1px solid ${isDark ? "#30363d" : "#d0d7de"}`,
-              background: "transparent",
-              color: isDark ? "#c9d1d9" : "#24292f",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elevated)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-tertiary)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
           >
             Cancel
           </button>
-          <button
-            onClick={handleOpen}
-            disabled={loading}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 6,
-              border: "none",
-              background: "#238636",
-              color: "#fff",
-              cursor: loading ? "wait" : "pointer",
-              fontSize: 13,
-              fontWeight: 500,
-              opacity: loading ? 0.7 : 1,
-            }}
+          <button onClick={handleOpen} disabled={loading} style={{
+            padding: "10px 24px",
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--accent)",
+            background: "var(--accent)",
+            color: "var(--accent-text)",
+            cursor: loading ? "wait" : "pointer",
+            fontSize: 13,
+            fontWeight: 600,
+            opacity: loading ? 0.7 : 1,
+            transition: "all 0.12s",
+          }}
+          onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "var(--accent-hover)"; }}
+          onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = "var(--accent)"; }}
           >
-            {loading ? "Opening..." : "Open"}
+            {loading ? "Opening..." : "Open Project"}
           </button>
         </div>
       </div>

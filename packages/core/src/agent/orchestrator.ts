@@ -44,7 +44,6 @@ export class AgentOrchestrator {
       contextBuilder,
       this.toolRegistry,
       toolExecutor,
-      this.memory,
       config.id,
     );
 
@@ -60,16 +59,51 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Dispatch a sub-agent for a specific task (like the Task tool).
+   * Dispatch a sub-agent for a specific task with parent-child tracking.
    */
   async dispatchTask(
     description: string,
     prompt: string,
+    options?: {
+      parentAgentId?: string;
+      projectId?: string;
+      taskType?: string;
+    },
   ): Promise<ToolResult> {
+    const taskId = `task-${Date.now()}`;
+    const parentAgentId = options?.parentAgentId ?? "IDE";
+    const projectId = options?.projectId ?? "default";
+
+    // 1. Initialize sub-agent identity in kernel with parent link
+    try {
+      await this.memory.initAgent(taskId, {
+        displayName: `SubAgent ${taskId}`,
+        parentAgent: parentAgentId,
+      });
+    } catch (err) {
+      console.warn(`[Orchestrator] Kernel init sub-agent ${taskId} failed:`, err);
+    }
+
+    // 2. Register task in kernel coordination layer
+    let createdTaskId: string | null = null;
+    try {
+      const taskRes = await this.memory.coordinateTask("create_task", {
+        project_id: projectId,
+        task_type: options?.taskType ?? "subagent_task",
+        description,
+        assigned_to: taskId,
+      });
+      if (taskRes && typeof taskRes === "object" && "task_id" in taskRes) {
+        createdTaskId = String(taskRes.task_id);
+      }
+    } catch (err) {
+      console.warn(`[Orchestrator] Kernel task creation failed:`, err);
+    }
+
     const agent = await this.dispatch({
-      id: `task-${Date.now()}`,
+      id: taskId,
       model: "gpt-4o-mini", // Use smaller model for tasks
-      systemPrompt: `You are a focused sub-agent. Complete the task: ${description}`,
+      systemPrompt: `You are a focused sub-agent (ID: ${taskId}, Parent: ${parentAgentId}). Complete the task: ${description}`,
       tools: this.toolRegistry.getNames(),
       projectRoot: "",
     });
@@ -95,6 +129,13 @@ export class AgentOrchestrator {
       }
 
       instance.status = "idle";
+
+      // 3. Mark task as completed in kernel coordination layer
+      if (createdTaskId) {
+        this.memory.coordinateTask("complete_task", { task_id: createdTaskId })
+          .catch(err => console.warn(`[Orchestrator] Kernel complete_task failed:`, err));
+      }
+
       return {
         success: true,
         output,
@@ -112,7 +153,7 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Send a message to an agent (inter-agent messaging).
+   * Send a message to another agent (inter-agent messaging via memory_coordinate).
    */
   async sendMessage(
     from: string,
@@ -120,7 +161,17 @@ export class AgentOrchestrator {
     type: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    // TODO: Switch to memory_coordinate or memory_send_message MCP tool once exposed in bridge
+    // Dispatch message via kernel coordination layer
+    await this.memory.coordinateMessage("send_message", {
+      to_agent: to,
+      message_type: type,
+      payload: {
+        from_agent: from,
+        ...payload,
+      },
+    });
+
+    // Save searchable message trace in memory journal
     await this.memory.save({
       content: `Message from ${from} to ${to}: [${type}] ${JSON.stringify(payload).slice(0, 500)}`,
       category: "auto_save",

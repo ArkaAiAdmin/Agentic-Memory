@@ -11,6 +11,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use tauri::Emitter;
 use thiserror::Error;
 
@@ -36,10 +37,11 @@ pub struct PtyExitEvent {
     pub exit_code: i32,
 }
 
-struct PtyInstance {
+pub struct PtyInstance {
     pty: Box<dyn portable_pty::MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    pub writer: Box<dyn Write + Send>,
     _child: Box<dyn portable_pty::Child + Send>,
+    _reader_thread: JoinHandle<()>,
 }
 
 pub struct PtyManager {
@@ -85,16 +87,17 @@ impl PtyManager {
             .take_writer()
             .map_err(|e| PtyError::PortablePty(e.to_string()))?;
 
-        let mut reader = pair
+        let reader = pair
             .master
             .try_clone_reader()
             .map_err(|e| PtyError::PortablePty(e.to_string()))?;
 
         let pty_id = uuid::Uuid::new_v4().to_string();
 
-        if let Some(app_handle) = app {
+        let reader_thread = if let Some(app_handle) = app {
             let pty_id_clone = pty_id.clone();
             std::thread::spawn(move || {
+                let mut reader = reader;
                 let mut buf = [0u8; 4096];
                 loop {
                     match reader.read(&mut buf) {
@@ -111,18 +114,25 @@ impl PtyManager {
                         _ => break,
                     }
                 }
-            });
-        }
+            })
+        } else {
+            std::thread::spawn(|| {})
+        };
 
         let instance = Arc::new(Mutex::new(PtyInstance {
             pty: pair.master,
             writer,
             _child: child,
+            _reader_thread: reader_thread,
         }));
 
         self.instances.insert(pty_id.clone(), instance);
 
         Ok(pty_id)
+    }
+
+    pub fn get_instance(&self, pty_id: &str) -> Option<&Arc<Mutex<PtyInstance>>> {
+        self.instances.get(pty_id)
     }
 
     pub fn write(&self, pty_id: &str, data: &[u8]) -> Result<(), PtyError> {
@@ -170,6 +180,8 @@ impl PtyManager {
         self.instances
             .remove(pty_id)
             .ok_or_else(|| PtyError::NotFound(pty_id.to_string()))?;
+
+        log::info!("Destroyed PTY: {}", pty_id);
         Ok(())
     }
 }

@@ -47,7 +47,6 @@ describe("ConversationLoop & ToolExecutor", () => {
       contextBuilder,
       registry,
       executor,
-      mockMemory,
       "test-session",
     );
 
@@ -110,7 +109,6 @@ describe("ConversationLoop & ToolExecutor", () => {
       contextBuilder,
       registry,
       executor,
-      mockMemory,
       "test-session",
     );
 

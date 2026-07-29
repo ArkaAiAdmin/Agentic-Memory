@@ -64,11 +64,19 @@ export function normalizeToolCallResponse(
       // OpenAI format: message.tool_calls
       const msg = response as any;
       const calls = msg.tool_calls ?? [];
-      return calls.map((tc: any) => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments),
-      }));
+      return calls.map((tc: any) => {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch {
+          // Partial JSON from streaming — use empty object
+        }
+        return {
+          id: tc.id,
+          name: tc.function.name,
+          arguments: args,
+        };
+      });
     }
 
     case "anthropic": {

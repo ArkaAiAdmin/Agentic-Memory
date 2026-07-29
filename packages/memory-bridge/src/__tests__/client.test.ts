@@ -83,3 +83,55 @@ describe("MemoryBridgeClient", () => {
     expect((client as any).pendingRequests.size).toBe(0);
   });
 });
+
+describe("MemoryBridgeClient.save()", () => {
+  let client: MemoryBridgeClient;
+
+  beforeEach(() => {
+    client = new MemoryBridgeClient();
+  });
+
+  it("should return note_id from JSON response", async () => {
+    vi.spyOn(client as any, "callTool").mockResolvedValue({
+      note_id: "lessons/test-slug",
+      status: "success",
+    });
+    const noteId = await client.save({
+      content: "test content",
+      category: "lessons" as any,
+    });
+    expect(noteId).toBe("lessons/test-slug");
+  });
+
+  it("should extract note_id from raw text response", async () => {
+    vi.spyOn(client as any, "callTool").mockResolvedValue({
+      raw: "Successfully saved memory: memory/lessons/test-slug.md (Index updated incrementally).",
+    });
+    const noteId = await client.save({
+      content: "test content",
+      category: "lessons" as any,
+    });
+    expect(noteId).toBe("test-slug");
+  });
+
+  it("should return non-undefined fallback when no note_id or raw present", async () => {
+    vi.spyOn(client as any, "callTool").mockResolvedValue({});
+    const noteId = await client.save({
+      content: "test content",
+      category: "lessons" as any,
+    });
+    expect(noteId).toBeDefined();
+    expect(typeof noteId).toBe("string");
+  });
+
+  it("should return raw text as fallback when regex does not match", async () => {
+    vi.spyOn(client as any, "callTool").mockResolvedValue({
+      raw: "some unexpected error message",
+    });
+    const noteId = await client.save({
+      content: "test content",
+      category: "lessons" as any,
+    });
+    expect(noteId).toBe("some unexpected error message");
+  });
+});

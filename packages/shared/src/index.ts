@@ -360,7 +360,7 @@ export interface ContextBudget {
 // ── App Store Types ───────────────────────────────────────────────────────
 
 export type PanelLayout = "default" | "wide-editor" | "wide-chat" | "memory-focus";
-export type Theme = "dark" | "light";
+export type Theme = string;
 
 export interface OpenFile {
   path: string;
@@ -369,4 +369,52 @@ export interface OpenFile {
   language: string;
   isDirty: boolean;
   isAgentEdit: boolean;
+}
+
+// ── Change-Set Types ─────────────────────────────────────────────────────
+
+export type FileEditKind = "modify" | "create" | "delete";
+
+export interface FileEdit {
+  path: string;
+  kind: FileEditKind;
+  /** Original content (for modify/delete — captured as pre-image). */
+  oldText?: string;
+  /** New content (for modify/create). */
+  newText?: string;
+}
+
+export interface ChangeSet {
+  id: string;
+  summary: string;
+  edits: FileEdit[];
+  createdAt: number;
+  applied: boolean;
+  reverted: boolean;
+}
+
+// ── Git Panel Types ──────────────────────────────────────────────────────
+
+export interface GitStatusFile {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "untracked";
+  staged: boolean;
+}
+
+export interface GitBranchInfo {
+  current: string;
+  branches: string[];
+}
+
+// ── @-Mention Types ──────────────────────────────────────────────────────
+
+export type MentionKind = "file" | "symbol" | "folder" | "memory" | "entity";
+
+export interface MentionItem {
+  kind: MentionKind;
+  label: string;
+  /** Path for file/folder, note_id for memory, entity name for entity. */
+  value: string;
+  description?: string;
+  icon?: string;
 }

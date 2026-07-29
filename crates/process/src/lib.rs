@@ -48,6 +48,48 @@ pub struct ProcessManager {
     pub background: HashMap<String, ManagedProcess>,
 }
 
+/// Split a command string into program and arguments without shell interpretation.
+/// Handles single-quoted, double-quoted, and escaped characters.
+fn split_command(command: &str) -> Option<(String, Vec<String>)> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut chars = command.chars().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_double => {
+                in_single = !in_single;
+            }
+            '"' if !in_single => {
+                in_double = !in_double;
+            }
+            '\\' if !in_single => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            }
+            ' ' | '\t' if !in_single && !in_double => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(c),
+        }
+    }
+
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    if args.is_empty() {
+        return None;
+    }
+
+    Some((args.remove(0), args))
+}
+
 impl ProcessManager {
     pub fn new() -> Self {
         Self {
@@ -62,9 +104,15 @@ impl ProcessManager {
         cwd: &str,
         env: Option<HashMap<String, String>>,
     ) -> Result<SyncResult, ProcessError> {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg(command)
+        let (program, args) = split_command(command).ok_or_else(|| {
+            ProcessError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "empty command",
+            ))
+        })?;
+
+        let mut cmd = Command::new(&program);
+        cmd.args(&args)
             .current_dir(cwd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -90,9 +138,15 @@ impl ProcessManager {
         command: &str,
         cwd: &str,
     ) -> Result<String, ProcessError> {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(command)
+        let (program, args) = split_command(command).ok_or_else(|| {
+            ProcessError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "empty command",
+            ))
+        })?;
+
+        let mut child = Command::new(&program)
+            .args(&args)
             .current_dir(cwd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -237,18 +291,23 @@ impl ProcessManager {
     }
 
     /// Get info about a managed process.
-    pub fn get_managed_info(&self, process_id: &str) -> Result<ManagedProcessInfo, ProcessError> {
+    ///
+    /// Uses `try_wait()` to determine real liveness: `Ok(None)` means the child
+    /// is still running, `Ok(Some(status))` means it has exited. Requires `&mut
+    /// self` because reaping the child status needs a mutable handle.
+    pub fn get_managed_info(&mut self, process_id: &str) -> Result<ManagedProcessInfo, ProcessError> {
         let proc = self
             .background
-            .get(process_id)
+            .get_mut(process_id)
             .ok_or_else(|| ProcessError::NotFound(process_id.to_string()))?;
 
-        let alive = proc.child.id() > 0;
+        let pid = proc.child.id();
+        let alive = matches!(proc.child.try_wait(), Ok(None));
         let stdout = proc.stdout.lock().map_err(|_| ProcessError::Exited)?.clone();
         let stderr = proc.stderr.lock().map_err(|_| ProcessError::Exited)?.clone();
 
         Ok(ManagedProcessInfo {
-            pid: proc.child.id(),
+            pid,
             alive,
             stdout,
             stderr,

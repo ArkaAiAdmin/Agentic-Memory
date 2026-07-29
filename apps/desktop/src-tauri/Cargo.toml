@@ -1,22 +1,23 @@
 [package]
-name = "agentic-memory-ide"
+name = "agentic-memory"
 version = "0.1.0"
-description = "Memory-First Agent IDE"
+description = "The AI coding assistant that learns from every session"
 authors = []
-edition = "2021"
+edition = "2024"
 
 [lib]
-name = "agentic_memory_ide_lib"
+name = "agentic_memory_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -25,6 +26,9 @@ env_logger = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+futures-util = "0.3"
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 # Local crates
 ami-fs-watcher = { path = "../../../crates/fs-watcher" }

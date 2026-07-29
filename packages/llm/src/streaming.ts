@@ -45,9 +45,9 @@ export function normalizeOpenAIChunk(data: any): ChatChunk | null {
   const choice = data.choices[0];
   const delta = choice.delta ?? {};
 
-  // Finish reason
-  if (choice.finish_reason) {
-    return { type: "done", reason: choice.finish_reason };
+  // Text content must be yielded even if finish_reason is present in the same chunk
+  if (delta.content) {
+    return { type: "text", text: delta.content };
   }
 
   // Tool calls (streamed incrementally)
@@ -61,9 +61,9 @@ export function normalizeOpenAIChunk(data: any): ChatChunk | null {
     };
   }
 
-  // Text content
-  if (delta.content) {
-    return { type: "text", text: delta.content };
+  // Finish reason — only emit done when there's no accompanying text
+  if (choice.finish_reason) {
+    return { type: "done", reason: choice.finish_reason };
   }
 
   return null;
@@ -119,14 +119,6 @@ export function normalizeGoogleChunk(data: any): ChatChunk | null {
   if (!data?.candidates?.[0]) return null;
   const candidate = data.candidates[0];
 
-  // Finish reason
-  if (candidate.finishReason && candidate.finishReason !== "STOP") {
-    return { type: "done", reason: candidate.finishReason.toLowerCase() };
-  }
-  if (candidate.finishReason === "STOP") {
-    return { type: "done", reason: "stop" };
-  }
-
   const parts = candidate.content?.parts ?? [];
   for (const part of parts) {
     if (part.text) {
@@ -142,6 +134,14 @@ export function normalizeGoogleChunk(data: any): ChatChunk | null {
     }
   }
 
+  // Finish reason as fallback after processing parts
+  if (candidate.finishReason && candidate.finishReason !== "STOP") {
+    return { type: "done", reason: candidate.finishReason.toLowerCase() };
+  }
+  if (candidate.finishReason === "STOP") {
+    return { type: "done", reason: "stop" };
+  }
+
   return null;
 }
 
@@ -154,7 +154,7 @@ export function normalizeGoogleChunk(data: any): ChatChunk | null {
  */
 export class ToolCallAccumulator {
   private calls = new Map<
-    number,
+    string,
     { id: string; name: string; argsBuffer: string }
   >();
 
@@ -164,26 +164,27 @@ export class ToolCallAccumulator {
   feed(chunk: ChatChunk): ToolCall | null {
     if (chunk.type !== "tool_call") return null;
 
-    // Find or create accumulator for this tool call
-    let idx = this.calls.size - 1;
-    if (chunk.id) {
-      // New tool call starting
-      idx = this.calls.size;
-      this.calls.set(idx, { id: chunk.id, name: chunk.name, argsBuffer: "" });
+    if (!chunk.id) return null;
+
+    const existing = this.calls.get(chunk.id);
+    if (existing) {
+      existing.argsBuffer += chunk.arguments;
+      if (chunk.name) existing.name = chunk.name;
+    } else {
+      this.calls.set(chunk.id, {
+        id: chunk.id,
+        name: chunk.name,
+        argsBuffer: chunk.arguments || "",
+      });
     }
 
-    const entry = this.calls.get(idx);
+    const entry = this.calls.get(chunk.id);
     if (!entry) return null;
-
-    // Append arguments fragment
-    entry.argsBuffer += chunk.arguments;
-    if (chunk.name) entry.name = chunk.name;
-    if (chunk.id) entry.id = chunk.id;
 
     // Try to parse accumulated args
     try {
       const args = JSON.parse(entry.argsBuffer);
-      this.calls.delete(idx);
+      this.calls.delete(chunk.id);
       return { id: entry.id, name: entry.name, arguments: args };
     } catch {
       // Not yet complete JSON

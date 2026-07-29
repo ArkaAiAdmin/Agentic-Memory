@@ -11,7 +11,7 @@ import { memoryBridge, memoryEventBus } from "@ami/memory-bridge";
 import type { SearchQuery, SavePayload, SearchResult } from "@ami/shared";
 
 export function useMemory() {
-  const { setRecentMemories, setKgNodes, setDecisionThreads } = useAppStore();
+  const { setRecentMemories, setKgNodes } = useAppStore();
 
   /**
    * Search memories.
@@ -73,15 +73,17 @@ export function useMemory() {
    */
   useEffect(() => {
     const unsubSaved = memoryEventBus.on("memory.saved", (event) => {
-      // Skip auto-save events (tool intents/results) to prevent search loop
       if (event.type === "memory.saved" && event.category === "auto_save") return;
-      search({ query: "", limit: 10 });
+      if (!memoryBridge.isRunning) return;
+      memoryBridge.search({ query: "", limit: 10 }).then((results) => {
+        useAppStore.getState().setRecentMemories(results);
+      }).catch(() => {});
     });
 
     return () => {
       unsubSaved();
     };
-  }, [search]);
+  }, []);
 
   return {
     search,

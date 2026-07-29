@@ -12,27 +12,24 @@ import { getWorkerManager, type WorkerEvent } from "../../services/workerManager
 
 export function WorkerStatusPanel() {
   const { theme } = useAppStore();
-  const [workers, setWorkers] = useState<ReturnType<typeof getWorkerManager>["getStatus"] extends () => infer R ? R : never>([]);
-  const [logs, setLogs] = useState<string[]>([]);
-
   const workerManager = getWorkerManager();
+  const [workers, setWorkers] = useState<ReturnType<typeof getWorkerManager>["getStatus"] extends () => infer R ? R : never>(() => workerManager.getStatus());
+  const [logs, setLogs] = useState<string[]>([]);
 
   const refreshStatus = useCallback(() => {
     setWorkers(workerManager.getStatus());
   }, [workerManager]);
 
   useEffect(() => {
-    refreshStatus();
-
     const unsub = workerManager.onEvent((event: WorkerEvent) => {
-      refreshStatus();
+      setWorkers(workerManager.getStatus());
       setLogs((prev) =>
         [`[${new Date().toLocaleTimeString()}] ${event.workerType}: ${event.message}`, ...prev].slice(0, 100),
       );
     });
 
     return unsub;
-  }, [workerManager, refreshStatus]);
+  }, [workerManager]);
 
   const isDark = theme === "dark";
   const bgColor = isDark ? "#161b22" : "#fff";

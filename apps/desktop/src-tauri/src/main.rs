@@ -1,3 +1,3 @@
 fn main() {
-    agentic_memory_ide_lib::main();
+    agentic_memory_lib::main();
 }

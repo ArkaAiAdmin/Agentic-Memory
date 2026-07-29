@@ -1,0 +1,114 @@
+/* ── Animations ───────────────────────────────────────────────────── */
+
+/* Entrance */
+.fadeIn { animation: fadeIn 0.2s ease forwards; }
+.slideUp { animation: slideUp 0.25s ease forwards; }
+.slideDown { animation: slideDown 0.2s ease forwards; }
+.scaleIn { animation: scaleIn 0.2s ease forwards; }
+.slideInRight { animation: slideInRight 0.25s ease forwards; }
+.slideInLeft { animation: slideInLeft 0.25s ease forwards; }
+
+/* Continuous */
+.pulse { animation: pulse 2s ease-in-out infinite; }
+.shimmer {
+  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.04) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.spin { animation: spin 1s linear infinite; }
+.bounce { animation: bounce 0.6s ease; }
+
+/* Typing indicator */
+.typingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+.typingDot:nth-child(2) { animation-delay: 0.2s; }
+.typingDot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Cursor blink */
+.cursorBlink {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 1px;
+  animation: cursorBlink 1s step-end infinite;
+}
+
+/* Staggered list items */
+.stagger1 { animation-delay: 0.05s; }
+.stagger2 { animation-delay: 0.1s; }
+.stagger3 { animation-delay: 0.15s; }
+.stagger4 { animation-delay: 0.2s; }
+.stagger5 { animation-delay: 0.25s; }
+
+/* Keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Transition utilities */
+.transitionAll { transition: all 0.15s ease; }
+.transitionColors { transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+.transitionTransform { transition: transform 0.12s ease; }
+.transitionOpacity { transition: opacity 0.15s ease; }

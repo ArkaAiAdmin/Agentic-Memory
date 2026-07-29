@@ -16,8 +16,6 @@
 import type {
   ChatParams,
   ChatChunk,
-  ToolDefinition,
-  Message,
 } from "@ami/shared";
 
 // ── Provider Interface ────────────────────────────────────────────────────
@@ -204,22 +202,31 @@ export class LiteLLMBridgeProvider implements LLMProvider {
       }
     }, 50);
 
-    // Wait for the process to be ready (simple handshake)
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("LiteLLM bridge failed to start within 10s"));
-      }, 10_000);
+    // MCP initialize handshake
+    try {
+      await this.sendRequest("initialize", {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "ami-ide", version: "0.1.0" },
+      });
 
-      const checkReady = () => {
-        if (this._started) {
-          clearTimeout(timeout);
-          resolve(undefined);
-        } else {
-          setTimeout(checkReady, 100);
-        }
-      };
-      checkReady();
-    });
+      if (this.processId) {
+        const initNotification =
+          JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/initialized",
+          }) + "\n";
+        await ipcProcess.writeStdin(this.processId, initNotification);
+      }
+
+      this._started = true;
+    } catch (err) {
+      if (this.pollHandle) {
+        clearInterval(this.pollHandle);
+        this.pollHandle = null;
+      }
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {

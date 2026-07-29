@@ -1,18 +1,28 @@
 /**
  * Tool Executor
  *
- * Executes tools with pre/post memory events.
+ * Executes tools with pre/post memory events and optional approval.
  * Every tool execution is a memory event — this is the key architectural
  * difference from other IDEs.
  */
 
-import type { Tool, ToolResult, ToolContext } from "@ami/shared";
+import type { ToolResult, ToolContext } from "@ami/shared";
 import type { MemoryBridgeClient } from "@ami/memory-bridge";
 import type { ToolRegistry } from "./registry.js";
+
+export type ApprovalDecision = "approve" | "deny" | "always_allow";
+
+export interface ApprovalRequest {
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+export type ApprovalCallback = (request: ApprovalRequest) => Promise<ApprovalDecision>;
 
 export class ToolExecutor {
   private recentResults: Array<{ tool: string; result: string }> = [];
   private maxRecentResults = 20;
+  private _approvalCallback: ApprovalCallback | null = null;
 
   constructor(
     private readonly registry: ToolRegistry,
@@ -20,7 +30,15 @@ export class ToolExecutor {
   ) {}
 
   /**
-   * Execute a tool with full memory integration.
+   * Set the approval callback. When set, mutating tools will prompt
+   * for approval before execution.
+   */
+  setApprovalCallback(cb: ApprovalCallback | null): void {
+    this._approvalCallback = cb;
+  }
+
+  /**
+   * Execute a tool with full memory integration and optional approval.
    */
   async execute(
     toolName: string,
@@ -37,7 +55,19 @@ export class ToolExecutor {
       };
     }
 
-    const startTime = Date.now();
+    // Check approval for mutating tools
+    if (this._approvalCallback) {
+      const decision = await this._approvalCallback({ toolName, args });
+      if (decision === "deny") {
+        return {
+          success: false,
+          output: "",
+          preview: "",
+          error: `Tool call denied by user: ${toolName}`,
+        };
+      }
+      // "always_allow" — the UI layer handles persisting this
+    }
 
     // 1. Pre-execution: save intent to memory (crash recovery)
     try {

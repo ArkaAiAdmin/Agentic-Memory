@@ -1,0 +1,135 @@
+/* ── Layout Utilities ─────────────────────────────────────────────── */
+
+/* Flex */
+.flex { display: flex; }
+.flexCol { display: flex; flex-direction: column; }
+.flexRow { display: flex; flex-direction: row; }
+.flexCenter { display: flex; align-items: center; justify-content: center; }
+.flexBetween { display: flex; align-items: center; justify-content: space-between; }
+.flexGrow { flex: 1; min-width: 0; min-height: 0; }
+.flexShrink0 { flex-shrink: 0; }
+.flexWrap { flex-wrap: wrap; }
+
+/* Gap */
+.gap2 { gap: 2px; }
+.gap4 { gap: 4px; }
+.gap6 { gap: 6px; }
+.gap8 { gap: 8px; }
+.gap12 { gap: 12px; }
+.gap16 { gap: 16px; }
+.gap24 { gap: 24px; }
+
+/* Padding */
+.p4 { padding: 4px; }
+.p8 { padding: 8px; }
+.p12 { padding: 12px; }
+.p16 { padding: 16px; }
+.p24 { padding: 24px; }
+.px8 { padding-left: 8px; padding-right: 8px; }
+.px12 { padding-left: 12px; padding-right: 12px; }
+.px14 { padding-left: 14px; padding-right: 14px; }
+.px16 { padding-left: 16px; padding-right: 16px; }
+.py4 { padding-top: 4px; padding-bottom: 4px; }
+.py8 { padding-top: 8px; padding-bottom: 8px; }
+.py12 { padding-top: 12px; padding-bottom: 12px; }
+
+/* Overflow */
+.overflowHidden { overflow: hidden; }
+.overflowAuto { overflow: auto; }
+.overflowXAuto { overflow-x: auto; overflow-y: hidden; }
+
+/* Position */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.fixed { position: fixed; }
+.inset0 { inset: 0; }
+.sticky { position: sticky; top: 0; z-index: 10; }
+
+/* Size */
+.w100 { width: 100%; }
+.h100 { height: 100%; }
+.hScreen { height: 100vh; }
+.minH0 { min-height: 0; }
+.minW0 { min-width: 0; }
+
+/* Panel Container */
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-secondary);
+}
+
+.panelContent {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* Overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+
+/* Modal */
+.modal {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
+  animation: scaleIn 0.2s ease;
+  max-height: 85vh;
+  overflow: auto;
+}
+
+.modalSm { width: 400px; max-width: 92vw; padding: 24px; }
+.modalMd { width: 540px; max-width: 92vw; padding: 28px; }
+.modalLg { width: 700px; max-width: 92vw; padding: 32px; }
+
+/* Scrollable area with hidden scrollbar */
+.scrollHidden {
+  overflow: auto;
+  scrollbar-width: none;
+}
+.scrollHidden::-webkit-scrollbar { display: none; }
+
+/* Truncate text */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Grid */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+/* Sidebar layout */
+.sidebarLayout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Empty state */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.emptyStateIcon { font-size: 32px; margin-bottom: 12px; opacity: 0.5; }
+.emptyStateTitle { font-size: 14px; color: var(--text-secondary); font-weight: 500; margin-bottom: 4px; }
+.emptyStateDesc { font-size: 12px; max-width: 280px; line-height: 1.5; }

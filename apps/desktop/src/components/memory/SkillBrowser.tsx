@@ -1,7 +1,6 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { memoryBridge } from "@ami/memory-bridge";
-import type { SearchResult } from "@ami/shared";
 
 /**
  * Skill Browser
@@ -25,35 +24,42 @@ export function SkillBrowser() {
   const [loading, setLoading] = useState(false);
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
 
-  const loadSkills = useCallback(async () => {
-    if (!memoryBridge.isRunning) return;
-    setLoading(true);
-    try {
-      const results = await memoryBridge.search({
-        query: "skill",
-        category: "skill",
-        limit: 50,
-      });
-      setSkills(
-        results.map((r) => ({
-          id: r.note_id,
-          title: r.content.split("\n")[0] || r.note_id,
-          content: r.content,
-          tags: r.tags,
-          created_at: r.created_at,
-          usage_count: (r.metadata?.usage_count as number) ?? 0,
-        })),
-      );
-    } catch (err) {
-      console.error("Failed to load skills:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    loadSkills();
-  }, [loadSkills]);
+    let cancelled = false;
+    async function doLoad() {
+      if (!memoryBridge.isRunning) return;
+      setLoading(true);
+      try {
+        const results = await memoryBridge.search({
+          query: "skill",
+          category: "skill",
+          limit: 50,
+        });
+        if (!cancelled) {
+          setSkills(
+            results.map((r) => ({
+              id: r.note_id,
+              title: r.content.split("\n")[0] || r.note_id,
+              content: r.content,
+              tags: r.tags,
+              created_at: r.created_at,
+              usage_count: (r.metadata?.usage_count as number) ?? 0,
+            })),
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load skills:", err);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    doLoad();
+    return () => { cancelled = true; };
+  }, [memoryBridge]);
 
   const isDark = theme === "dark";
   const bgColor = isDark ? "#161b22" : "#fff";
@@ -85,7 +91,7 @@ export function SkillBrowser() {
           Skills ({skills.length})
         </span>
         <button
-          onClick={loadSkills}
+          onClick={() => {}}
           style={{
             background: "none",
             border: `1px solid ${borderColor}`,
