@@ -1317,6 +1317,8 @@ def _build_memory_file(
             fm_metadata = json.loads(raw_meta)
         except (json.JSONDecodeError, TypeError):
             pass
+    elif isinstance(raw_meta, dict):
+        fm_metadata = raw_meta
     elif raw_meta is not None and not isinstance(raw_meta, dict):
         fm_metadata = {"value": raw_meta}
     else:

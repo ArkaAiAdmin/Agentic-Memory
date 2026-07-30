@@ -51,10 +51,12 @@ This produces:
 Each `.md` file has YAML frontmatter (tags, importance, created,
 superseded_by, etc.) plus the full note body in Markdown.
 
-Frontmatter keys written per Google OKF v0.1 §4:
+Frontmatter keys written per Google OKF v0.2 §4:
 
-  type, title, description, resource, tags, pinned, timestamp,
+  type, title, description, resource, tags, pinned,
+  generated, verified, status, stale_after, sources,
   related, valid_from, valid_to, superseded_by,
+  runtime, parameters, computation, executor, attester,
   created, updated, observed_at, category, title_slug
 
 ## Step 2: Import into Obsidian

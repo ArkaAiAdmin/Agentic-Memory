@@ -1,6 +1,6 @@
-"""OKF v0.1 conformance checks.
+"""OKF v0.2 conformance checks.
 
-Implements the §9 conformance criteria from the spec:
+Implements the §11 conformance criteria from the spec:
 1. Every non-reserved .md file has parseable YAML frontmatter.
 2. Every frontmatter block has a non-empty `type`.
 3. Reserved filenames (index.md, log.md) follow their documented
@@ -16,13 +16,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 RESERVED_NAMES = {"index.md", "log.md"}
-OKF_VERSION = "0.1"
+OKF_VERSION = "0.2"
 REQUIRED_FM_KEYS = {"type"}
 INDEX_FM_ALLOWLIST = {"okf_version"}
+VERIFIED_STATUSES = {"draft", "stable", "deprecated"}
+ISO8601_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class ConformanceError(Exception):
@@ -86,11 +90,86 @@ def validate_bundle(bundle_dir: str | Path) -> list[str]:
         fm_type = fm.get("type")
         if not fm_type or not str(fm_type).strip():
             errors.append(f"{rel_str}: frontmatter missing required `type`")
+        else:
+            _validate_v02_fields(rel_str, fm, errors)
 
     # Soft guidance: warn about broken absolute links
     _warn_broken_links(bundle_dir, md_files, errors)
 
     return errors
+
+
+def _validate_v02_fields(rel_str: str, fm: dict[str, Any], errors: list[str]) -> None:
+    """Validate optional v0.2 frontmatter families when present."""
+    # generated: { by: <actor>, at: <iso8601> }
+    generated = fm.get("generated")
+    if generated is not None:
+        if not isinstance(generated, dict):
+            errors.append(f"{rel_str}: `generated` must be a mapping")
+        else:
+            by = generated.get("by")
+            at = generated.get("at")
+            if not by or not isinstance(by, str):
+                errors.append(f"{rel_str}: `generated.by` must be a non-empty string")
+            if not at or not ISO8601_RE.match(str(at)):
+                errors.append(f"{rel_str}: `generated.at` must be ISO 8601 datetime")
+
+    # verified: list of {by, at} OR bare {by, at} mapping
+    verified = fm.get("verified")
+    if verified is not None:
+        if isinstance(verified, dict):
+            by = verified.get("by")
+            at = verified.get("at")
+            if not by or not isinstance(by, str):
+                errors.append(f"{rel_str}: `verified.by` must be a non-empty string")
+            if not at or not ISO8601_RE.match(str(at)):
+                errors.append(f"{rel_str}: `verified.at` must be ISO 8601 datetime")
+        elif isinstance(verified, list):
+            for i, entry in enumerate(verified):
+                if not isinstance(entry, dict):
+                    errors.append(f"{rel_str}: `verified[{i}]` must be a mapping")
+                    continue
+                by = entry.get("by")
+                at = entry.get("at")
+                if not by or not isinstance(by, str):
+                    errors.append(f"{rel_str}: `verified[{i}].by` must be a non-empty string")
+                if not at or not ISO8601_RE.match(str(at)):
+                    errors.append(f"{rel_str}: `verified[{i}].at` must be ISO 8601 datetime")
+        else:
+            errors.append(f"{rel_str}: `verified` must be a list or a mapping")
+
+    # status: draft | stable | deprecated
+    status = fm.get("status")
+    if status is not None:
+        if str(status).strip().lower() not in VERIFIED_STATUSES:
+            errors.append(
+                f"{rel_str}: `status` must be one of {VERIFIED_STATUSES}; got {status!r}"
+            )
+
+    # stale_after: YYYY-MM-DD
+    stale_after = fm.get("stale_after")
+    if stale_after is not None:
+        if not DATE_RE.match(str(stale_after)):
+            errors.append(f"{rel_str}: `stale_after` must be YYYY-MM-DD; got {stale_after!r}")
+
+    # sources: list of entries, each with resource
+    sources = fm.get("sources")
+    if sources is not None:
+        if not isinstance(sources, list):
+            errors.append(f"{rel_str}: `sources` must be a list")
+        else:
+            for i, entry in enumerate(sources):
+                if not isinstance(entry, dict):
+                    errors.append(f"{rel_str}: `sources[{i}]` must be a mapping")
+                    continue
+                if "resource" not in entry or not entry["resource"]:
+                    errors.append(f"{rel_str}: `sources[{i}]` must have a non-empty `resource`")
+
+    # Attested Computation: runtime required
+    if fm.get("type") == "Attested Computation":
+        runtime = fm.get("runtime")
+        if not runtime or not isinstance(runtime, str) or not runtime.strip():
+            errors.append(f"{rel_str}: `Attested Computation` requires `runtime`")
 
 
 def _validate_index(
@@ -100,7 +179,7 @@ def _validate_index(
     text: str,
     errors: list[str],
 ) -> None:
-    """§6 + §11: index files contain no frontmatter, except the bundle-root
+    """§8 + §11: index files contain no frontmatter, except the bundle-root
     index.md which MAY declare `okf_version`."""
     if len(parts) == 1 and parts[0] == "index.md":
         # Bundle root: frontmatter allowed, but only okf_version
@@ -120,7 +199,7 @@ def _validate_index(
         if not re.search(r"^#", body, re.MULTILINE):
             errors.append(f"{rel_str}: index.md body should contain at least one heading")
     else:
-        # Subdirectory index: no frontmatter at all per §6
+        # Subdirectory index: no frontmatter at all per §8
         if fm:
             errors.append(
                 f"{rel_str}: subdirectory index.md must not contain frontmatter "
@@ -129,7 +208,7 @@ def _validate_index(
 
 
 def _validate_log(rel_str: str, text: str, errors: list[str]) -> None:
-    """§7: log.md uses date-grouped entries, newest first."""
+    """§9: log.md uses date-grouped entries, newest first."""
     body = text.split("---", 2)[-1].strip() if "---" in text else text
     if not re.search(r"^#+\s+Directory Update Log", body, re.MULTILINE):
         errors.append(f"{rel_str}: log.md should start with '# Directory Update Log'")

@@ -29,11 +29,20 @@ FRONTMATTER_KEYS = [
     "resource",
     "tags",
     "pinned",
-    "timestamp",
+    "generated",
+    "verified",
+    "status",
+    "stale_after",
+    "sources",
     "related",
     "valid_from",
     "valid_to",
     "superseded_by",
+    "runtime",
+    "parameters",
+    "computation",
+    "executor",
+    "attester",
     "created",
     "updated",
     "observed_at",
@@ -51,6 +60,15 @@ EXTENSION_KEYS = {
     "valid_from",
     "valid_to",
     "superseded_by",
+    "verified",
+    "status",
+    "stale_after",
+    "sources",
+    "runtime",
+    "parameters",
+    "computation",
+    "executor",
+    "attester",
 }
 
 RESERVED_SLUGS = {"index", "log"}
@@ -79,17 +97,31 @@ def _derive_title(slug: str, meta: dict[str, Any] | None) -> str:
     return base.replace("-", " ").replace("_", " ").strip().title() or "Untitled"
 
 
-def _fmt_list(items) -> str:
-    if not items:
-        return "[]"
-    return "[" + ", ".join(str(i) for i in items) + "]"
+def _fmt_value(value: Any, indent: int = 0) -> str:
+    """Serialize a value to YAML with proper multi-line formatting for dicts/lists."""
+    prefix = "  " * indent
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        parts = []
+        for k, v in value.items():
+            parts.append(f"{prefix}{k}: {_fmt_value(v, indent + 1)}")
+        return "\n" + "\n".join(parts)
+    elif isinstance(value, list):
+        if not value:
+            return "[]"
+        parts = []
+        for item in value:
+            parts.append(f"{prefix}- {_fmt_value(item, indent + 1).lstrip()}")
+        return "\n" + "\n".join(parts)
+    elif isinstance(value, str):
+        return value
+    else:
+        return json.dumps(value)
 
 
 def _memory_to_okf(row: dict) -> str:
-    """Convert a memory row to an OKF markdown document.
-
-    Follows Google OKF v0.1 §4 frontmatter plus memory-system extensions.
-    """
+    """Convert a memory row to an OKF v0.2 markdown document."""
     raw_id: str = row["id"]
     category, title_slug = raw_id.split("/", 1)
     content: str = row["content"]
@@ -101,7 +133,7 @@ def _memory_to_okf(row: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         tags = []
     if isinstance(tags, list):
-        tags_str = _fmt_list([t for t in tags if t])
+        tags_str = ", ".join(str(t) for t in tags if t)
     else:
         tags_str = str(tags)
 
@@ -109,7 +141,7 @@ def _memory_to_okf(row: dict) -> str:
     created = row.get("created_at") or ""
     updated = row.get("updated_at") or ""
     observed = row.get("observed_at") or ""
-    timestamp = updated or created or observed
+    generated_at = updated or created or observed
 
     # metadata (type, description, resource, extra keys)
     meta: dict[str, Any] = {}
@@ -150,8 +182,35 @@ def _memory_to_okf(row: dict) -> str:
         lines.append(f"resource: {resource}")
     lines.append(f"tags: {tags_str}")
     lines.append(f"pinned: {pinned_str}")
-    if timestamp:
-        lines.append(f"timestamp: {timestamp}")
+
+    # v0.2: generated replaces timestamp
+    if generated_at:
+        lines.append(f"generated:")
+        lines.append(f"  by: process:agentic-memory-export")
+        lines.append(f"  at: {generated_at}")
+
+    # v0.2: verified
+    verified = meta.get("verified")
+    if verified is not None:
+        lines.append("verified:")
+        lines.extend(_fmt_value(verified, indent=1).lstrip("\n").split("\n"))
+
+    # v0.2: status
+    status = meta.get("status")
+    if status:
+        lines.append(f"status: {status}")
+
+    # v0.2: stale_after
+    stale_after = meta.get("stale_after")
+    if stale_after:
+        lines.append(f"stale_after: {stale_after}")
+
+    # v0.2: sources
+    sources = meta.get("sources")
+    if sources is not None:
+        lines.append("sources:")
+        lines.extend(_fmt_value(sources, indent=1).lstrip("\n").split("\n"))
+
     lines.append("related: []")
     if valid_from:
         lines.append(f"valid_from: {valid_from}")
@@ -159,6 +218,28 @@ def _memory_to_okf(row: dict) -> str:
         lines.append(f"valid_to: {valid_to}")
     if superseded_by:
         lines.append(f"superseded_by: {superseded_by}")
+
+    # v0.2: Attested Computation fields
+    if memory_type == "Attested Computation":
+        runtime = meta.get("runtime")
+        if runtime:
+            lines.append(f"runtime: {runtime}")
+        parameters = meta.get("parameters")
+        if parameters is not None:
+            lines.append("parameters:")
+            lines.extend(_fmt_value(parameters, indent=1).lstrip("\n").split("\n"))
+        computation = meta.get("computation")
+        if computation:
+            lines.append(f"computation: {computation}")
+        executor = meta.get("executor")
+        if executor is not None:
+            lines.append("executor:")
+            lines.extend(_fmt_value(executor, indent=1).lstrip("\n").split("\n"))
+        attester = meta.get("attester")
+        if attester is not None:
+            lines.append("attester:")
+            lines.extend(_fmt_value(attester, indent=1).lstrip("\n").split("\n"))
+
     # Memory-system extensions
     if created:
         lines.append(f"created: {created}")
@@ -187,7 +268,7 @@ def okf_export(
     overwrite: bool = False,
     validate: bool = True,
 ) -> dict:
-    """Export all memories from *db_path* into an OKF directory at *target_dir*.
+    """Export all memories from *db_path* into an OKF v0.2 directory at *target_dir*.
 
     Returns a dict with keys: ``exported``, ``skipped``, ``errors``,
     ``index_path``, and optional ``warnings``.
@@ -271,7 +352,7 @@ def okf_export(
             logger.error("Failed to export %s: %s", raw_id, e)
             errors += 1
 
-    # Write bundle-root index.md with okf_version frontmatter per spec §11
+    # Write bundle-root index.md with okf_version frontmatter per spec §12
     bundle_index = target_dir / "index.md"
     index_lines = ["---", f"okf_version: {OKF_VERSION}", "---", "", "# OKF Memory Index", ""]
     index_lines.append(f"**{len(index_entries)} memories** exported at {__import__('datetime').datetime.now().isoformat()}.")

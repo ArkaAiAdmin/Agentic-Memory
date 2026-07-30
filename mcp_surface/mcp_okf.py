@@ -1,5 +1,5 @@
 """
-OKF export/import MCP tools — memory_okf_export, memory_okf_import.
+OKF v0.2 export/import MCP tools — memory_okf_export, memory_okf_import.
 
 Exports memories to or imports from an Open Knowledge Format directory
 of markdown files with full YAML frontmatter, compatible with Obsidian,
@@ -42,11 +42,11 @@ def memory_okf_export(
     include_deleted: bool = False,
     overwrite: bool = False,
 ) -> str:
-    """Export all memories to an OKF (Open Knowledge Format) directory.
+    """Export all memories to an OKF v0.2 (Open Knowledge Format) directory.
 
     Produces one ``.md`` file per memory with full YAML frontmatter
-    (created, updated, tags, pinned, type, resource, etc.) and a
-    top-level ``index.md`` catalog.
+    (generated, verified, status, sources, tags, pinned, type, resource,
+    etc.) and a top-level ``index.md`` catalog.
 
     The output directory is portable — open it in Obsidian, Foam, or
     any frontmatter-aware markdown tool.
@@ -98,11 +98,12 @@ def memory_okf_import(
     overwrite: bool = False,
     confirm: bool = False,
 ) -> str:
-    """Import memories from an OKF (Open Knowledge Format) directory.
+    """Import memories from an OKF v0.2 (Open Knowledge Format) directory.
 
     Reads ``.md`` files created by ``memory_okf_export`` (or any
     frontmatter-aware tool) and saves each through the memory system,
-    preserving type, resource, tags, pinned status, and category.
+    preserving type, resource, tags, pinned status, category, generated,
+    verified, status, stale_after, sources, and attested computation fields.
 
     Parameters
     ----------

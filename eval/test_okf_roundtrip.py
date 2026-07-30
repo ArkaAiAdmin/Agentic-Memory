@@ -1,4 +1,4 @@
-"""Round-trip and conformance tests for OKF export/import.
+"""Round-trip and conformance tests for OKF v0.2 export/import.
 
 Tests are behavioral: they verify the spec's guarantees, not just
 that the functions return without error.
@@ -130,7 +130,7 @@ class TestOKFRoundTrip(unittest.TestCase):
 
         out = self.tmpdir / "out3"
         okf_export(self.db_path, out)
-        okf_import(out)
+        okf_import(out, db_path=self.db_path)
 
         self.conn = sqlite3.connect(str(self.db_path))
         row = self.conn.execute(
@@ -186,8 +186,209 @@ class TestOKFRoundTrip(unittest.TestCase):
         md = (out / "decisions" / "frontmatter-check.md").read_text()
 
         for key in ["type", "title", "description", "resource", "tags",
-                    "pinned", "timestamp", "related"]:
+                    "pinned", "generated", "related"]:
             assert f"{key}:" in md, f"Missing OKF field {key} in frontmatter"
+
+
+class TestOKFV02Fields(unittest.TestCase):
+    """v0.2-specific round-trip and conformance tests."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.db_path = self.tmpdir / "test.db"
+        self.conn = _make_db(self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_v02_generated_field_roundtrips(self):
+        _seed_memory(self.conn, "decisions/generated-check")
+        self.conn.close()
+
+        out = self.tmpdir / "out_v02_gen"
+        okf_export(self.db_path, out)
+        md = (out / "decisions" / "generated-check.md").read_text()
+        assert "generated:" in md
+        assert "by: process:agentic-memory-export" in md
+        assert "at: 2026-01-02T00:00:00" in md
+
+        okf_import(out, db_path=self.db_path)
+        self.conn = sqlite3.connect(str(self.db_path))
+        row = self.conn.execute(
+            "SELECT metadata FROM memories WHERE id = ?", ("decisions/generated-check",)
+        ).fetchone()
+        self.assertIsNotNone(row)
+        meta = json.loads(row[0])
+        self.assertIn("generated", meta)
+
+    def test_v02_sources_roundtrips(self):
+        meta = {
+            "type": "reference",
+            "resource": "https://example.com/doc",
+            "sources": [
+                {
+                    "id": "src-1",
+                    "resource": "https://example.com/source",
+                    "title": "Source document",
+                    "author": "team:docs",
+                    "usage_count": 5000,
+                    "last_modified": "2026-05-30",
+                }
+            ],
+            "usage_window": {"from": "2026-06-01", "to": "2026-06-30"},
+        }
+        _seed_memory(self.conn, "references/src-roundtrip", metadata=json.dumps(meta))
+        self.conn.close()
+
+        out = self.tmpdir / "out_v02_src"
+        okf_export(self.db_path, out)
+        md = (out / "references" / "src-roundtrip.md").read_text()
+        assert "sources:" in md
+        assert "usage_count: 5000" in md
+
+        okf_import(out, db_path=self.db_path)
+        self.conn = sqlite3.connect(str(self.db_path))
+        row = self.conn.execute(
+            "SELECT metadata FROM memories WHERE id = ?", ("references/src-roundtrip",)
+        ).fetchone()
+        self.assertIsNotNone(row)
+        meta_back = json.loads(row[0])
+        self.assertIn("sources", meta_back)
+        self.assertEqual(meta_back["sources"][0]["usage_count"], 5000)
+
+    def test_v02_verified_roundtrips(self):
+        meta = {
+            "type": "decision",
+            "verified": {"by": "human:ahormati", "at": "2026-06-25T09:00:00Z"},
+        }
+        _seed_memory(self.conn, "decisions/verified-check", metadata=json.dumps(meta))
+        self.conn.close()
+
+        out = self.tmpdir / "out_v02_ver"
+        okf_export(self.db_path, out)
+        md = (out / "decisions" / "verified-check.md").read_text()
+        assert "verified:" in md
+        assert "human:ahormati" in md
+
+        okf_import(out, db_path=self.db_path)
+        self.conn = sqlite3.connect(str(self.db_path))
+        row = self.conn.execute(
+            "SELECT metadata FROM memories WHERE id = ?", ("decisions/verified-check",)
+        ).fetchone()
+        self.assertIsNotNone(row)
+        meta_back = json.loads(row[0])
+        self.assertIn("verified", meta_back)
+        self.assertEqual(meta_back["verified"]["by"], "human:ahormati")
+
+    def test_v02_status_and_stale_after(self):
+        meta = {
+            "type": "playbook",
+            "status": "stable",
+            "stale_after": "2026-12-31",
+        }
+        _seed_memory(self.conn, "playbooks/status-check", metadata=json.dumps(meta))
+        self.conn.close()
+
+        out = self.tmpdir / "out_v02_status"
+        okf_export(self.db_path, out)
+        md = (out / "playbooks" / "status-check.md").read_text()
+        assert "status: stable" in md
+        assert "stale_after: 2026-12-31" in md
+
+        okf_import(out, db_path=self.db_path)
+        self.conn = sqlite3.connect(str(self.db_path))
+        row = self.conn.execute(
+            "SELECT metadata FROM memories WHERE id = ?", ("playbooks/status-check",)
+        ).fetchone()
+        self.assertIsNotNone(row)
+        meta_back = json.loads(row[0])
+        self.assertEqual(meta_back.get("status"), "stable")
+        self.assertEqual(meta_back.get("stale_after"), "2026-12-31")
+
+    def test_v02_attested_computation_fields(self):
+        meta = {
+            "type": "Attested Computation",
+            "title": "Revenue",
+            "description": "Recognized revenue",
+            "runtime": "bigquery",
+            "parameters": [{"name": "year", "type": "integer", "required": True}],
+            "computation": "references/computations/revenue.sql",
+            "executor": {
+                "resource": "references/skills/run-on-bq.md",
+                "receipt": ["job_id", "executed_sql", "result"],
+            },
+            "attester": {"resource": "references/attesters/sql-equality.py"},
+            "verified": {"by": "human:ahormati", "at": "2026-06-25T09:00:00Z"},
+            "stale_after": "2026-12-31",
+        }
+        _seed_memory(self.conn, "computations/revenue", metadata=json.dumps(meta))
+        self.conn.close()
+
+        out = self.tmpdir / "out_v02_attested"
+        okf_export(self.db_path, out)
+        md = (out / "computations" / "revenue.md").read_text()
+        assert "type: Attested Computation" in md
+        assert "runtime: bigquery" in md
+        assert "parameters:" in md
+        assert "executor:" in md
+        assert "attester:" in md
+
+        okf_import(out, db_path=self.db_path)
+        self.conn = sqlite3.connect(str(self.db_path))
+        row = self.conn.execute(
+            "SELECT metadata FROM memories WHERE id = ?", ("computations/revenue",)
+        ).fetchone()
+        self.assertIsNotNone(row)
+        meta_back = json.loads(row[0])
+        self.assertEqual(meta_back.get("runtime"), "bigquery")
+        self.assertEqual(meta_back.get("type"), "Attested Computation")
+
+    def test_v02_conformance_validator(self):
+        bundle = self.tmpdir / "v02_bundle"
+        bundle.mkdir()
+
+        # Valid v0.2 concept
+        (bundle / "metrics" / "revenue.md").parent.mkdir(parents=True)
+        (bundle / "metrics" / "revenue.md").write_text(
+            "---\ntype: Metric\ntitle: Revenue\ngenerated: { by: agent/1.0, at: 2026-06-20T22:53:05Z }\nverified: { by: human:ahormati, at: 2026-06-25T09:00:00Z }\nstatus: stable\nstale_after: 2026-12-31\nsources:\n  - id: src-1\n    resource: https://example.com/src\n---\n# Revenue\nBody\n"
+        )
+
+        # Valid Attested Computation
+        (bundle / "computations" / "calc.md").parent.mkdir(parents=True)
+        (bundle / "computations" / "calc.md").write_text(
+            "---\ntype: Attested Computation\ntitle: Calc\nruntime: python\nparameters:\n  - { name: x, type: integer, required: true }\n---\n# Computation\ncode\n"
+        )
+
+        violations = validate_bundle(bundle)
+        self.assertEqual(violations, [], f"Expected no violations, got: {violations}")
+
+    def test_v02_conformance_rejects_invalid_status(self):
+        bad = self.tmpdir / "bad_status"
+        bad.mkdir()
+        (bad / "concept.md").write_text(
+            "---\ntype: Note\ntitle: Bad\nstatus: invalid_status\n---\nbody\n"
+        )
+
+        violations = validate_bundle(bad)
+        self.assertTrue(
+            any("status" in v and "must be one of" in v for v in violations),
+            f"Expected invalid-status violation, got: {violations}",
+        )
+
+    def test_v02_conformance_requires_runtime_for_attested_computation(self):
+        bad = self.tmpdir / "bad_attested"
+        bad.mkdir()
+        (bad / "calc.md").write_text(
+            "---\ntype: Attested Computation\ntitle: Calc\n---\nbody\n"
+        )
+
+        violations = validate_bundle(bad)
+        self.assertTrue(
+            any("requires `runtime`" in v for v in violations),
+            f"Expected missing-runtime violation, got: {violations}",
+        )
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 """
-OKF Import — ingest an Open Knowledge Format directory into the memory database.
+OKF Import — ingest an Open Knowledge Format v0.2 directory into the memory database.
 
 Reads an OKF directory produced by ``okf_export.py`` (or any frontmatter-aware
 tool) and saves each ``.md`` file through ``save_memory``, preserving type,
-resource, description, timestamp, tags, pinned status, related, valid_from,
-valid_to, superseded_by, category, title_slug, and all other frontmatter fields.
+resource, description, generated, verified, status, stale_after, sources,
+tags, pinned status, related, valid_from, valid_to, superseded_by, category,
+title_slug, and all other frontmatter fields.
 
 Round-trips cleanly through okf_export.py.
 
@@ -24,7 +25,7 @@ from save_pipeline import save_memory_auto
 
 logger = logging.getLogger(__name__)
 
-# OKF standard frontmatter keys that the spec mentions or that save_memory
+# OKF v0.2 standard frontmatter keys that the spec mentions or that save_memory
 # also writes into its own generated frontmatter block.
 OKF_STANDARD_KEYS = {
     "type",
@@ -33,11 +34,20 @@ OKF_STANDARD_KEYS = {
     "resource",
     "tags",
     "pinned",
-    "timestamp",
+    "generated",
+    "verified",
+    "status",
+    "stale_after",
+    "sources",
     "related",
     "valid_from",
     "valid_to",
     "superseded_by",
+    "runtime",
+    "parameters",
+    "computation",
+    "executor",
+    "attester",
     "created",
     "updated",
     "observed_at",
@@ -97,6 +107,7 @@ def okf_import(
     is_global: bool = False,
     dry_run: bool = False,
     overwrite: bool = False,
+    db_path: str | Path | None = None,
 ) -> dict:
     """Import all ``.md`` files from *source_dir* (except index.md) as memories.
 
@@ -133,13 +144,16 @@ def okf_import(
             "error": f"No .md files found in {source_dir}",
         }
 
+    # Resolve target DB
+    target_db = Path(db_path) if db_path else None
+
     # Pre-check: if not dry_run, verify the target DB is accessible.
-    if not dry_run:
+    if not dry_run and target_db is None:
         try:
             from save_pipeline import _ensure_db_exists
-            from infra.memory_common import resolve_db_path
+            from infra.infrastructure import _resolve_active_db_path
 
-            target_db = resolve_db_path()
+            target_db = Path(_resolve_active_db_path())
             if not _ensure_db_exists(target_db):
                 return {
                     "imported": 0,
@@ -207,11 +221,20 @@ def okf_import(
             "title",
             "description",
             "resource",
-            "timestamp",
             "related",
             "valid_from",
             "valid_to",
             "superseded_by",
+            "generated",
+            "verified",
+            "status",
+            "stale_after",
+            "sources",
+            "runtime",
+            "parameters",
+            "computation",
+            "executor",
+            "attester",
         ) if k in fm and fm[k] not in (None, "", [])}
         extra_metadata = _collect_metadata(fm)
         merged_metadata = {**extra_metadata, **keep_keys}
@@ -242,7 +265,7 @@ def okf_import(
                     pinned=pinned,
                     is_global=is_global,
                     safety_wiring=False,
-                    db_path=os.environ.get("MEMORY_DB_PATH"),
+                    db_path=str(target_db) if target_db else os.environ.get("MEMORY_DB_PATH"),
                 )
             except SaveValidationError as e:
                 save_result = str(e)
