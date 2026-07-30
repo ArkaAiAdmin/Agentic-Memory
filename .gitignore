@@ -35,8 +35,17 @@ audit_search_pipeline.md
 
 .devfleet-worktrees/
 
-# opencode session logs
+# opencode runtime data (not source)
 .opencode/sessions/
+.opencode/memory/
+.opencode/node_modules/
+.opencode/package-lock.json
+
+# CodeGraph database (regenerated on index)
+.codegraph/
+
+# Python type checker cache
+.mypy_cache/
 
 # Coverage data (contains absolute source paths)
 .coverage
