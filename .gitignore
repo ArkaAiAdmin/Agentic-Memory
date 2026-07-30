@@ -87,5 +87,7 @@ node_modules/
 .pnpm-store/
 target/
 *.log
+pnpm-lock.yaml
+pnpm-workspace.yaml
 .env
 .env.local
