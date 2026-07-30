@@ -73,7 +73,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             ("Access-Control-Allow-Headers", "Content-Type, Authorization"),
             ("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"),
         ]
-        if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS):
+        is_local = origin in ("http://localhost", "http://127.0.0.1", "http://localhost:9878",
+                               "http://127.0.0.1:9878", "tauri://localhost")
+        if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS or is_local):
             headers.append(("Access-Control-Allow-Origin", origin))
         elif not API_CORS_ORIGINS:
             headers.append(("Access-Control-Allow-Origin", "*"))
