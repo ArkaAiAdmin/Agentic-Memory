@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { MemoryClient } from '../client';
 import { AgentMemory } from '../agent';
 import { StreamingClient } from '../websocket';
@@ -7,12 +8,12 @@ describe('MemoryClient', () => {
 
   beforeEach(() => {
     client = new MemoryClient({ baseUrl: 'http://127.0.0.1:9878', token: 'test-token' });
-    global.fetch = jest.fn();
+    global.fetch = vi.fn() as any;
   });
 
   it('should call fetch with correct arguments on add()', async () => {
     const mockResponse = { id: 'sdk/test-123' };
-    (global.fetch as jest.Mock).mockResolvedValue({
+    (global.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => mockResponse,
     });
@@ -41,7 +42,7 @@ describe('MemoryClient', () => {
         { id: '123', content: 'test content', score: 0.9, tags: ['test'] }
       ]
     };
-    (global.fetch as jest.Mock).mockResolvedValue({
+    (global.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => mockResponse,
     });
@@ -52,7 +53,7 @@ describe('MemoryClient', () => {
   });
 
   it('should call fetch on delete()', async () => {
-    (global.fetch as jest.Mock).mockResolvedValue({
+    (global.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => ({ success: true }),
     });
@@ -62,7 +63,7 @@ describe('MemoryClient', () => {
   });
 
   it('should support sub-clients: kg and maintenance', async () => {
-    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+    (global.fetch as any).mockImplementation((url: string) => {
       if (url.includes('/api/v1/kg/nodes')) {
         return Promise.resolve({
           ok: true,
@@ -92,18 +93,18 @@ describe('AgentMemory namespace isolation', () => {
 
   beforeEach(() => {
     agentMemory = new AgentMemory({ agentId: 'alpha-agent', baseUrl: 'http://127.0.0.1:9878', token: 'test' });
-    global.fetch = jest.fn();
+    global.fetch = vi.fn() as any;
   });
 
   it('should force agent namespace tag on save', async () => {
-    (global.fetch as jest.Mock).mockResolvedValue({
+    (global.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => ({ id: 'agents/test-note-1' }),
     });
 
     const noteId = await agentMemory.save('Project guidelines');
     expect(noteId).toBe('agents/test-note-1');
-    const fetchArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const fetchArgs = (global.fetch as any).mock.calls[0];
     const body = JSON.parse(fetchArgs[1].body);
     expect(body.tags).toContain('agent-alpha-agent');
     expect(body.category).toBe('agents');
@@ -116,7 +117,7 @@ describe('AgentMemory namespace isolation', () => {
         { id: '1', content: 'Agent specific info', tags: ['agent-alpha-agent'] },
       ]
     };
-    (global.fetch as jest.Mock).mockResolvedValue({
+    (global.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => mockResponse,
     });
@@ -125,7 +126,7 @@ describe('AgentMemory namespace isolation', () => {
     expect(results).toHaveLength(1);
     expect(results[0].content).toBe('Agent specific info');
 
-    const fetchArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const fetchArgs = (global.fetch as any).mock.calls[0];
     const body = JSON.parse(fetchArgs[1].body);
     expect(body.tags).toEqual(['agent-alpha-agent']);
   });
@@ -141,9 +142,9 @@ describe('StreamingClient WebSocket', () => {
       onmessage: null,
       onclose: null,
       onerror: null,
-      close: jest.fn(),
+      close: vi.fn(),
     };
-    (global as any).WebSocket = jest.fn().mockImplementation(() => mockWS);
+    (global as any).WebSocket = vi.fn().mockImplementation(function () { return mockWS; });
     client = new StreamingClient({ baseUrl: 'http://127.0.0.1:9878', token: 'test-token' });
   });
 
@@ -151,7 +152,7 @@ describe('StreamingClient WebSocket', () => {
     client.connect();
     expect(global.WebSocket).toHaveBeenCalled();
 
-    const mockCallback = jest.fn();
+    const mockCallback = vi.fn();
     const unsubscribe = client.subscribe(mockCallback);
 
     if (mockWS.onopen) mockWS.onopen();
