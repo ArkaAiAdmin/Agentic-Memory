@@ -26,7 +26,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT="$( cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd )"
-VENV_PY="$ROOT/venv/bin/python"
+if [ -x "$HOME/.local/bin/agentic-memory-python" ]; then
+    VENV_PY="$HOME/.local/bin/agentic-memory-python"
+else
+    VENV_PY="$ROOT/venv/bin/python"
+fi
 DB_PATH="$ROOT/memory/memory.db"
 LOG_DIR="$ROOT/memory"
 
