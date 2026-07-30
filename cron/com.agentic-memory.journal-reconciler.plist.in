@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentic-memory.journal-reconciler</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__VENV_PY__</string>
+        <string>-m</string>
+        <string>background.journal_reconciler</string>
+        <string>--drain</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__ROOT__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OBJC_DISABLE_INITIALIZE_FORK_SAFETY</key>
+        <string>YES</string>
+        <key>HF_HUB_OFFLINE</key>
+        <string>1</string>
+        <key>PYTHONPATH</key>
+        <string>__ROOT__</string>
+        <key>MEMORY_AGENT_ID</key>
+        <string>system</string>
+        <key>MEMORY_API_TOKEN</key>
+        <string>__SYNC_TOKEN__</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <true/>
+        <key>ThrottleInterval</key>
+        <integer>60</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/journal_reconciler.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/journal_reconciler.log</string>
+</dict>
+</plist>

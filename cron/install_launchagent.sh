@@ -30,9 +30,10 @@ VENV_PY="$ROOT/venv/bin/python"
 DB_PATH="$ROOT/memory/memory.db"
 LOG_DIR="$ROOT/memory"
 
-PLIST_NAME="com.agentic-memory.background-worker.plist"
-PLIST_SRC="$SCRIPT_DIR/$PLIST_NAME.in"
-PLIST_DST="$HOME/Library/LaunchAgents/$PLIST_NAME"
+PLISTS=(
+    "com.agentic-memory.background-worker"
+    "com.agentic-memory.journal-reconciler"
+)
 
 # Read the sync token from memory.toml [api] token so worker subprocesses
 # can authenticate against the sync-opencode / sync-mimocode servers.
@@ -49,6 +50,7 @@ xml_escape() {
 }
 
 render_plist() {
+    local plist_name="$1"
     local venv_xml db_xml log_xml root_xml token_xml
     venv_xml="$(xml_escape "$VENV_PY")"
     db_xml="$(xml_escape "$DB_PATH")"
@@ -60,22 +62,29 @@ render_plist() {
         -e "s|__LOG_DIR__|$log_xml|g" \
         -e "s|__ROOT__|$root_xml|g" \
         -e "s|__SYNC_TOKEN__|$token_xml|g" \
-        "$PLIST_SRC"
+        "$SCRIPT_DIR/$plist_name.plist.in"
 }
 
 case "${1:-install}" in
     --uninstall|uninstall)
-        echo "Unloading + removing $PLIST_DST"
-        launchctl unload "$PLIST_DST" 2>/dev/null || true
-        rm -f "$PLIST_DST"
-        echo "Done. Worker will stop at next launchd cycle."
+        for p in "${PLISTS[@]}"; do
+            plist_dst="$HOME/Library/LaunchAgents/$p.plist"
+            echo "Unloading + removing $plist_dst"
+            launchctl unload "$plist_dst" 2>/dev/null || true
+            rm -f "$plist_dst"
+        done
+        echo "Done. Workers will stop at next launchd cycle."
         ;;
     --show)
-        echo "$PLIST_DST"
+        for p in "${PLISTS[@]}"; do
+            echo "$HOME/Library/LaunchAgents/$p.plist"
+        done
         ;;
     --dry-run)
-        echo "# Would install to: $PLIST_DST"
-        render_plist
+        for p in "${PLISTS[@]}"; do
+            echo "# Would install to: $HOME/Library/LaunchAgents/$p.plist"
+            render_plist "$p"
+        done
         ;;
     install|"")
         # Validate python + worker exist before installing a wedged agent.
@@ -89,21 +98,23 @@ case "${1:-install}" in
             exit 1
         fi
         mkdir -p "$HOME/Library/LaunchAgents"
-        render_plist > "$PLIST_DST"
-        chmod 644 "$PLIST_DST"
-        # Load (or reload if already loaded). Errors here are non-fatal.
-        if launchctl load "$PLIST_DST" 2>/dev/null; then
-            echo "Loaded $PLIST_DST — worker starts now + on login/boot."
-        else
-            # Already loaded? Try unload→load to pick up changes.
-            launchctl unload "$PLIST_DST" 2>/dev/null || true
-            if launchctl load "$PLIST_DST" 2>/dev/null; then
-                echo "Re-loaded $PLIST_DST."
+        for p in "${PLISTS[@]}"; do
+            plist_dst="$HOME/Library/LaunchAgents/$p.plist"
+            render_plist "$p" > "$plist_dst"
+            chmod 644 "$plist_dst"
+            # Load (or reload if already loaded). Errors here are non-fatal.
+            if launchctl load "$plist_dst" 2>/dev/null; then
+                echo "Loaded $plist_dst — service starts now + on login/boot."
             else
-                echo "WARN: launchctl load failed (may need: launchctl bootstrap gui/$(id -u) \"$PLIST_DST\")." >&2
-                echo "      Plist written to $PLIST_DST; load manually." >&2
+                # Already loaded? Try unload→load to pick up changes.
+                launchctl unload "$plist_dst" 2>/dev/null || true
+                if launchctl load "$plist_dst" 2>/dev/null; then
+                    echo "Re-loaded $plist_dst."
+                else
+                    echo "WARN: launchctl load failed for $plist_dst." >&2
+                fi
             fi
-        fi
+        done
         ;;
     *)
         echo "Unknown arg: $1" >&2
