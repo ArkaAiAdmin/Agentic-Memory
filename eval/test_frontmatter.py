@@ -56,7 +56,7 @@ class TestParseFrontmatter(unittest.TestCase):
         content = "---\ntitle: hello\nimportance: 3\n---\nbody text"
         meta, body = parse_frontmatter(content)
         self.assertEqual(meta["title"], "hello")
-        self.assertTrue(meta["importance"] is True or meta["importance"] == "3")
+        self.assertEqual(meta["importance"], 3)
 
     def test_boolean_value(self):
         content = "---\npinned: true\n---\nbody"
