@@ -142,6 +142,30 @@ def memory_list_threads(
 
 
 @mcp.tool()
+@with_audit("memory_session_end")
+def memory_session_end(session_id: str = "", summary: str = "") -> str:
+    """End a session, save summary, defer open threads."""
+    try:
+        mgr = _session_manager()
+        if not session_id:
+            from infra.memory_common import get_memory_paths
+
+            _, local_mem, _ = get_memory_paths()
+            state_file = local_mem / "sessions" / ".current_session.json"
+            if state_file.exists():
+                cs = json.loads(state_file.read_text())
+                session_id = cs.get("session_id", "")
+        if not session_id:
+            return _err(ErrorCode.INVALID_PARAMS, "session_id is required")
+
+        ok = mgr.end_session(session_id=session_id, summary=summary)
+        return _json({"ok": ok, "session_id": session_id})
+    except Exception as e:
+        logger.error("memory_session_end: %s", e)
+        return _err(ErrorCode.DB_ERROR, str(e))
+
+
+@mcp.tool()
 @with_audit("memory_resolve_thread")
 def memory_resolve_thread(
     thread_id: str,

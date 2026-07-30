@@ -71,7 +71,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         """Return CORS header tuples for the given origin."""
         headers = [
             ("Access-Control-Allow-Headers", "Content-Type, Authorization"),
-            ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
+            ("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"),
         ]
         if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS):
             headers.append(("Access-Control-Allow-Origin", origin))
@@ -414,6 +414,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Rate limit exceeded", 429)
                 return
             self._handle_kg_edges(parse_qs(parsed.query))
+        elif path == "/api/v1/kg/explore":
+            if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
+            self._handle_kg_explore(parse_qs(parsed.query))
         elif path == "/api/v1/cloud/deployments":
             if not self._require_auth():
                 return
@@ -524,6 +531,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_cloud_checkout()
         elif path == "/api/v1/cloud/signup":
             self._handle_cloud_signup()
+        elif path == "/api/v1/tools/call":
+            self._handle_tool_call()
+        elif path == "/api/v1/memories/session/start":
+            self._handle_session_start()
+        elif path == "/api/v1/memories/session/end":
+            self._handle_session_end()
+        elif path.startswith("/api/v1/memories/") and path.endswith("/supersede"):
+            note_id = path[len("/api/v1/memories/"):-len("/supersede")]
+            self._handle_supersede_memory(note_id)
+        elif path.startswith("/api/v1/memories/") and path.endswith("/restore"):
+            note_id = path[len("/api/v1/memories/"):-len("/restore")]
+            self._handle_restore_memory(note_id)
         else:
             self._error("Not found", 404)
 
@@ -585,6 +604,23 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_acl_delete_rule()
         elif path.startswith("/api/v1/coordination/locks"):
             self._handle_release_lock(parse_qs(parsed.query))
+        else:
+            self._error("Not found", 404)
+
+    def do_PATCH(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if not self._require_auth():
+            return
+
+        if self._rate_limited(key=getattr(self, "_principal_id", None)):
+            self._error("Rate limit exceeded", 429)
+            return
+
+        if path.startswith("/api/v1/memories/"):
+            note_id = path[len("/api/v1/memories/"):]
+            self._handle_update_memory(note_id)
         else:
             self._error("Not found", 404)
 
@@ -2406,6 +2442,177 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.warning("_handle_audit_logs: %s", e)
             self._error(f"Audit query failed: {e}", 500)
+
+    # ── New REST endpoints for IDE transport ─────────────────────────────────
+
+    def _handle_kg_explore(self, query_params: dict) -> None:
+        """GET /api/v1/kg/explore — explore the knowledge graph."""
+        try:
+            query = query_params.get("query", [""])[0]
+            action = query_params.get("action", ["explore"])[0]
+            start = query_params.get("start", [""])[0]
+            edge_patterns = query_params.get("edge_patterns", [""])[0]
+            max_depth = int(query_params.get("max_depth", ["2"])[0])
+
+            from mcp_surface.mcp_kg import memory_facts_list, memory_graph_stats
+            from mcp_surface.mcp_kg_traversal import memory_graph_traverse
+            from mcp_surface.mcp_kg import memory_graph_search
+
+            if action == "explore":
+                facts = memory_facts_list(limit=20)
+                stats = memory_graph_stats()
+                result_text = f"## KG Facts\n{facts}\n\n## Stats\n{stats}"
+            elif action == "search" and query:
+                result_text = memory_graph_search(query=query, limit=10, max_hops=max_depth)
+            elif action == "traverse" and start:
+                result_text = memory_graph_traverse(start=start, edge_patterns=edge_patterns)
+            elif action == "stats":
+                result_text = memory_graph_stats()
+            else:
+                self._error("Invalid KG explore parameters", 400)
+                return
+
+            self._write_json({"result": result_text})
+        except Exception as e:
+            logger.warning("_handle_kg_explore: %s", e)
+            self._error(f"KG explore failed: {e}", 500)
+
+    def _handle_tool_call(self) -> None:
+        """POST /api/v1/tools/call — generic tool dispatch passthrough."""
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            tool_name = req.get("tool", "")
+            args = req.get("args", {})
+            if not tool_name or not tool_name.startswith("memory_"):
+                self._error("Invalid or missing tool name", 400)
+                return
+            if not isinstance(args, dict):
+                self._error("args must be a dict", 400)
+                return
+
+            import mcp_surface.mcp_tools as tools
+
+            tool_fn = getattr(tools, tool_name, None)
+            if tool_fn is None:
+                self._error(f"Unknown tool: {tool_name}", 404)
+                return
+
+            result = tool_fn(**args)
+            try:
+                parsed = json.loads(result) if isinstance(result, str) else result
+            except (json.JSONDecodeError, TypeError):
+                parsed = {"result": str(result)}
+
+            self._write_json({"tool": tool_name, "result": parsed})
+        except Exception as e:
+            logger.warning("_handle_tool_call: %s", e)
+            self._error(f"Tool call failed: {e}", 500)
+
+    def _handle_session_start(self) -> None:
+        """POST /api/v1/memories/session/start — start a session."""
+        try:
+            req = self._read_json_body()
+        except ValueError:
+            req = {}
+        try:
+            from mcp_surface.mcp_search import memory_session_start
+
+            query = req.get("query", "")
+            result = memory_session_start(query=query)
+            try:
+                parsed = json.loads(result) if isinstance(result, str) else result
+            except (json.JSONDecodeError, TypeError):
+                parsed = {"briefing": str(result)}
+            self._write_json({"result": parsed})
+        except Exception as e:
+            logger.warning("_handle_session_start: %s", e)
+            self._error(f"Session start failed: {e}", 500)
+
+    def _handle_session_end(self) -> None:
+        """POST /api/v1/memories/session/end — end a session."""
+        try:
+            req = self._read_json_body()
+        except ValueError:
+            req = {}
+        try:
+            from mcp_surface.mcp_tools import memory_session_end
+
+            session_id = req.get("session_id", "")
+            summary = req.get("summary", "")
+            result = memory_session_end(session_id=session_id, summary=summary)
+            try:
+                parsed = json.loads(result) if isinstance(result, str) else result
+            except (json.JSONDecodeError, TypeError):
+                parsed = {"result": str(result)}
+            self._write_json({"result": parsed})
+        except Exception as e:
+            logger.warning("_handle_session_end: %s", e)
+            self._error(f"Session end failed: {e}", 500)
+
+    def _handle_supersede_memory(self, note_id: str) -> None:
+        """POST /api/v1/memories/{id}/supersede — supersede a memory."""
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            rationale = req.get("rationale", "")
+            title_slug = req.get("title_slug", "")
+            content = req.get("content", "")
+
+            if not rationale:
+                self._error("rationale is required for supersede", 400)
+                return
+
+            from mcp_surface.mcp_tools import memory_note
+
+            result = memory_note(
+                note_id=note_id,
+                action="supersede",
+                rationale=rationale,
+                title_slug=title_slug or "",
+                content=content,
+                category=req.get("category", ""),
+                tags=req.get("tags", None),
+            )
+            try:
+                parsed = json.loads(result) if isinstance(result, str) else result
+            except (json.JSONDecodeError, TypeError):
+                parsed = {"result": str(result)}
+            self._write_json({"note_id": note_id, "result": parsed})
+        except Exception as e:
+            logger.warning("_handle_supersede_memory: %s", e)
+            self._error(f"Supersede failed: {e}", 500)
+
+    def _handle_restore_memory(self, note_id: str) -> None:
+        """POST /api/v1/memories/{id}/restore — restore a soft-deleted memory."""
+        try:
+            req = self._read_json_body()
+        except ValueError:
+            req = {}
+        try:
+            rationale = req.get("rationale", "Restored via API")
+
+            from mcp_surface.mcp_tools import memory_note
+
+            result = memory_note(
+                note_id=note_id,
+                action="restore",
+                rationale=rationale,
+            )
+            try:
+                parsed = json.loads(result) if isinstance(result, str) else result
+            except (json.JSONDecodeError, TypeError):
+                parsed = {"result": str(result)}
+            self._write_json({"note_id": note_id, "result": parsed})
+        except Exception as e:
+            logger.warning("_handle_restore_memory: %s", e)
+            self._error(f"Restore failed: {e}", 500)
 
 
 class APIServer(ThreadingHTTPServer):
