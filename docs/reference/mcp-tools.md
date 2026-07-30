@@ -259,8 +259,8 @@ All admin operations go through the `memory_maintenance` grouped tool, dispatche
 | `memory_login_url` | Build a provider login/authorization URL for an SSO flow. |
 | `memory_maintenance` | Run an administrative or maintenance operation on the memory system. |
 | `memory_metrics_server` | Start, stop, or check the Prometheus metrics exporter server. |
-| `memory_okf_export` | Export all memories to an OKF (Open Knowledge Format) directory. |
-| `memory_okf_import` | Import memories from an OKF (Open Knowledge Format) directory. |
+| `memory_okf_export` | Export all memories to an OKF v0.2 (Open Knowledge Format) directory. |
+| `memory_okf_import` | Import memories from an OKF v0.2 (Open Knowledge Format) directory. |
 | `memory_pinned_decay_check` | Check pinned notes for drift and auto-unpin stale ones. |
 | `memory_pipeline_coverage` | Run cron/cron_pipeline_health.py and return its output. |
 | `memory_profile_access` | Record that a note was accessed. Opt-in via MEMORY_USER_PROFILE=1. |

@@ -211,7 +211,10 @@ def _memory_to_okf(row: dict) -> str:
         lines.append("sources:")
         lines.extend(_fmt_value(sources, indent=1).lstrip("\n").split("\n"))
 
-    lines.append("related: []")
+    related = meta.get("related")
+    if related is not None:
+        lines.append("related:")
+        lines.extend(_fmt_value(related, indent=1).lstrip("\n").split("\n"))
     if valid_from:
         lines.append(f"valid_from: {valid_from}")
     if valid_to:

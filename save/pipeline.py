@@ -1309,7 +1309,53 @@ def _build_memory_file(
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     tags_str = ", ".join(tags_list)
     pinned_str = "true" if pinned else "false"
-    markdown_content = f"---\ncreated: {now_iso}\nupdated: {now_iso}\nobserved_at: {now_iso}\ntags: [{tags_str}]\npinned: {pinned_str}\nrelated: []\nvalid_from: {now_iso}\nvalid_to: null\nsuperseded_by: null\n\n# {title_slug.replace('-', ' ').title()}\n\n{content.strip()}\n"
+
+    # Parse body frontmatter to discover any v0.2 extension fields
+    # (e.g. from an okf_import round-trip).  They must be written
+    # to the on-disk .md frontmatter AND kept in the DB metadata
+    # so that a subsequent export→import→export cycle is lossless.
+    _body_fm, _ = parse_frontmatter(content)
+    _raw = _body_fm.get("metadata")
+    if isinstance(_raw, str) and _raw.startswith("{"):
+        try:
+            _body_fm = json.loads(_raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    elif isinstance(_raw, dict):
+        _body_fm = _raw
+    elif _raw is not None and not isinstance(_raw, dict):
+        _body_fm = {"value": _raw}
+
+    _v02_disk: list[str] = []
+    for _vk in sorted([
+        "related", "verified", "status", "stale_after", "sources",
+        "generated", "runtime", "parameters", "computation",
+        "executor", "attester",
+    ]):
+        _vv = _body_fm.get(_vk)
+        if _vv is None or _vv == "" or _vv == [] or _vv == {}:
+            continue
+        _v02_disk.append(f"{_vk}:")
+        if isinstance(_vv, (dict, list)):
+            # Lazily avoid circular-import: okf_export._fmt_value is safe
+            # to import here because okf_export has no dependency on save.
+            from okf_export import _fmt_value as _fv
+            _v02_disk.extend(
+                _fv(_vv, indent=1).lstrip("\n").split("\n")
+            )
+        else:
+            _v02_disk.append(f"  {_vv}")
+
+    markdown_content = (
+        f"---\ncreated: {now_iso}\nupdated: {now_iso}\n"
+        f"observed_at: {now_iso}\ntags: [{tags_str}]\npinned: {pinned_str}"
+    )
+    if _v02_disk:
+        markdown_content += "\n" + "\n".join(_v02_disk)
+    markdown_content += (
+        f"\nvalid_from: {now_iso}\nvalid_to: null\nsuperseded_by: null\n\n"
+        f"# {title_slug.replace('-', ' ').title()}\n\n{content.strip()}\n"
+    )
     fm_metadata, _ = parse_frontmatter(content)
     raw_meta = fm_metadata.get("metadata")
     if isinstance(raw_meta, str) and raw_meta.startswith("{"):
@@ -1331,7 +1377,6 @@ def _build_memory_file(
         "valid_to",
         "superseded_by",
         "pinned",
-        "related",
         "created",
         "updated",
         "observed_at",

@@ -91,6 +91,7 @@ def parse_frontmatter(content):
             pending_list is not None
             and raw.startswith(' ')
             and ':' in stripped.split('#', 1)[0]
+            and not stripped.startswith('- ')
         ):
             k, _, v = stripped.partition(':')
             k = k.strip()

@@ -241,20 +241,25 @@ class TestFeatureCTemporalDecay(unittest.TestCase):
 
     def test_decay_mode_off(self):
         """When decay mode is off, scores are unchanged."""
-        import search_pipeline
+        from unittest.mock import MagicMock, patch
 
-        orig = search_pipeline._TEMPORAL_DECAY_MODE
-        search_pipeline._TEMPORAL_DECAY_MODE = "off"
-        try:
-            from search_pipeline import _apply_temporal_decay
+        mock_cfg = MagicMock()
+        mock_cfg.temporal_decay_mode = "off"
+        mock_cfg.temporal_half_life = 180.0
+        mock_cfg.forgetting_curve = False
+        mock_cfg.forgetting_curve_half_life = 30.0
+        mock_cfg.rerank_half_life_days = 30.0
+        mock_cfg.knowledge_graph = False
 
-            results = [
-                ("id1", "c1", "src", "[]", "2026-01-01", -1.0, 1.0, 1.0, 3, False),
-            ]
+        from search_pipeline import _apply_temporal_decay
+
+        results = [
+            ("id1", "c1", "src", "[]", "2026-01-01", -1.0, 1.0, 1.0, 3, False),
+        ]
+
+        with patch("infra._lazy_imports.get_config", return_value=mock_cfg):
             out = _apply_temporal_decay(results)
-            self.assertEqual(out[0][6], 1.0)
-        finally:
-            search_pipeline._TEMPORAL_DECAY_MODE = orig
+        self.assertEqual(out[0][6], 1.0)
 
 
 class TestFeatureDAsyncPipeline(unittest.TestCase):

@@ -43,7 +43,7 @@ class TestMemoryToOKF(unittest.TestCase):
         result = _memory_to_okf(row)
         self.assertIn("---", result)
         self.assertIn("created: 2026-01-01T00:00:00", result)
-        self.assertIn("tags: [python, test]", result)
+        self.assertIn("tags: python, test", result)
         self.assertIn("pinned: true", result)
         self.assertIn("Hello content", result)
         self.assertIn("Hello World", result)
@@ -133,7 +133,7 @@ class TestMemoryToOKF(unittest.TestCase):
             "metadata": "{}",
         }
         result = _memory_to_okf(row)
-        self.assertIn("[a, b]", result)
+        self.assertIn("tags: a, b", result)
 
 
 class TestOKFExport(unittest.TestCase):
