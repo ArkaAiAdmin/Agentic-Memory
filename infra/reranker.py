@@ -34,6 +34,7 @@ __all__ = ["get_reranker", "reset_reranker_for_tests", "normalize_rerank_score"]
 
 import multiprocessing as mp
 import threading
+import time
 from typing import TYPE_CHECKING, Any, List, Optional, cast
 
 if TYPE_CHECKING:
@@ -430,8 +431,20 @@ class _MpsWorkerPool:
         self._work_q: Optional[mp.Queue] = None
         self._result_q: Optional[mp.Queue] = None
         self._lock = threading.Lock()
+        # 2026-07-31: only ONE score() call talks to the worker child at a
+        # time. Concurrent callers skip deep rerank (caller falls back to
+        # the weak CE) instead of piling up on a hung MPS child — this was
+        # the 88-handle incident: every request thread blocked in
+        # SemLock_acquire on the result queue while the MPS kernel hung.
+        self._inflight = threading.Lock()
         self._load_failures = 0
         self._max_load_failures = 3
+        # After a score timeout, park the pool briefly so a hang-prone MPS
+        # kernel isn't re-triggered by every concurrent request in the
+        # same window (each retry costs a spawn + timeout cycle).
+        self._cooldown_until = 0.0
+        self._hang_timeouts = 0
+        self._hang_cooldown_seconds = 30.0
 
     def _spawn_worker(self, reranker_dict: dict) -> bool:
         """Spawn a fresh worker child. Returns True on success."""
@@ -447,7 +460,7 @@ class _MpsWorkerPool:
         self._process.start()
         # Wait for the child to signal it's ready (model loaded).
         try:
-            msg = self._result_q.get(timeout=60)
+            msg = self._result_q.get(timeout=20)
             if msg[0] == "ready":
                 self._load_failures = 0
                 return True
@@ -476,7 +489,12 @@ class _MpsWorkerPool:
             if q is not None:
                 try:
                     q.close()
-                    q.join_thread()
+                    # join_thread has no timeout; a child wedged in a MPS
+                    # kernel can stall its feeder, which would wedge the
+                    # caller indefinitely. Bound the wait.
+                    _jt = threading.Thread(target=q.join_thread, daemon=True)
+                    _jt.start()
+                    _jt.join(timeout=2)
                 except Exception:
                     pass
         self._work_q = None
@@ -489,7 +507,32 @@ class _MpsWorkerPool:
         docs: List[str],
         timeout: float,
     ) -> Optional[List[float]]:
-        """Score docs using the persistent worker. Spawns if needed."""
+        """Score docs using the persistent worker. Spawns if needed.
+
+        Hardened 2026-07-31: only one caller talks to the worker at a
+        time; concurrent callers and calls during hang-cooldown return
+        None immediately so the caller falls back to the weak CE instead
+        of blocking on a hung MPS child (see _MpsWorkerPool docstring).
+        """
+        if self._load_failures >= self._max_load_failures:
+            return None
+        if time.monotonic() < self._cooldown_until:
+            return None
+        if not self._inflight.acquire(blocking=False):
+            return None
+        try:
+            return self._score_locked(reranker, query, docs, timeout)
+        finally:
+            self._inflight.release()
+
+    def _score_locked(
+        self,
+        reranker: "Reranker",
+        query: str,
+        docs: List[str],
+        timeout: float,
+    ) -> Optional[List[float]]:
+        """Score docs while holding the single-inflight slot."""
         if self._load_failures >= self._max_load_failures:
             return None
         reranker_dict = {
@@ -521,6 +564,8 @@ class _MpsWorkerPool:
             logger.warning(
                 "_MpsWorkerPool: score timed out after %.1fs, respawning", timeout
             )
+            self._hang_timeouts += 1
+            self._cooldown_until = time.monotonic() + self._hang_cooldown_seconds
             with self._lock:
                 self._kill_worker()
             return None
