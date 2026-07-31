@@ -978,7 +978,10 @@ def process_one_task(
         )
     except _TaskTimeout:
         elapsed = time.time() - t_start
-        fail_task(conn, task_id, f"timeout after {elapsed:.1f}s")
+        # exhaust=True: a task that hung the watchdog will hang again on
+        # retry, burning a full timeout of CPU per attempt (the 2026-07-31
+        # incident: fact_consolidation re-picked for hours at 100% CPU).
+        fail_task(conn, task_id, f"timeout after {elapsed:.1f}s", exhaust=True)
         logger.error(
             "worker: task %d (%s) TIMED OUT after %.1fs — likely runaway regex or loop",
             task_id,

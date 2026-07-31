@@ -690,11 +690,20 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
             max_queue_size=max_qs, reject_policy=reject_pol,
         )
         _check_enqueue(r1, "entity_resolution")
-        r2 = enqueue_task(
-            _bq_conn, "fact_consolidation", {"memory_id": note_id},
-            max_queue_size=max_qs, reject_policy=reject_pol,
-        )
-        _check_enqueue(r2, "fact_consolidation")
+        # fact_consolidation re-scans the whole corpus, so one pending (or
+        # in-flight) task already covers this save. Dedup by type to prevent
+        # an unbounded backlog on high-write sessions — 2026-07-31 incident
+        # left 482 queued fact_consolidation tasks, each a full-corpus pass.
+        _consolidation_pending = _bq_conn.execute(
+            "SELECT 1 FROM task_queue WHERE task_type = 'fact_consolidation' "
+            "AND status IN ('pending', 'processing') LIMIT 1"
+        ).fetchone()
+        if _consolidation_pending is None:
+            r2 = enqueue_task(
+                _bq_conn, "fact_consolidation", {"memory_id": note_id},
+                max_queue_size=max_qs, reject_policy=reject_pol,
+            )
+            _check_enqueue(r2, "fact_consolidation")
 
         # Sprint 3 — Knowledge Compilation
         # Enqueue cross-memory entailment chain inference and concept

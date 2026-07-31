@@ -340,13 +340,18 @@ def complete_task(conn: AnyConnection, task_id: int) -> None:
     logger.debug("completed task %d", task_id)
 
 
-def fail_task(conn: AnyConnection, task_id: int, error: str) -> None:
-    """Mark a task as failed. Re-enables it if attempts < max_attempts."""
+def fail_task(conn: AnyConnection, task_id: int, error: str, *, exhaust: bool = False) -> None:
+    """Mark a task as failed. Re-enables it if attempts < max_attempts.
+
+    ``exhaust=True`` (watchdog timeouts) permanently fails the task
+    instead of re-enabling it: a task that hung the watchdog will hang
+    again on retry, burning a full timeout of CPU per attempt.
+    """
     row = conn.execute(
         "SELECT attempts, max_attempts FROM task_queue WHERE id = ?",
         (task_id,),
     ).fetchone()
-    if row and row[0] < row[1]:
+    if row and row[0] < row[1] and not exhaust:
         # Retryable: set back to pending
         conn.execute(
             "UPDATE task_queue SET status = 'pending', error = ? WHERE id = ?",
@@ -360,16 +365,21 @@ def fail_task(conn: AnyConnection, task_id: int, error: str) -> None:
             error,
         )
     else:
-        # Exhausted: mark as permanently failed
+        # Exhausted (or exhaust=True): mark as permanently failed
         conn.execute(
             "UPDATE task_queue SET status = 'failed', error = ? WHERE id = ?",
             (error, task_id),
         )
         attempts_limit = row[1] if row else 0
+        reason = (
+            f"exhausting all {attempts_limit} retry attempts"
+            if (row and not exhaust)
+            else "watchdog exhaust (non-retryable)"
+        )
         logger.warning(
-            "task %d has been permanently failed after exhausting all %d retry attempts: %s",
+            "task %d permanently failed after %s: %s",
             task_id,
-            attempts_limit,
+            reason,
             error,
         )
     conn.commit()

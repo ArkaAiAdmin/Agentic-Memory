@@ -7,14 +7,14 @@
   "num_total_tools": 119,
   "num_tests": 4431,
   "num_test_files": 365,
-  "loc_production": 138210,
+  "loc_production": 138293,
   "loc_test": 146548,
-  "loc_total": 284758,
+  "loc_total": 284841,
   "num_cron_scripts": 55,
   "num_tables_visible": 101,
   "num_hooks": 7,
   "num_agents_ported": 6,
-  "last_verified": "2026-07-31",
+  "last_verified": "2026-08-01",
   "num_mcp_modules": 32,
   "num_test_functions": 5337,
   "provenance": {
@@ -29,7 +29,7 @@
     "truth_rank_1": "_meta.json (machine-enforced)",
     "truth_rank_2": "AGENTS.md AUTO-GEN sections (via agents_md_generator.py -> gen_doc_meta.py)",
     "truth_rank_3": "docs/MCP_SURFACE.md + docs/architecture.md (manual, cross-check via gen_schema_doc.py)",
-    "last_meta_regenerated": "2026-07-31",
+    "last_meta_regenerated": "2026-08-01",
     "num_total_tools_note": "119 = len(CORE_TOOLS) + len(ADMIN_TOOLS) + len(DEPRECATED) = 24 + 92 + 3. DEPRECATED tools are a separate tier, not a subset of ADMIN."
   }
 }

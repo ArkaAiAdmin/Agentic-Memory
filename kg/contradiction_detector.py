@@ -254,6 +254,11 @@ MIN_SEGMENT_OVERLAP = 1.5
 # 1-2 letter abbreviations and noise.
 MIN_WORD_LEN = 4
 
+# Hard cap on pairwise comparisons per detection pass. At ~70us per pair
+# this bounds a full pass to ~7s even on pathologically dense vocabularies,
+# keeping in-process cron/worker runs well under the task timeout.
+_MAX_PHRASE_PAIRS = 100_000
+
 # Cache for segment splitting results (LRU-limited to avoid unbounded growth)
 _segment_cache: OrderedDict[str, list] = OrderedDict()
 _SEGMENT_CACHE_MAX = 1024
@@ -495,70 +500,121 @@ def detect_contradictions(memory_dir, min_confidence="low", tenant_id=None):
     if not rows:
         return []
 
-    # NOTE: This is O(N^2) in the number of notes.  For large corpora
-    # (thousands of notes), consider bucketing by subject first: build a
-    # subject-keyed index using significant_words(), then only compare
-    # notes that share at least one significant word, reducing effective
-    # comparisons from N^2 to roughly N * avg_bucket_size.
+    # Notes are bucketed by significant word so pairs are only compared
+    # when they share at least one significant word — O(N * avg_bucket_size)
+    # instead of O(N^2). significant_words() is computed once per note
+    # (not once per pair), which was the dominant cost on large corpora:
+    # 1406 notes previously meant ~1M redundant regex extractions and a
+    # 72s+ runtime per detection pass (2026-07-31 runaway incident).
     contradictions = []
     seen_pairs = set()
 
+    note_words: list[set[str]] = []
+    note_neg: list[tuple[set[str], set[str]]] = []
+    word_index: dict[str, list[int]] = {}
+    for k, (_, content, _src) in enumerate(rows):
+        words = significant_words(content)
+        note_words.append(words)
+        for w in words:
+            word_index.setdefault(w, []).append(k)
+        # Negation-token presence (substring test — the word-boundary regex
+        # below remains authoritative, this gate only avoids running it for
+        # pairs that cannot match). On a 1406-note corpus only 6% of notes
+        # carry any negation token, cutting regex scans from ~1M to ~3K.
+        low = content.lower()
+        pos_forms = {p for p, _ in NEGATION_PAIRS if p in low}
+        neg_forms = {n for _, n in NEGATION_PAIRS if n in low}
+        note_neg.append((pos_forms, neg_forms))
+
+    # Safety valve: hard cap on negation-regex pair scans so a pathological
+    # corpus can never hang an in-process cron/worker run.
+    pairs_checked = 0
+    capped = False
     for i, (nid1, content1, source1) in enumerate(rows):
-        for nid2, content2, source2 in rows[i + 1 :]:
-            if nid1 == nid2:
-                continue
-            pair_key = tuple(sorted([nid1, nid2]))
-            if pair_key in seen_pairs:
-                continue
+        words1 = note_words[i]
+        if not words1:
+            continue
+        checked: set[int] = set()
+        for w in words1:
+            for j in word_index.get(w, ()):
+                if j <= i or j in checked:
+                    continue
+                checked.add(j)
+                nid2, content2, source2 = rows[j]
+                words2 = note_words[j]
+                pair_key = tuple(sorted([nid1, nid2]))
+                if pair_key in seen_pairs:
+                    continue
 
-            # Subject-overlap gate: notes must share significant vocabulary
-            words1 = significant_words(content1)
-            words2 = significant_words(content2)
-            if not (words1 & words2):
-                continue
+                # Subject-overlap gate: notes must share significant vocabulary
+                if not (words1 & words2):
+                    continue
 
-            # Check negation pairs with word-boundary matching
-            c1_lower = content1.lower()
-            c2_lower = content2.lower()
+                # Negation-presence gate: skip pairs whose token sets cannot
+                # produce a pos/neg cross-match (the per-pair regex scan is
+                # the expensive part, so only run it on qualifying pairs).
+                pos1, neg1 = note_neg[i]
+                pos2, neg2 = note_neg[j]
+                if not ((pos1 and neg2) or (neg1 and pos2)):
+                    continue
 
-            for pos, neg in NEGATION_PAIRS:
-                # Word-boundary matching to avoid partial-word matches
-                pos_pattern = r"\b" + re.escape(pos) + r"\b"
-                neg_pattern = r"\b" + re.escape(neg) + r"\b"
+                pairs_checked += 1
+                if pairs_checked > _MAX_PHRASE_PAIRS:
+                    capped = True
+                    logger.warning(
+                        "detect_contradictions: hit pair cap %d over %d notes; "
+                        "returning partial results",
+                        _MAX_PHRASE_PAIRS,
+                        len(rows),
+                    )
+                    break
 
-                c1_has_pos = bool(re.search(pos_pattern, c1_lower))
-                c1_has_neg = bool(re.search(neg_pattern, c1_lower))
-                c2_has_pos = bool(re.search(pos_pattern, c2_lower))
-                c2_has_neg = bool(re.search(neg_pattern, c2_lower))
+                # Check negation pairs with word-boundary matching
+                c1_lower = content1.lower()
+                c2_lower = content2.lower()
 
-                # Both phrases must be present across the two notes
-                # AND they must appear in the same sentence
-                if (c1_has_pos and c2_has_neg) or (c1_has_neg and c2_has_pos):
-                    # Find the sentences containing the phrases
-                    if c1_has_pos:
-                        sent1 = _find_sentence_containing(content1, pos)
-                        sent2 = _find_sentence_containing(content2, neg)
-                    else:
-                        sent1 = _find_sentence_containing(content1, neg)
-                        sent2 = _find_sentence_containing(content2, pos)
+                for pos, neg in NEGATION_PAIRS:
+                    # Word-boundary matching to avoid partial-word matches
+                    pos_pattern = r"\b" + re.escape(pos) + r"\b"
+                    neg_pattern = r"\b" + re.escape(neg) + r"\b"
 
-                    if sent1 and sent2:
-                        seen_pairs.add(pair_key)
-                        confidence = "medium"  # phrase-based is medium confidence
-                        if len(words1 & words2) >= 5:
-                            confidence = "high"
-                        contradictions.append(
-                            {
-                                "source": nid1,
-                                "target": nid2,
-                                "type": "phrase_negation",
-                                "confidence": confidence,
-                                "evidence_a": sent1[:200],
-                                "evidence_b": sent2[:200],
-                                "source_file": source1,
-                            }
-                        )
-                        break  # one contradiction per pair is enough
+                    c1_has_pos = bool(re.search(pos_pattern, c1_lower))
+                    c1_has_neg = bool(re.search(neg_pattern, c1_lower))
+                    c2_has_pos = bool(re.search(pos_pattern, c2_lower))
+                    c2_has_neg = bool(re.search(neg_pattern, c2_lower))
+
+                    # Both phrases must be present across the two notes
+                    # AND they must appear in the same sentence
+                    if (c1_has_pos and c2_has_neg) or (c1_has_neg and c2_has_pos):
+                        # Find the sentences containing the phrases
+                        if c1_has_pos:
+                            sent1 = _find_sentence_containing(content1, pos)
+                            sent2 = _find_sentence_containing(content2, neg)
+                        else:
+                            sent1 = _find_sentence_containing(content1, neg)
+                            sent2 = _find_sentence_containing(content2, pos)
+
+                        if sent1 and sent2:
+                            seen_pairs.add(pair_key)
+                            confidence = "medium"  # phrase-based is medium confidence
+                            if len(words1 & words2) >= 5:
+                                confidence = "high"
+                            contradictions.append(
+                                {
+                                    "source": nid1,
+                                    "target": nid2,
+                                    "type": "phrase_negation",
+                                    "confidence": confidence,
+                                    "evidence_a": sent1[:200],
+                                    "evidence_b": sent2[:200],
+                                    "source_file": source1,
+                                }
+                            )
+                            break  # one contradiction per pair is enough
+            if capped:
+                break
+        if capped:
+            break
 
     # Filter by min_confidence
     rank = {"low": 0, "medium": 1, "high": 2}
@@ -1070,6 +1126,11 @@ def detect_contradictions_semantic(memory_dir, threshold=SEMANTIC_THRESHOLD, ten
     _MAX_CLAIMS_SEMANTIC = (
         get_config().max_claims_semantic if get_config is not None else 10000
     )
+    # Hard ceiling: embedding + per-claim pair checks must stay well under
+    # the 300s worker task timeout. The 10000 config ceiling produced
+    # ~10K claims on a ~1400-note corpus and multi-minute runs that
+    # repeatedly hit the watchdog (2026-07-31 runaway incident).
+    _MAX_CLAIMS_SEMANTIC = min(_MAX_CLAIMS_SEMANTIC, 3000)
     if len(claim_texts) > _MAX_CLAIMS_SEMANTIC:
         logger.warning(
             "Too many claims for semantic detection (%d), capping at %d",
