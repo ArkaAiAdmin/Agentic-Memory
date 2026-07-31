@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -716,6 +717,9 @@ def _resolve_tenant() -> str:
 
 def _auto_slug(content: str) -> str:
     """Generate a short slug from content for auto-naming."""
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    h = hash(content) & 0xFFFF
-    return f"sdk-auto-{ts}-{h:04x}"
+    raw = content.strip().split("\n")[0][:55]
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw.lower())[:55].strip("-")
+    if not slug:
+        slug = f"note-{time.strftime('%Y%m%d_%H%M%S')}"
+    suffix = hash(content) & 0xFFFF
+    return f"{slug}-{suffix:04x}"

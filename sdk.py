@@ -37,11 +37,16 @@ __all__ = ["Memory", "AgentMemory"]
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _slugify(text: str, max_len: int = 55) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "-", text.strip().lower())[:max_len].strip("-")
 
 
 class Memory:
@@ -98,7 +103,10 @@ class Memory:
             _AGENT_CONTEXT.principal_id = self._principal_id
 
         ts = time.strftime("%Y%m%d_%H%M%S")
-        title_slug = f"sdk-auto-{ts}-{hash(content) & 0xFFFF:04x}"
+        raw = content.strip().split("\n")[0][:55]
+        slug = _slugify(raw) or f"note-{ts}"
+        suffix = hash(content) & 0xFFFF
+        title_slug = f"{slug}-{suffix:04x}"
         return str(save_memory_auto(
             content=content,
             category="sdk",
