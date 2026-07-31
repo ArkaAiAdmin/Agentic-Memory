@@ -2683,7 +2683,8 @@ class APIServer(ThreadingHTTPServer):
         self._thread: Optional[threading.Thread] = None
         self._outbox_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
-        
+
+        self.allow_reuse_address = True
         super().__init__((host, port), APIRequestHandler)
 
     def register_ws_client(self, client_id: str, sock: socket.socket) -> None:
