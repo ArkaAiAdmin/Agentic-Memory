@@ -112,6 +112,27 @@ def _get_query_type_weights() -> dict:
 _MIN_INTERACTIONS = 10
 
 
+def _parse_timestamp(val: Any) -> int:
+    """Safely parse a timestamp into a unix epoch integer.
+    Supports int/float numeric, integer strings, ISO 8601 strings, and
+    falls back to 0 on any parsing failure.
+    """
+    if val is None:
+        return 0
+    if isinstance(val, (int, float)):
+        return int(val)
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        try:
+            return int(datetime.fromisoformat(str(val)).timestamp())
+        except Exception:
+            return 0
+
+
+_RERANK_TOKEN_RE = re.compile(r"\b[A-Za-z][A-Za-z\-_/]{2,}\b")
+
+
 def apply_query_type_weights(query_type: str) -> dict:
     """Return rerank weights, potentially overridden by learned CTR weights.
 
@@ -282,50 +303,30 @@ def _temporal_decay_factor(
 
     # Forgetting curve: decay based on last_accessed
     if _fc_enabled and last_accessed:
-        try:
-            la_dt = datetime.fromisoformat(last_accessed)
-            if la_dt.tzinfo is None:
-                la_dt = la_dt.replace(tzinfo=timezone.utc)
-            la_ts = la_dt.timestamp()
+        la_ts = _parse_timestamp(last_accessed)
+        if la_ts > 0:
             age_days = max(0.0, (now_ts - la_ts) / 86400.0)
-        except (ValueError, TypeError):
-            # Fall through to created-based decay
-            pass
-        else:
             _fc_hl = float(cast(float, _fc_half_life))
             if _fc_hl <= 0:
                 return 1.0  # skip decay to avoid division by zero
             if _td_mode == "linear":
-                return max(
-                    0.0, 1.0 - float(age_days) / (3.0 * _fc_hl)
-                )
+                return max(0.0, 1.0 - float(age_days) / (3.0 * _fc_hl))
             return float(0.5 ** (float(age_days) / _fc_hl))
 
     # Standard decay based on created timestamp
     if not created:
         return 1.0
-    try:
-        c_dt = datetime.fromisoformat(created)
-        if c_dt.tzinfo is None:
-            c_dt = c_dt.replace(tzinfo=timezone.utc)
-        c_ts = c_dt.timestamp()
-        age_days = max(0.0, (now_ts - c_ts) / 86400.0)
-    except (ValueError, TypeError):
+    c_ts = _parse_timestamp(created)
+    if c_ts <= 0:
         return 1.0
+    age_days = max(0.0, (now_ts - c_ts) / 86400.0)
     _td_half_life = _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)
     hl = half_life if half_life is not None else float(cast(float, _td_half_life))
     if hl <= 0:
         return 1.0  # skip decay to avoid division by zero
     if _td_mode == "linear":
-        return max(
-            0.0,
-            1.0
-            - float(age_days)
-            / (3.0 * hl),
-        )
-    return float(0.5 ** (
-        float(age_days) / hl
-    ))
+        return max(0.0, 1.0 - float(age_days) / (3.0 * hl))
+    return float(0.5 ** (float(age_days) / hl))
 
 
 def _apply_jaccard_surprise_penalty(scored_results: list, query: str) -> list:
