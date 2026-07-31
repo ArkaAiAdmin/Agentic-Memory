@@ -752,6 +752,7 @@ class MemoryConfig:
             "api_enable_server": lambda self: self.api.enable_server,
             "api_listen_host": lambda self: self.api.listen_host,
             "api_listen_port": lambda self: self.api.listen_port,
+            "api_insecure_loopback": lambda self: self.api.insecure_loopback,
             "auto_save_max_retries": lambda self: self.auto_save.max_retries,
             "auto_save_backoff_base_seconds": lambda self: self.auto_save.backoff_base_seconds,
             "auto_save_backoff_cap_seconds": lambda self: self.auto_save.backoff_cap_seconds,

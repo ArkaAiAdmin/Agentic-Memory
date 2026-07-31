@@ -2488,7 +2488,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             tool_name = req.get("tool", "")
-            args = req.get("args", {})
+            args = req.get("arguments") or req.get("args") or {}
             if not tool_name or not tool_name.startswith("memory_"):
                 self._error("Invalid or missing tool name", 400)
                 return
