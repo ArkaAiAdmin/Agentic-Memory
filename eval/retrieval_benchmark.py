@@ -314,6 +314,11 @@ class RetrievalBenchmark:
         self._tmpdir = Path(tempfile.mkdtemp(prefix="retrieval_bench_"))
         db_path = self._tmpdir / "memory.db"
         os.environ["MEMORY_DB_PATH"] = str(db_path)
+        # Benchmarks deliberately point MEMORY_DB_PATH at a throwaway DB;
+        # arm the config-drift escape hatch (audited, time-bounded).
+        os.environ["MEMORY_ESCAPE_HATCH"] = (
+            "ignore-stability;retrieval-benchmark-temp-db;retrieval_bench;14400;60"
+        )
         bootstrap_temp_db_clean(db_path)
         _seed_db(db_path, self._golden)
         return db_path

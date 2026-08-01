@@ -8,7 +8,7 @@
 
 ## Abstract
 
-Multi-agent LLM systems increasingly maintain a shared, persistent knowledge graph — entities, facts, and typed relations accumulated across sessions — that multiple agents read and write concurrently. Without coordination, concurrent writes corrupt this shared memory: last-write-wins silently discards concurrent contributions, and ID-at-creation CRDTs (Yjs, Automerge, Loro) preserve duplicate entities and orphan edges. We present a conflict-free knowledge-graph projection pipeline that gives concurrent multi-agent memory provable strong eventual consistency. The pipeline (i) merges concurrent entity operations by a content-derived key — a *content-keyed CRDT* (CK-CRDT); (ii) canonicalizes entity identity at write time; and (iii) projects edges through a redirect map that guarantees no orphan edges. We prove four results: representative-selection via argmax is monotone and content-stable (Theorem 1); canonicalization-at-write-time suffices for no-orphan guarantees under downstream CRDTs (Theorem 2); the information loss is exactly the within-class loser set, a tight lower bound (Lemmas 1–2); and three content-key properties — determinism, content-locality, and non-key invariance — are necessary and sufficient for convergence under argmax selection, with counterexamples showing each is individually required (Theorem 3). On 5,000 concurrent multi-agent operations, the pipeline loses zero writes, produces zero divergences across all message-delivery orders, and creates zero orphan edges — versus 46% lost writes for last-write-wins and 460 orphan edges for naive merge — and scales to 10M operations at 138K ops/s. To our knowledge this is the first provably-convergent, multi-writer knowledge-graph memory designed for concurrent AI-agent systems; unlike single-writer agent-memory architectures (Zep, Mem0, Letta/MemGPT), it provides convergence guarantees under concurrent writes. The convergence model assumes complete (exact-broadcast) delivery; delivery-order independence under partial replication is provided by anti-entropy reconciliation rather than associative partial-summary merges.
+Multi-agent LLM systems increasingly maintain a shared, persistent knowledge graph — entities, facts, and typed relations accumulated across sessions — that multiple agents read and write concurrently. Without coordination, concurrent writes corrupt this shared memory: last-write-wins silently discards concurrent contributions, and ID-at-creation CRDTs (Yjs, Automerge, Loro) preserve duplicate entities and orphan edges. We present a conflict-free knowledge-graph projection pipeline that gives concurrent multi-agent memory provable strong eventual consistency. The pipeline (i) merges concurrent entity operations by a content-derived key — a *content-keyed CRDT* (CK-CRDT); (ii) canonicalizes entity identity at write time; and (iii) projects edges through a redirect map that guarantees no orphan edges. We prove four results: representative-selection via argmax is monotone and content-stable (Theorem 1); canonicalization-at-write-time suffices for no-orphan guarantees under downstream CRDTs (Theorem 2); the information loss is exactly the within-class loser set, a tight lower bound (Lemmas 1–2); and three content-key properties — determinism, content-locality, and non-key invariance — are necessary and sufficient for convergence under argmax selection, with counterexamples showing each is individually required (Theorem 3). On 5,000 concurrent multi-agent operations, the pipeline loses zero writes, produces zero divergences across all message-delivery orders, and creates zero orphan edges — versus 77% lost writes for last-write-wins and 460 orphan edges for naive merge — and scales to 10M operations at 296K ops/s. To our knowledge this is the first provably-convergent, multi-writer knowledge-graph memory designed for concurrent AI-agent systems; unlike single-writer agent-memory architectures (Zep, Mem0, Letta/MemGPT), it provides convergence guarantees under concurrent writes. The convergence model assumes complete (exact-broadcast) delivery; delivery-order independence under partial replication is provided by anti-entropy reconciliation rather than associative partial-summary merges.
 
 ---
 
@@ -20,7 +20,7 @@ Modern AI-agent systems are increasingly multi-agent: several LLM agents observe
 
 The defining requirement is *concurrent write correctness*. When two agents encounter the same person in different sessions, each independently creates an entity for that person — with different internal IDs and, potentially, conflicting attributes written at overlapping times. A correct shared memory must satisfy two properties: (i) **convergence** — every agent that has delivered the same set of writes observes the same graph, regardless of the order in which writes arrived; and (ii) **no lost updates** — a write issued by any agent is reflected in the converged state, not silently discarded.
 
-This is not a hypothetical edge case; it is the expected steady state whenever agents accumulate knowledge independently, and it is a documented source of failure. A taxonomy of multi-agent LLM system failures (Cemri et al. [16]) finds that inter-agent communication and coordination breakdowns — including inconsistent shared state — are among the most prevalent failure modes across popular multi-agent frameworks. In controlled terms, the default strategy most systems fall back on, last-write-wins, discards concurrent contributions: in our benchmark (§8.5), last-write-wins loses 46% of concurrent writes, and naive ID-at-creation merge produces 460 orphan edges per 5,000 operations. The downstream consequences — split edge sets, fragmented queries, lost facts, incorrect graph walks — propagate to every operation that references the affected entity.
+This is not a hypothetical edge case; it is the expected steady state whenever agents accumulate knowledge independently, and it is a documented source of failure. A taxonomy of multi-agent LLM system failures (Cemri et al. [16]) finds that inter-agent communication and coordination breakdowns — including inconsistent shared state — are among the most prevalent failure modes across popular multi-agent frameworks. In controlled terms, the default strategy most systems fall back on, last-write-wins, discards concurrent contributions: in our benchmark (§8.5), last-write-wins loses 77% of concurrent writes, and naive ID-at-creation merge produces 460 orphan edges per 5,000 operations. The downstream consequences — split edge sets, fragmented queries, lost facts, incorrect graph walks — propagate to every operation that references the affected entity.
 
 The goal of this paper is a shared knowledge-graph memory that is *provably* convergent under concurrent multi-agent writes, loses no concurrent write, and maintains referential integrity (no orphan edges) — without a central coordinator.
 
@@ -32,7 +32,7 @@ Five classes of solutions exist, each with limitations for the concurrent multi-
 
 **Centralized coordination** (mutexes, leader election) serializes writes and thus avoids conflicts, but requires a global coordinator, contradicting the local-first, highly-available requirement of multi-agent deployments.
 
-**Last-write-wins (LWW)** keeps only the most recent write per field. It is simple and coordinator-free but discards concurrent contributions: in our benchmark (§8.5) LWW loses 46% of concurrent writes, because two writes issued at overlapping times cannot both be "last."
+**Last-write-wins (LWW)** keeps only the most recent write per field. It is simple and coordinator-free but discards concurrent contributions: in our benchmark (§8.5) LWW loses 77% of concurrent writes, because two writes issued at overlapping times cannot both be "last."
 
 **ID-at-creation protocols** (Yjs [4], Automerge [5], Loro [6]) assign globally unique identifiers at insertion time and merge concurrently created records as *distinct* nodes. They converge, but do not collapse semantic duplicates — concurrent creation of the same entity produces two nodes and fragments the edge set (460 orphan edges per 5,000 operations in our benchmark), leaving deduplication to the application layer.
 
@@ -48,7 +48,7 @@ This paper makes the following contributions:
 
 2. **Formal convergence and integrity guarantees.** We prove four results that underpin the pipeline: representative-selection via argmax is monotone and content-stable (Theorem 1); canonicalization-at-write-time suffices for no-orphan guarantees when a CK-CRDT is composed with a downstream CRDT having foreign-key dependencies (Theorem 2); the information discarded by merge is exactly the within-class loser set, a tight lower bound (Lemmas 1–2); and three content-key properties — determinism, content-locality, and non-key invariance — are necessary and sufficient for convergence under argmax selection, with counterexamples showing each is individually required (Theorem 3). The full algebraic framework and complete proofs of Theorems 1–8 appear in our companion paper [9].
 
-3. **An empirical convergence evaluation under concurrent multi-agent writes (§8.5).** On 5,000 concurrent operations from up to 16 agents, the pipeline loses 0% of concurrent writes and produces 0 divergences across all message-delivery orders and 0 orphan edges — versus 46% lost writes for last-write-wins, 90.7% for first-writer-wins, and 460 orphan edges for naive merge — and scales to 10M operations at 138K ops/s.
+3. **An empirical convergence evaluation under concurrent multi-agent writes (§8.5).** On 5,000 concurrent operations from up to 16 agents, the pipeline loses 0% of concurrent writes and produces 0 divergences across all message-delivery orders and 0 orphan edges — versus 77% lost writes for last-write-wins, 89% for first-writer-wins, and 460 orphan edges for naive merge — and scales to 10M operations at 296K ops/s.
 
 4. **The content-keyed CRDT (CK-CRDT) framework and design checklist.** We formalize the content-keying pattern (§2) that the pipeline instantiates, and provide a K1–K3 checklist that tells designers exactly what a content key must satisfy for convergence, together with a classification of Docker, IPFS, Git, Yjs, Automerge, and Loro as instances or non-instances (§9).
 
@@ -199,9 +199,9 @@ We compare three approaches on 5,000 concurrent entity ops with 50 distinct enti
 | Semantic duplicates | 4,950 | 0 | 0 |
 | Orphan edges | 460 | 460 | **0** |
 | Redirect map entries | 0 | 4,950 | 4,950 |
-| Overhead vs naive | — | +23% | +35% |
+| Overhead vs naive | — | +36% | +37% |
 
-The naive merge (equivalent to Yjs/Automerge semantics) preserves all duplicates and orphan edges. The full pipeline eliminates both at ~35% overhead — dominated by Phase 1 entity merge (~94% of runtime), not by content-keyed dedup.
+The naive merge (equivalent to Yjs/Automerge semantics) preserves all duplicates and orphan edges. The full pipeline eliminates both at ~37% overhead — dominated by Phase 1 entity merge (~94% of runtime), not by content-keyed dedup.
 
 ### 8.2 Scaling
 
@@ -209,11 +209,11 @@ Wall-clock time grows linearly with $N$ (merge + dedup, no SQLite I/O). At K=100
 
 | N | Throughput | Time |
 |---|---|---|
-| 100K | 271K ops/s | 0.37s |
-| 1M | 247K ops/s | 4.0s |
-| 10M | 138K ops/s | 72s |
+| 100K | 350K ops/s | 0.29s |
+| 1M | 307K ops/s | 3.3s |
+| 10M | 296K ops/s | 34s |
 
-Throughput degrades 1.96x from 100K to 10M, attributable to Python dict overhead — not algorithmic. The full pipeline with SQLite I/O shows comparable throughput (192K→274K ops/s), confirming SQLite is not the bottleneck.
+Throughput degrades 1.18x from 100K to 10M, attributable to Python dict overhead — not algorithmic. The SQLite production path (§8.4) measures 106–140K ops/s end-to-end; SQLite is not the dominant cost.
 
 ### 8.3 Adversarial Robustness
 
@@ -225,7 +225,7 @@ The pipeline was tested against 35 test scenarios across 10 categories, includin
 
 ### 8.4 Production Path with SQLite
 
-The full pipeline (`project_crdt_to_entities`) includes SQLite reads/writes. At K=10, throughput is 192K→274K ops/s from 1K to 1M — comparable to in-memory merge+dedup. SQLite I/O is not the bottleneck; entity merge (Phase 1) dominates at ~94% of runtime.
+The full pipeline (`project_crdt_to_entities`) includes SQLite reads/writes. At K=1000, measured end-to-end (ingest + merge + dedup + redirect + write): 100K ops → 140K ops/s (0.71s), 1M → 124K ops/s (8.1s), 10M → 106K ops/s (94.5s). Ingest accounts for only ~9% of wall time; the pipeline read/parse/merge/redirect/write dominates. SQLite adds roughly 1.4–2.8× over the in-memory path at scale — redirect-map growth at K=1000 is the main cost — but entity merge (Phase 1) remains the largest single phase at ~94% of runtime in the in-memory path.
 
 ---
 
@@ -235,11 +235,11 @@ The preceding evaluations measure throughput and orphan-freedom on a fixed opera
 
 **Setup.** We simulate $N$ concurrent agents ($N \in \{2,4,8,16\}$), each generating a stream of concurrent field updates to a shared memory, with independent version vectors and logical clocks. Each agent is a replica; updates are exchanged and merged via the production `merge_field_updates`. For each generated write set we evaluate all six arrival-order permutations (and, for larger $N$, random delivery orders), and measure (i) whether all replicas converge to a single winner, (ii) the fraction of concurrent writes lost (present in no replica's converged causal history), and (iii) referential integrity (orphan edges) under concurrent entity merges.
 
-**Convergence (delivery-order independence).** Across 1,200 trials (5 concurrency levels $\times$ 200 write sets $\times$ 6 delivery orders), we observe **0 divergences**: every replica converges to the identical winner regardless of the order in which concurrent writes arrive. This empirically confirms the set-determinism guaranteed by Theorem 3 and the canonical pre-sort in `merge_field_updates`.
+**Convergence (delivery-order independence).** Across 800 trials (4 concurrency levels $\times$ 200 write sets $\times$ 6 delivery orders), we observe **0 divergences**: every replica converges to the identical winner regardless of the order in which concurrent writes arrive. This empirically confirms the set-determinism guaranteed by Theorem 3 and the canonical pre-sort in `merge_field_updates`.
 
-**No lost updates.** The merge stores the element-wise join of all concurrent version vectors on the winning record, so every agent's causal contribution is preserved. The pipeline loses **0.0%** of concurrent writes, versus **46.0%** for wall-clock last-write-wins and **90.7%** for first-writer-wins. Last-write-wins discards nearly half of concurrent writes because two overlapping writes cannot both be "last"; the CK-CRDT merge discards none.
+**No lost updates.** The merge stores the element-wise join of all concurrent version vectors on the winning record, so every agent's causal contribution is preserved. The pipeline loses **0.0%** of concurrent writes, versus **76.6%** (50.0–93.8% by level) for wall-clock last-write-wins and **88.8%** (75.0–96.9%) for first-writer-wins. Last-write-wins discards roughly three quarters of concurrent writes because two overlapping writes cannot both be "last"; the CK-CRDT merge discards none.
 
-**No orphan edges under concurrent merges.** When concurrent entity merges create redirects, the projection phase rewrites every edge reference to the canonical entity. Across 300 concurrent-merge trials, the pipeline produces **0.0%** dangling edges, versus **37.7%** for a naive drop-on-merge policy that discards edges whose endpoint was merged away.
+**No orphan edges under concurrent merges.** When concurrent entity merges create redirects, the projection phase rewrites every edge reference to the canonical entity. Across 300 concurrent-merge trials (2,709 edges), the pipeline produces **0.0%** dangling edges, versus **60.8%** for a naive drop-on-merge policy that discards edges whose endpoint was merged away (36–75% depending on collision structure).
 
 These results demonstrate the paper's core guarantee at the multi-agent scale: provable convergence, zero lost updates, and referential integrity under concurrent writes from up to 16 agents — the regime in which single-writer agent-memory systems (§1.2) are unspecified and last-write-wins loses data.
 

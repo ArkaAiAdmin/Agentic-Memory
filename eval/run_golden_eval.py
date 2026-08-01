@@ -15,6 +15,11 @@ if eval_db.suffix == ".txt":
     eval_db = Path(eval_db.read_text().strip())
 os.environ["MEMORY_DB_PATH"] = str(eval_db)
 os.environ["MEMORY_CONFIG_DRIFT_SKIP_ENFORCEMENT"] = "1"
+# Benchmarks deliberately point MEMORY_DB_PATH at a dedicated eval DB;
+# arm the config-drift escape hatch (audited, time-bounded).
+os.environ["MEMORY_ESCAPE_HATCH"] = (
+    "ignore-stability;golden-eval-dedicated-db;golden_eval;14400;60"
+)
 
 from search.orchestrator import search_memories
 from infra._lazy_imports import get_embedding_search

@@ -308,6 +308,11 @@ def run_adversarial_eval() -> dict:
         db_path.unlink()
 
     os.environ["MEMORY_DB_PATH"] = str(db_path)
+    # Benchmarks deliberately point MEMORY_DB_PATH at a throwaway DB;
+    # arm the config-drift escape hatch (audited, time-bounded).
+    os.environ["MEMORY_ESCAPE_HATCH"] = (
+        "ignore-stability;adversarial-benchmark-temp-db;adv_eval;14400;60"
+    )
     bootstrap_temp_db_clean(db_path)
     import sqlite3
     conn = sqlite3.connect(str(db_path), timeout=30.0)

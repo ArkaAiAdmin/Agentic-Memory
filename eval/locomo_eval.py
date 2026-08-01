@@ -49,6 +49,12 @@ from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set
 set_benchmark_env()
 os.environ["MEMORY_WRITE_QUEUE_TIMEOUT"] = "120.0"
 os.environ["MEMORY_LLM_EXTRACTION"] = "false"
+# The eval deliberately points MEMORY_DB_PATH at a throwaway temp DB.
+# Arm the config-drift escape hatch (audited, time-bounded) so the
+# stability-tier drift this creates is downgraded to a warning.
+os.environ["MEMORY_ESCAPE_HATCH"] = (
+    "ignore-stability;locomo-benchmark-temp-db;locomo_eval;14400;60"
+)
 
 
 CATEGORY_MAP = {

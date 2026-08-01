@@ -11,6 +11,7 @@ Measures: orphans produced, timing, convergence, information loss.
 
 import hashlib
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -651,17 +652,23 @@ def main():
 
 
 def parameter_sweep():
-    """Sweep N (ops) and K (keys) to show scaling behavior."""
-    import time
+    """Sweep N (ops) and K (keys) to show scaling behavior.
 
+    Run with `--scale` to reproduce the paper's §8.2 rows at N = 1M / 10M
+    (K=1000): each row is a single timed run after warmup.
+    """
     print("\n" + "=" * 95)
     print("Parameter sweep: runtime vs (N, K) for full_pipeline")
     print("=" * 95)
     print(f"{'N':>8} {'K':>6} {'Ent':>6} {'Redir':>7} {'Time(ms)':>10} {'us/op':>8}")
     print("-" * 95)
 
-    for N in [1000, 5000, 10000, 50000, 100000]:
-        for K in [10, 100, 1000]:
+    scale = "--scale" in sys.argv
+    Ns = [100000, 1000000, 10000000] if scale else [1000, 5000, 10000, 50000, 100000]
+    Ks = [1000] if scale else [10, 100, 1000]
+
+    for N in Ns:
+        for K in Ks:
             eops = []
             edops = []
             for i in range(N):
@@ -678,18 +685,18 @@ def parameter_sweep():
                                     {f"agent_{i % 5}": i // K + 1}, float(i)))
 
             # Warmup
-            for _ in range(3):
-                full_pipeline(eops, edops)
+            full_pipeline(eops, edops)
 
-            # Timed run
+            # Timed run (5 reps for small N, single run for the 1M/10M rows)
+            reps = 1 if N >= 1000000 else 5
             t0 = time.perf_counter()
-            for _ in range(5):
+            for _ in range(reps):
                 r = full_pipeline(eops, edops)
             t1 = time.perf_counter()
 
             ents = len(r["entities"])
             redir = len(r["redirects"])
-            t_ms = (t1 - t0) / 5 * 1000
+            t_ms = (t1 - t0) / reps * 1000
             us_per_op = t_ms * 1000 / N
 
             print(f"{N:>8} {K:>6} {ents:>6} {redir:>7} {t_ms:>10.1f} {us_per_op:>8.1f}")
