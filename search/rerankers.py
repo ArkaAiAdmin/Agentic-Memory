@@ -407,6 +407,7 @@ _CE_CHUNK_MODEL_ERROR = None  # timestamp of last failed load attempt
 _CE_CHUNK_RETRY_COOLDOWN = 60.0  # seconds before retrying after failure
 _CE_CHUNK_SIZE = 150
 _CE_CHUNK_OVERLAP = 30
+_CE_MAX_SCORED_CHUNKS = 8
 
 
 def _chunk_text(text: str, chunk_size: int = _CE_CHUNK_SIZE, overlap: int = _CE_CHUNK_OVERLAP) -> list[str]:
@@ -420,6 +421,42 @@ def _chunk_text(text: str, chunk_size: int = _CE_CHUNK_SIZE, overlap: int = _CE_
         chunks.append(" ".join(words[i : i + chunk_size]))
         i += chunk_size - overlap
     return chunks if chunks else [text]
+
+
+def _build_content_chunk_pairs(query: str, contents: list[str]) -> tuple[list, list]:
+    """Build ``(query, chunk)`` pairs scoring the FULL content of each doc.
+
+    Fixes the LoCoMo truncation bug: the old weak pass scored only
+    ``content[:512]`` and the chunk pass only the top-2 chunks by query-word
+    overlap, so answers buried deep in long dialogue sessions were never
+    scored and gold sessions were demoted below rank 30 despite correct
+    channel scores. Scoring every chunk (capped at ``_CE_MAX_SCORED_CHUNKS``)
+    lets the CE see the whole document.
+
+    Returns ``(all_pairs, counts)`` where ``counts[i]`` is the number of
+    chunks emitted for ``contents[i]`` (1 for empty/short content).
+    """
+    all_pairs: list = []
+    counts: list = []
+    for content in contents:
+        chunks = _chunk_text(content or "")
+        if len(chunks) > _CE_MAX_SCORED_CHUNKS:
+            chunks = chunks[:_CE_MAX_SCORED_CHUNKS]
+        all_pairs.extend((query, c) for c in chunks)
+        counts.append(len(chunks))
+    return all_pairs, counts
+
+
+def _max_over_chunk_scores(raw_scores, counts: list, start: int = 0) -> tuple[list, int]:
+    """Reduce per-doc chunk scores to per-doc maxima, returning ``(maxes, next_idx)``."""
+    maxes = []
+    idx = start
+    for cnt in counts:
+        sess = raw_scores[idx : idx + cnt]
+        idx += cnt
+        best = max(sess) if len(sess) > 0 else 0.0
+        maxes.append(float(best))
+    return maxes, idx
 
 
 def _get_best_device() -> str:
@@ -584,30 +621,18 @@ def _apply_ce_chunk_rerank(
 
     # Build all (query, chunk) pairs across all sessions at once,
     # then batch-predict for ~10x speedup over per-session calls.
+    # Score ALL chunks of the full content (capped): the old top-2-by-query-
+    # overlap filter dropped the answer chunk for long dialogue sessions.
     import time as _t
     _t0 = _t.time()
     all_pairs = []
     chunk_counts = []  # how many chunks per session
-    # M14 fix: compute query_word_set once outside the loop
-    query_word_set = set(w.lower() for w in query.split() if w.lower() not in _CE_STOPWORDS)
-    if not query_word_set:
-        query_word_set = set(w.lower() for w in query.split())
     for r in ce_candidates:
         content = r[1] or ""
         chunks = _chunk_text(content)
-        if len(chunks) > 2:
-            # Filter chunks based on query word overlap to reduce CrossEncoder workload
-            
-            scored_chunks = []
-            for chunk in chunks:
-                chunk_words = set(chunk.lower().split())
-                overlap = len(query_word_set.intersection(chunk_words))
-                scored_chunks.append((overlap, chunk))
-            
-            # Sort descending by overlap, keep top 2
-            scored_chunks.sort(key=lambda x: x[0], reverse=True)
-            chunks = [c for _, c in scored_chunks[:2]]
-        chunk_pairs = [(query, c[:512]) for c in chunks]
+        if len(chunks) > _CE_MAX_SCORED_CHUNKS:
+            chunks = chunks[:_CE_MAX_SCORED_CHUNKS]
+        chunk_pairs = [(query, c) for c in chunks]
         all_pairs.extend(chunk_pairs)
         chunk_counts.append(len(chunk_pairs))
     logger.debug("_apply_ce_chunk_rerank: %d sessions, %d total chunks (%.2fms chunking)",
@@ -776,9 +801,10 @@ def _apply_weak_ce_rerank(
     model = _get_ce_chunk_model()  # ms-marco-MiniLM-L-6-v2 (shared with chunk CE)
     if model is not None:
         try:
-            pairs = [(query, (d or "")[:512]) for d in docs]
+            pairs, counts = _build_content_chunk_pairs(query, docs)
             raw = model.predict(pairs, show_progress_bar=False, batch_size=64)
-            ce_scores = [float(x) for x in raw]
+            maxes, _ = _max_over_chunk_scores(raw, counts)
+            ce_scores = [float(x) for x in maxes]
             # M11 fix: widen logit clipping from [-10,10] to [-20,20] to preserve signal
             ce_norm = [max(0.0, min(1.0, (max(-20.0, min(20.0, s)) + 20.0) / 40.0)) for s in ce_scores]
         except Exception as e:  # pragma: no cover - model present but scored badly
@@ -882,7 +908,9 @@ def _apply_combined_ce_rerank(
     sequential baseline but independent of stage execution order.
 
     The chunk sub-step mirrors ``_apply_ce_chunk_rerank`` exactly: the
-    ms-marco model, the query-word-overlap top-2 chunk filter, the
+    ms-marco model, full-content chunk scoring (ALL chunks, capped --
+    fixes the LoCoMo truncation bug where the top-2 overlap filter and the
+    ``[:512]`` slices dropped answers buried deep in long sessions), the
     ``(s + 10) / 20`` normalization, the p80 pre-filter, and the simple-
     query / few-candidates / model-unavailable fast-paths. The only
     behavioural difference from the baseline is that the weak and chunk
@@ -911,8 +939,12 @@ def _apply_combined_ce_rerank(
     # Raw channel scores (what stage 9b saw as r[6] before any CE).
     raw = [float(r[6]) if r[6] is not None else 0.0 for r in scored_results]
 
-    # ---- weak pre-pass: single-doc ms-marco CE when available, else
+    # ---- weak pre-pass: full-content ms-marco CE when available, else
     # hand-rolled IDF+bigram. MULTIPLICATIVE (matches baseline stage 9b).
+    # The weak signal is the MAX over chunks of the FULL content: the old
+    # ``content[:512]`` slice only scored the opening lines, so answers
+    # buried deep in long sessions (LoCoMo answers sit at chars 900-3800)
+    # scored ~0 and the blend demoted gold sessions below rank 30.
     # Using the model here (not just the hand-rolled score) is what the
     # validated PR1.1 baseline did -- the hand-rolled signal alone pulls
     # recall down, the model-based weak pre-pass lifts it back to baseline.
@@ -920,10 +952,12 @@ def _apply_combined_ce_rerank(
     model_w = _get_ce_chunk_model()  # ms-marco-MiniLM-L-6-v2 (shared w/ chunk)
     ce_norm_w = None
     if model_w is not None:
-        docs = [(query, (scored_results[i][1] or "")[:512]) for i in range(weak_k)]
+        weak_contents = [(scored_results[i][1] or "") for i in range(weak_k)]
+        weak_pairs, weak_counts = _build_content_chunk_pairs(query, weak_contents)
         try:
-            raw_w = model_w.predict(docs, show_progress_bar=False, batch_size=64)
-            ce_norm_w = [max(0.0, min(1.0, (max(-20.0, min(20.0, float(x))) + 20.0) / 40.0)) for x in raw_w]
+            raw_w = model_w.predict(weak_pairs, show_progress_bar=False, batch_size=64)
+            weak_maxes, _ = _max_over_chunk_scores(raw_w, weak_counts)
+            ce_norm_w = [max(0.0, min(1.0, (max(-20.0, min(20.0, x)) + 20.0) / 40.0)) for x in weak_maxes]
         except Exception as e:  # pragma: no cover - model present but failed
             logger.debug("combined weak CE model failed (%s); hand-rolled", e)
             ce_norm_w = None
@@ -955,24 +989,20 @@ def _apply_combined_ce_rerank(
     if len(ce_candidates) <= 2:
         return _assign_rank_once(scored_results, final, chunk_k)
 
-    # Score the best chunk per candidate (top-2 chunks by query overlap).
+    # Score the best chunk per candidate: ALL chunks of the full content
+    # (capped), not just the top-2 by query-word overlap -- the overlap
+    # filter dropped the answer chunk (e.g. "camped" vs "camp" never
+    # overlaps lexically, so greeting chunks won the tie and gold scored
+    # ~0, demoting it below rank 30).
     all_pairs: list = []
     chunk_counts: list = []
     idx_map: list = []
     for i in ce_candidates:
         content = scored_results[i][1] or ""
         chunks = _chunk_text(content)
-        if len(chunks) > 2:
-            qset = set(w.lower() for w in query.split() if w.lower() not in _CE_STOPWORDS)
-            if not qset:
-                qset = set(w.lower() for w in query.split())
-            scored_chunks = []
-            for c in chunks:
-                cw = set(c.lower().split())
-                scored_chunks.append((len(qset & cw), c))
-            scored_chunks.sort(key=lambda x: x[0], reverse=True)
-            chunks = [c for _, c in scored_chunks[:2]]
-        pairs = [(query, c[:512]) for c in chunks]
+        if len(chunks) > _CE_MAX_SCORED_CHUNKS:
+            chunks = chunks[:_CE_MAX_SCORED_CHUNKS]
+        pairs = [(query, c) for c in chunks]
         all_pairs.extend(pairs)
         chunk_counts.append(len(pairs))
         idx_map.append(i)
