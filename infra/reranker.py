@@ -132,7 +132,7 @@ class Reranker:
             self._model = AutoModelForCausalLM.from_pretrained(
                 self.primary_id,
                 revision=self.primary_revision,
-                dtype="auto",
+                torch_dtype="auto",
             )
             self._model = self._model.to(device).eval()
             self._backend = "qwen3"
@@ -165,7 +165,7 @@ class Reranker:
             self._model = AutoModelForSequenceClassification.from_pretrained(
                 self.fallback_id,
                 revision=self.fallback_revision,
-                dtype="auto",
+                torch_dtype="auto",
             )
             self._model = self._model.to(device).eval()
             self._backend = "bge"
