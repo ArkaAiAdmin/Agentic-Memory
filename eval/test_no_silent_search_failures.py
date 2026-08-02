@@ -59,16 +59,23 @@ def _bootstrap_temp_db(db_path: Path) -> None:
 
 
 def _seed_minimal_memory(c: sqlite3.Connection) -> None:
-    """Insert one memory + matching FTS5 row so search has something to find."""
+    """Insert one memory + matching FTS5 row so search has something to find.
+
+    Must set tenant_id='default': search pipelines read
+    through the tenant_memories TEMP VIEW which filters
+    ``tenant_id = tenant_id()``, so a row with NULL tenant_id is invisible
+    and every search returns count=0.
+    """
     c.execute("""
         INSERT OR REPLACE INTO memories (
-            id, content, category, source_file,
+            id, content, category, source_file, tenant_id,
             created_at, updated_at, observed_at
         ) VALUES (
             'lessons/test-no-silent-001',
             'agentic memory is a local-first SQLite system',
             'lessons',
             'memory/lessons/test-no-silent-001.md',
+            'default',
             '2026-06-15 00:00:00',
             '2026-06-15 00:00:00',
             '2026-06-15 00:00:00'
@@ -79,8 +86,8 @@ def _seed_minimal_memory(c: sqlite3.Connection) -> None:
     ).fetchone()[0]
     c.execute(
         """
-        INSERT OR REPLACE INTO memories_fts (rowid, content, tags)
-        VALUES (?, 'agentic memory is a local-first SQLite system', 'lessons')
+        INSERT OR REPLACE INTO memories_fts (rowid, id, content, tags)
+        VALUES (?, 'lessons/test-no-silent-001', 'agentic memory is a local-first SQLite system', 'lessons')
     """,
         (rowid,),
     )

@@ -1420,11 +1420,19 @@ def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybri
     # Generate adjacent bigram phrase queries for bare words
     bigrams = []
     for i in range(len(content_words) - 1):
-        w1_esc = _escape_fts_query(content_words[i])
-        w2_esc = _escape_fts_query(content_words[i+1])
-        if w1_esc and w2_esc:
-            bigrams.append(f"{w1_esc} {w2_esc}")
-    bigram_terms = [_escape_phrase(bg) for bg in bigrams]
+        w1 = content_words[i]
+        w2 = content_words[i + 1]
+        if w1 and w2:
+            # Escape the RAW pair as one FTS5 phrase. Previously the code
+            # escaped each token first (`"a" "b"`) and then wrapped the
+            # joined string in _escape_phrase, which double-escaped every
+            # inner quote and produced broken FTS5 syntax
+            # (`"""memory"" ""local-first"""`) whenever a token contained
+            # a quote — the whole MATCH then failed and search silently
+            # returned 0 results for multi-word queries. Regression guard:
+            # test_no_silent_search_failures.py::test_search_finds_known_memory_even_with_bad_kg
+            bigrams.append(_escape_phrase(f"{w1} {w2}"))
+    bigram_terms = bigrams
 
     expanded = _expand_query(normalized_query)
 

@@ -347,7 +347,39 @@ def _text_multi_hop_traversal(
                 extra_filter=repo_filter,
                 extra_params=(category,) if category else (),
             )
-            results.extend(new_rows.values())
+            # P0: _fetch_rows_by_ids returns the raw 12-column layout
+            # (id, content, source_file, tags, created_at, fitness_score,
+            # importance, pinned, last_accessed, metadata, access_count,
+            # score). Appending those rows VERBATIM puts last_accessed at
+            # index 8, which the envelope phase reads as "importance" —
+            # an ISO date string flows into int() and every downstream
+            # search 500s (invalid literal for int(): '<ISO date>').
+            # Reshape to the canonical 13-column tuple the pipeline
+            # expects: (id, content, source_file, tags, created, rank,
+            # final_score, fitness, importance, pinned, last_accessed,
+            # metadata, supersedes). Supplementary rows rank last (rank
+            # = len(results), score 0.0) so they never displace genuine
+            # hits; final ordering is re-asserted by the caller.
+            _supp_rank = len(results)
+            for _r in new_rows.values():
+                results.append(
+                    (
+                        _r[0],
+                        _r[1] if len(_r) > 1 else "",
+                        _r[2] if len(_r) > 2 else "",
+                        _r[3] if len(_r) > 3 else None,
+                        _r[4] if len(_r) > 4 else "",
+                        _supp_rank,
+                        0.0,
+                        _r[5] if len(_r) > 5 else None,
+                        _r[6] if len(_r) > 6 else None,
+                        _r[7] if len(_r) > 7 else None,
+                        _r[8] if len(_r) > 8 else None,
+                        _r[9] if len(_r) > 9 else None,
+                        None,
+                    )
+                )
+                _supp_rank += 1
     except Exception as exc:
         logger.debug("_text_multi_hop_traversal failed: %s", exc)
 

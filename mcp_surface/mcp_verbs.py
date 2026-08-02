@@ -23,7 +23,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import cast
+from typing import Optional, cast
 
 from mcp_surface.mcp_common import (
     GLOBAL_MEM_DIR,
@@ -643,7 +643,10 @@ def memory_delete(
 
 @mcp.tool()
 @with_audit("memory_recall")
-def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "default") -> str:
+def memory_recall(
+    query: str = "", session_id: str = "", tenant_id: str = "default",
+    include_global: Optional[bool] = None,
+) -> str:
     """Recall context for the current session or a named thread.
 
     Combines session_start + recall_context into one call.
@@ -652,6 +655,10 @@ def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "defau
     Args:
         query: What to recall (default: recent activity).
         session_id: Specific session/thread to recall.
+        include_global: Include global-scope memories. When None,
+            derives from the calling agent's namespace (default
+            namespace -> global included); when True/False, overrides
+            the derived default.
     """
     auth_err = _check_authorization("search", "memory")
     if auth_err:
@@ -664,9 +671,10 @@ def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "defau
         try:
             from agent_context import get_agent
             _ctx = get_agent()
-            _include_global = _ctx.namespace == "default"
+            _default_global = _ctx.namespace == "default"
         except (ImportError, Exception):
-            _include_global = True
+            _default_global = True
+        _include_global = _default_global if include_global is None else include_global
         result = search_memories(
             db_path=db_path,
             query=q,
