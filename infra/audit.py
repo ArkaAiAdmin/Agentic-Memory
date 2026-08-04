@@ -94,11 +94,22 @@ def _resolve_audit_principal_and_tenant(db_path: str | None = None) -> tuple[str
     unauthenticated or direct-Python callers).
     """
     principal_id: str | None = None
+    needs_db_tenant = False
     try:
         from agent_context import get_agent
 
         ctx = get_agent()
-        principal_id = getattr(ctx, "principal_id", None) or getattr(ctx, "agent_id", None)
+        explicit_principal = getattr(ctx, "principal_id", None)
+        principal_id = explicit_principal or getattr(ctx, "agent_id", None)
+        # Only resolve tenant from the DB for a real principal/agent
+        # identity. The fallback ``agent_id="default"`` (no auth context,
+        # e.g. a pre-push hook or direct-Python caller) maps to the default
+        # tenant unconditionally — a DB round trip here would open the main
+        # DB through the write queue (15s session timeout) on every cold
+        # process for zero information.
+        needs_db_tenant = bool(principal_id) and (
+            explicit_principal is not None or principal_id != "default"
+        )
     except (ImportError, Exception):
         pass
 
@@ -108,13 +119,15 @@ def _resolve_audit_principal_and_tenant(db_path: str | None = None) -> tuple[str
         return cached
 
     tenant_id: str | None = None
-    if principal_id:
+    if principal_id and needs_db_tenant:
         try:
             from infra.authorizer import resolve_tenant_for_principal
 
             tenant_id = resolve_tenant_for_principal(principal_id, db_path=db_path)
         except Exception:
             tenant_id = principal_id
+    elif principal_id == "default":
+        tenant_id = "default"
     result = (principal_id, tenant_id)
     _AGENT_PRINCIPAL_CACHE[cache_key] = result
     return result
