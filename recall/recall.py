@@ -59,6 +59,7 @@ def recall_context(
     days_recent: int = RECENT_DAYS,
     deep_rerank: bool = False,
     db_path: str | None = None,
+    fts_relevance: bool = False,
 ) -> dict:
     """Assemble a structured recall briefing for agent context.
 
@@ -123,6 +124,7 @@ def recall_context(
                 query,
                 min(MAX_RELEVANT, limit),
                 deep_rerank=deep_rerank,
+                fts_relevance=fts_relevance,
             )
 
         if include_user_profile:
@@ -453,7 +455,7 @@ def _fetch_high_importance(conn: AnyConnection, limit: int) -> list[dict]:
 
 
 def _fetch_relevant(
-    db_path: Path, query: str, limit: int, deep_rerank: bool = False
+    db_path: Path, query: str, limit: int, deep_rerank: bool = False, fts_relevance: bool = False
 ) -> list[dict]:
     """Fetch contextually relevant memories using search_pipeline.
 
@@ -464,6 +466,15 @@ def _fetch_relevant(
                      highest-quality ranking — at the cost of 1-5s extra
                      CPU latency and a known risk of MPS kernel hang on
                      Apple Silicon (see reranker.py).
+        fts_relevance: When True, use FTS5 BM25-only search (mode="fts",
+                     light=True) instead of the full hybrid pipeline. This
+                     skips semantic expansion, embedding model loads,
+                     SPLADE, and cross-encoder reranking entirely — the
+                     relevant section becomes DB-only and bounded to
+                     sub-second even on a cold process. Quality of the
+                     top-5 relevant items is lower (lexical match only);
+                     callers that need semantic recall should keep the
+                     default False.
     """
     try:
         from infra._lazy_imports import search_memories
@@ -478,6 +489,8 @@ def _fetch_relevant(
             include_global=True,
             safety_wiring=True,
             deep_rerank=deep_rerank,
+            light=fts_relevance,
+            mode="fts" if fts_relevance else "hybrid",
         )
         # search_memories returns {'results': [...], 'count': N, ...}
         # raw_results are tuples: (id, content, source_file, tags, created_at,
@@ -502,11 +515,15 @@ def _fetch_relevant(
                     }
                 )
         items = [i for i in converted if not _is_auto_save(i)][:limit]
-        # Spaced repetition: best-effort, never breaks recall
+        # Spaced repetition: best-effort, never breaks recall. The SR
+        # update is a write-session open; under cross-process flock
+        # contention it would otherwise stall recall for the full default
+        # 15s wait. Bound it to 0.5s so recall stays fast and SR is simply
+        # skipped when another writer is active.
         try:
             from spaced_repetition import SpacedRepetition
 
-            sr = SpacedRepetition(db_path)
+            sr = SpacedRepetition(db_path, session_timeout=0.5)
             try:
                 if items:
                     for item in items:

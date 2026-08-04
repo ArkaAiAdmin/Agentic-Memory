@@ -296,7 +296,10 @@ def resolve_tenant_for_principal(principal_id: str | None, db_path: str | None =
     try:
         from pathlib import Path
         from infra.db import open_db
-        with open_db(Path(db_path), timeout=5.0) as conn:
+        # Pure read (principals lookup) — must NOT open the single-writer
+        # write queue: a flocked write session stalls/waits (15s+) and can
+        # wedge when the live server holds the DB lock.
+        with open_db(Path(db_path), timeout=5.0, write=False) as conn:
             return _principal_tenant(conn, principal_id)
     except Exception:
         return "default"

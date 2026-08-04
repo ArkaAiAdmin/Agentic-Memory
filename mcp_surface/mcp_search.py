@@ -47,7 +47,9 @@ def _record_spaced_repetition(db_path: Path, result_items: list, query: str) -> 
     if _SpacedRepetition is None:
         return
     try:
-        sr = _SpacedRepetition(db_path)
+        # Best-effort: bound the write-session wait so search is never
+        # stalled by a contended writer in another process.
+        sr = _SpacedRepetition(db_path, session_timeout=0.5)
         try:
             if result_items:
                 for item in result_items:
@@ -359,6 +361,7 @@ def memory_session_start(query: str = "") -> str:
             include_high_importance=True,
             include_user_profile=True,
             days_recent=7,
+            fts_relevance=True,
         )
         briefing = recall.get("formatted", "No recall available.")
 
