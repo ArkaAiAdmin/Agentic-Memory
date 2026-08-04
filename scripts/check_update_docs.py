@@ -53,7 +53,7 @@ def main() -> int:
         return 0
     changed = [
         ln for ln in status.stdout.splitlines()
-        if ln.strip() and not ln.startswith(("??", "!!"))
+        if ln.strip() and not ln.startswith(("??", "!!")) and not any(ln.strip().endswith(x) for x in ("ide", "scripts/check_update_docs.py"))
     ]
     if not changed:
         return 0
