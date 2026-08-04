@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 class SpacedRepetition:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, session_timeout: float | None = None):
         # P1-14 fix: route through the connection pool instead of
         # opening a raw sqlite3.connect(). The previous bare
         # ``sqlite3.connect(str(db_path))`` + bare ``conn.close()`` did
@@ -20,9 +20,13 @@ class SpacedRepetition:
         # connection; ``close()`` returns it to the pool rather than
         # closing it. Callers that depend on ``self.db`` being a
         # ``sqlite3.Connection`` (it still is) are unaffected.
+        # ``session_timeout`` bounds the write-session establishment wait;
+        # best-effort callers (recall/search reinforcement) pass a small
+        # value so a contended writer in another process cannot stall the
+        # read path for the full default 15s.
         from infra.db_write_queue import sqlite_write_queue
 
-        self.db = sqlite_write_queue.start_session(db_path)
+        self.db = sqlite_write_queue.start_session(db_path, timeout=session_timeout)
         self.db.execute("PRAGMA busy_timeout = 30000;")
         self._ensure_table()
 

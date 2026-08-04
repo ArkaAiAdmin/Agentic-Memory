@@ -353,8 +353,19 @@ class SQLiteWriteQueue:
         if self._shutdown.is_set() or not self._thread.is_alive():
             self.restart()
 
-    def start_session(self, db_path: Union[str, Path]) -> ProxyConnection:
-        """Start a write session proxy that executes transactions on the write queue thread."""
+    def start_session(
+        self, db_path: Union[str, Path], timeout: Optional[float] = None
+    ) -> ProxyConnection:
+        """Start a write session proxy that executes transactions on the write queue thread.
+
+        ``timeout`` bounds how long the caller waits for the session to be
+        established (i.e. for the db-path flock to become available).
+        ``None`` (default) keeps the historical behavior of using
+        ``MEMORY_WRITE_QUEUE_SESSION_TIMEOUT`` (default 15s). Best-effort
+        callers (spaced-repetition reinforcement in the read/search path)
+        pass a small timeout so recall can never be stalled by a contended
+        writer in another process.
+        """
         self._ensure_running()
         cmd_queue: queue.Queue = queue.Queue()
         resp_queue: queue.Queue = queue.Queue()
@@ -365,7 +376,11 @@ class SQLiteWriteQueue:
             self._pending_futures.add(future)
         self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue, session_id), future))
         # Configurable timeout via environment variable (default 60s)
-        session_timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_SESSION_TIMEOUT", "15.0"))
+        session_timeout = (
+            float(os.environ.get("MEMORY_WRITE_QUEUE_SESSION_TIMEOUT", "15.0"))
+            if timeout is None
+            else timeout
+        )
         try:
             future.result(timeout=session_timeout)
         finally:
