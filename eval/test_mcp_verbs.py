@@ -357,6 +357,12 @@ class TestVerbErrorHandling:
         (memory_recall, {"query": "x"}),
         (memory_note, {"note_id": "x", "action": "read"}),
         (memory_learn, {"content": "x"}),
+        # TODO(2026-08-04): this case takes ~15s call + ~5s teardown ONLY
+        # in full-file runs (0.01s in isolation). Suspected interlock
+        # between memory_audit()'s open_db(write=True) + run_db_migrations
+        # and state left behind by earlier tests in this process; not a
+        # correctness issue (36/36 pass). Worth investigating when this
+        # file's runtime matters.
         (memory_audit, {}),
         (memory_organize, {"target": "invalid"}),
     ])
