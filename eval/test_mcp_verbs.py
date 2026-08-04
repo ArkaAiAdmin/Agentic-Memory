@@ -6,7 +6,9 @@ conditions, and returns a well-formed error when the delegate fails.
 """
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +16,26 @@ INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
 import pytest
+
+# ── Isolated throwaway DB ──────────────────────────────────────────────
+# These tests exercise the verb surface (registration, delegation, error
+# shapes), never the live production DB.  Every verb call performs an
+# RBAC authorization check whose audit row is written through the write
+# queue; against the live DB that write contends with the running MCP
+# server's SQLite write lock and stalls each call ~5s.  Pointing
+# MEMORY_DB_PATH at a throwaway temp DB (same pattern as
+# eval/adversarial_memory_eval.py) keeps the suite fast and hermetic.
+# The env var is read at config-build time, so it must be set before the
+# first verb/config import below.  The empty file is enough — the write
+# queue runs schema setup on first open.  The config singleton may
+# already be built by conftest imports, so reset it to force a rebuild
+# that picks up the temp path (same pattern as conftest's
+# _test_embedding_setup fixture).
+_TEST_DB_PATH = Path(tempfile.mkdtemp(prefix="mcp_verbs_test_")) / "memory.db"
+os.environ["MEMORY_DB_PATH"] = str(_TEST_DB_PATH)
+_TEST_DB_PATH.touch()
+from infra.config import reset_config
+reset_config()
 
 # ── Import all verbs once ──────────────────────────────────────────────
 

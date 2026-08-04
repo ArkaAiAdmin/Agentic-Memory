@@ -24,9 +24,6 @@ import os
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    pass
-
 from infra.rbac import Principal, check_permission
 
 logger = logging.getLogger(__name__)
@@ -413,36 +410,37 @@ def log_authorization_decision(
 ) -> None:
     """Record an authorization decision in ``memory_audit_log``.
 
-    Best-effort: failures are logged at debug level and never raised.
+    Fire-and-forget via :func:`infra.audit.enqueue_audit` (async by
+    design since 2026-08-04): the row is routed to the DB that owns
+    the call and written by the audit writer thread, so a contended
+    SQLite write lock never stalls the verb call.  Best-effort:
+    failures are logged at debug level and never raised.
+
+    Note: the previous implementation wrote its own raw INSERT with
+    columns (``tool_name, args_json, status, duration_ms,
+    created_at``) that no longer exist in ``memory_audit_log`` since
+    migration 044 recreated the table — every auth decision was
+    silently dropped.  ``enqueue_audit`` uses the canonical column
+    layout and actually persists the row.
     """
     if not db_path:
         return
     try:
-        import json
-        import time
-        from pathlib import Path
-        from infra.db_write_queue import sqlite_write_queue
+        from infra.audit import enqueue_audit
 
-        future = sqlite_write_queue.enqueue_write(
-            Path(db_path),
-            "INSERT INTO memory_audit_log "
-            "(tool_name, args_json, status, duration_ms, created_at) "
-            "VALUES (?, ?, ?, 0, ?)",
-            (
-                "rbac_authorize",
-                json.dumps({
-                    "principal_id": principal_id or "anonymous",
-                    "tenant_id": tenant_id or "default",
-                    "action": action,
-                    "resource": resource,
-                    "allowed": allowed,
-                    "note_id": note_id,
-                }),
-                "ok" if allowed else "denied",
-                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            ),
+        enqueue_audit(
+            db_path,
+            "rbac_authorize",
+            {
+                "principal_id": principal_id or "anonymous",
+                "tenant_id": tenant_id or "default",
+                "action": action,
+                "resource": resource,
+                "allowed": allowed,
+                "note_id": note_id,
+            },
+            principal_id=principal_id,
         )
-        future.result(timeout=5.0)
     except Exception as exc:
         logger.debug("log_authorization_decision failed: %s", exc)
 
