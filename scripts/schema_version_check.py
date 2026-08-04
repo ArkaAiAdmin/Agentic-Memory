@@ -16,6 +16,10 @@ import sys
 
 
 def main() -> int:
+    # Pre-commit hooks run from the repo root, but this script is invoked by
+    # path (scripts/schema_version_check.py) — bootstrap the repo root onto
+    # sys.path so `infra` is importable regardless of CWD.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from infra.migration_runner import SCHEMA_VERSION
 
     migrations_dir = Path("migrations")

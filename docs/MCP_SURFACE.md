@@ -86,7 +86,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - **Contradiction merge:** LIVE — `memory_resolve_contradiction(strategy="merge")` delegates to resolver (G3).
 - **Belief review:** LIVE — `cron_review_beliefs` queues stale beliefs; `memory_review_beliefs` reads queue (G4).
 
-**Surface: 24 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 25 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.

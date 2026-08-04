@@ -181,7 +181,7 @@ agentic-memory/
 └── dashboard.py                 # Streamlit observability
 ```
 
-**Production stats:** ~147K LOC, 363 test files, 5,703+ test functions, schema v76, 77 reversible migrations, 24 CORE MCP tools, 1 consolidated scheduler, 7 lifecycle hooks.
+**Production stats:** ~147K LOC, 365 test files, 5,735+ test functions, schema v76, 77 reversible migrations, 25 CORE MCP tools, 1 consolidated scheduler, 7 lifecycle hooks.
 
 ---
 

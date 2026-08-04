@@ -19,9 +19,9 @@ import tool_registry  # noqa: E402
 
 
 def test_core_count():
-    """CORE_TOOLS has 24 entries (matches AGENTS.md and pyproject.toml)."""
-    assert len(tool_registry.CORE_TOOLS) == 24, (
-        f"Expected 24 CORE tools, got {len(tool_registry.CORE_TOOLS)}"
+    """CORE_TOOLS has 25 entries (matches AGENTS.md and pyproject.toml)."""
+    assert len(tool_registry.CORE_TOOLS) == 25, (
+        f"Expected 25 CORE tools, got {len(tool_registry.CORE_TOOLS)}"
     )
 
 
@@ -92,19 +92,20 @@ def test_admin_names_valid():
 
 
 def test_total_visible():
-    """Total visible tools (CORE only) is 24 after promoting the 3 self-editing
+    """Total visible tools (CORE only) is 25 after promoting the 3 self-editing
     skill tools (memory_list_skills, memory_extract_skills, memory_compile_skill)
-    from ADMIN to CORE and adding memory_recall_context.
+    from ADMIN to CORE, adding memory_recall_context, and registering
+    memory_session_end (live on the surface via mcp_surface/mcp_session.py).
     """
-    assert len(tool_registry.CORE_TOOLS) == 24
+    assert len(tool_registry.CORE_TOOLS) == 25
 
 
 def test_total_tool_count():
     """Total unique tools across CORE + ADMIN (DEPRECATED ⊂ ADMIN, not counted separately)."""
     unique = set(tool_registry.CORE_TOOLS) | set(tool_registry.ADMIN_TOOLS)
     # DEPRECATED ⊂ ADMIN, so unique = CORE ∪ ADMIN
-    assert len(unique) == 116, (
-        f"Expected 116 unique tools (24 CORE + 92 ADMIN), got {len(unique)}"
+    assert len(unique) == 117, (
+        f"Expected 117 unique tools (25 CORE + 92 ADMIN), got {len(unique)}"
     )
 
 

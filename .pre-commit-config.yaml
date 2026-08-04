@@ -24,9 +24,7 @@ repos:
           - infra/policy_hash_cache.py
           - infra/policy_hash_fetcher.py
           - infra/policy_hash_diff.py
-          - mcp_maintenance_policy_hash.py
-          - hooks/memory_toml_reload.py
-          - hooks/memory_tier_patch.py
+          - mcp_surface/mcp_maintenance_policy_hash.py
       - id: mypy
         name: mypy (config-drift surface)
         description: Typecheck the config-drift surface (toml_watch.py owned by another sub-agent)
@@ -42,20 +40,18 @@ repos:
           - infra/policy_hash_cache.py
           - infra/policy_hash_fetcher.py
           - infra/policy_hash_diff.py
-          - mcp_maintenance_policy_hash.py
-          - hooks/memory_toml_reload.py
-          - hooks/memory_tier_patch.py
+          - mcp_surface/mcp_maintenance_policy_hash.py
       - id: no-direct-pytest-eval
         name: no-direct-pytest-eval
         description: Reject `pytest eval/` unless run via eval/run_full_suite.py (MPS safety)
-        entry: python scripts/check_pytest_runner.py
+        entry: venv/bin/python scripts/check_pytest_runner.py
         language: system
         pass_filenames: false
         always_run: true
       - id: tool-registry-drift-check
         name: tool-registry-drift-check
         description: Detect drift between tool_registry.py and actual @mcp.tool definitions
-        entry: python scripts/tool_drift_check.py
+        entry: venv/bin/python scripts/tool_drift_check.py
         language: system
         types: [python]
         pass_filenames: false
@@ -63,7 +59,7 @@ repos:
       - id: schema-version-check
         name: schema-version-check
         description: Verify schema version in migration_runner.py matches applied migrations
-        entry: python scripts/schema_version_check.py
+        entry: venv/bin/python scripts/schema_version_check.py
         language: system
         types: [python, sql]
         pass_filenames: false
@@ -71,7 +67,7 @@ repos:
       - id: doc-meta-fresh
         name: doc-meta-fresh
         description: Verify docs/_meta.json matches live code (schema version, tool/migration/cron/test counts, LOC)
-        entry: python scripts/verify_doc_meta.py
+        entry: venv/bin/python scripts/verify_doc_meta.py
         language: system
         files: ^docs/.*\.md$
         pass_filenames: false
@@ -79,14 +75,14 @@ repos:
       - id: doc-refs-current
         name: doc-refs-current
         description: Verify generated reference docs (mcp-tools, schema, configuration) match live code
-        entry: python scripts/gen_mcp_tools_doc.py --check && python scripts/gen_schema_doc.py --check && python scripts/gen_config_doc.py --check
+        entry: venv/bin/python scripts/gen_mcp_tools_doc.py --check && venv/bin/python scripts/gen_schema_doc.py --check && venv/bin/python scripts/gen_config_doc.py --check
         language: system
         pass_filenames: false
         always_run: true
       - id: update-docs-fresh
         name: update-docs-fresh
         description: Rule 24 — run `make update-docs` and fail if docs drift from code (docs must commit with code)
-        entry: python scripts/check_update_docs.py
+        entry: venv/bin/python scripts/check_update_docs.py
         language: system
         pass_filenames: false
         always_run: true

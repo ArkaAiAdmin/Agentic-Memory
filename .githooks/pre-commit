@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+if [ ! -x "$(dirname "$0")/../venv/bin/pre-commit" ]; then
+  echo "pre-commit not found — create the venv first: python3 -m venv venv && venv/bin/pip install -r requirements-dev.txt" >&2
+  exit 1
+fi
+exec "$(dirname "$0")/../venv/bin/pre-commit" run --hook-stage pre-commit

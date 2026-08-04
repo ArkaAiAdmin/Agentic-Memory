@@ -6,7 +6,7 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 
 ---
 <!--AUTO-GEN:START key="what_this_system_is"-->
-- **Surface**: 24 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 55+ cron jobs
+- **Surface**: 25 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 55+ cron jobs
 - **Schema**: v76, ~101 tables
 - **Code**: ~138k LOC production, ~146k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
@@ -64,7 +64,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 <!--AUTO-GEN:END key="hard_rule_4"-->. Never `ALTER TABLE` in Python.
 5. **Default search: `include_global=True`** 🔍 with blended RRF. Don't override "for safety." (`eval/test_rule_enforcement.py` asserts the `search_memories` default.)
 6. **<!--AUTO-GEN:START key="hard_rule_6"-->
-**24 CORE tools are user-facing**; 92 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+**25 CORE tools are user-facing**; 92 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
 <!--AUTO-GEN:END key="hard_rule_6"-->
 7. **Use `venv/bin/python backfill_all.py`** (incremental default) or `backfill_all.py --full` (full rebuild). 🔧 Bare args are **rejected** (exit 2, no DB created) by the guard in `backfill/orchestrator.py::main` — past bare runs created 22 MB garbage DBs at repo root. Always pass `--incremental`, `--full`, `--health`, `--auto`, or a `--db <path>`.
 8. **Tests touching prod DB must use `_ProdDBGuarded`.** See `eval/test_safety_wiring.py:60-109`.
@@ -110,7 +110,7 @@ When two Hard Rules appear to conflict, resolve in this order (higher wins):
 agentic-memory/
 ├── save/ (save/pipeline.py)               ← write path
 ├── search/ (search/orchestrator.py)       ← read path
-├── infra/ (tool_registry.py)              ← 24 CORE + 92 ADMIN + 3 DEPRECATED (tool registry, migrations, config)
+├── infra/ (tool_registry.py)              ← 25 CORE + 92 ADMIN + 3 DEPRECATED (tool registry, migrations, config)
 ├── hooks/                                  ← 7 lifecycle hooks
 ├── background/
 │   ├── auto_save.py   ← async inbox+daemon
@@ -179,7 +179,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 ### Pointers
 
 <!--AUTO-GEN:START key="mcp_surface_contract"-->
-**Source of truth:** `docs/MCP_SURFACE.md` + `tool_registry.py`. The MCP server exposes **24 CORE tools** directly plus **1 `memory_maintenance` router**; 92 ADMIN + 3 DEPRECATED are hidden behind it `memory_maintenance(operation="...")`.
+**Source of truth:** `docs/MCP_SURFACE.md` + `tool_registry.py`. The MCP server exposes **25 CORE tools** directly plus **1 `memory_maintenance` router**; 92 ADMIN + 3 DEPRECATED are hidden behind it `memory_maintenance(operation="...")`.
 <!--AUTO-GEN:END key="mcp_surface_contract"-->
 
 - **Tool registry:** `tool_registry.ADMIN_TOOLS` (in `memory_mcp.py` ~line 237) is the single source of truth. Any name there must be reachable only via `memory_maintenance`.
@@ -199,7 +199,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 ---
 <!--AUTO-GEN:START key="current_state"-->
 - **Schema v76**: 77 migrations (100% down-coverage), ~101 tables.
-- **MCP surface**: 24 CORE + 1 router (92 ADMIN + 3 DEPRECATED). See `docs/MCP_SURFACE.md`.
+- **MCP surface**: 25 CORE + 1 router (92 ADMIN + 3 DEPRECATED). See `docs/MCP_SURFACE.md`.
 - **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.

@@ -2,8 +2,10 @@
 
 Runs `make update-docs` (the full autogen pipeline: update-agents-md ->
 update-architecture -> update-mcp-tools -> update-readme ->
-update-mcp-surface) and fails if any tracked doc file changed. This enforces
-that documentation is committed in the same change as the code that drove it.
+update-mcp-surface -> update-schema -> update-config -> update-repowiki)
+and fails if any tracked file changed. This enforces that documentation is
+committed in the same change as the code that drove it — including code-only
+changes, because every code change can affect schema/config/tool/LOC counts.
 
 If docs are stale, it regenerates them and reports the diff so the operator
 can `git add` the refreshed files and re-stage.
@@ -25,23 +27,6 @@ def main() -> int:
         return 0
     top = repo.stdout.strip()
 
-    # Only run the heavy regen when tracked doc files are part of the change.
-    tracked = subprocess.run(
-        ["git", "diff", "--cached", "--name-only"],
-        capture_output=True,
-        text=True,
-    )
-    if tracked.returncode != 0:
-        return 0
-    staged = set(tracked.stdout.split())
-    doc_globs = ("AGENTS.md", "docs/", "README.md", "README")
-    if not any(
-        any(p.startswith(g) or p == g.rstrip("/") for g in doc_globs)
-        for p in staged
-    ):
-        # No doc file staged — don't block on unrelated changes.
-        return 0
-
     make = shutil.which("make") or "make"
     regen = subprocess.run(
         [make, "update-docs"],
@@ -56,7 +41,8 @@ def main() -> int:
         )
         return 1
 
-    # Did regeneration change any tracked file?
+    # Did regeneration change any tracked file? Untracked (`??`) and ignored
+    # (`!!`) files are noise — only tracked modifications count as drift.
     status = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=top,
@@ -65,7 +51,10 @@ def main() -> int:
     )
     if status.returncode != 0:
         return 0
-    changed = [ln for ln in status.stdout.splitlines() if ln.strip()]
+    changed = [
+        ln for ln in status.stdout.splitlines()
+        if ln.strip() and not ln.startswith(("??", "!!"))
+    ]
     if not changed:
         return 0
 

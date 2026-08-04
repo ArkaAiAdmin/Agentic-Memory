@@ -3,7 +3,7 @@
 Phase A (2026-07-01): 17 CORE tools + escape hatch (memory_advanced).
 Phase B (2026-07-15): +1 CORE tool (memory_record_ctr_feedback) for CTR feedback.
 
-CORE_TOOLS:    24 tools total — all visible directly on the MCP surface.
+CORE_TOOLS:    25 tools total — all visible directly on the MCP surface.
                 Everything else is accessible via memory_maintenance(operation="...")
                 or memory_advanced(operation="...").
 ADMIN_TOOLS:    Legacy tools callable via memory_maintenance / memory_advanced.
@@ -24,6 +24,7 @@ CORE_TOOLS = [
     "memory_graph",
     "memory_profile",
     "memory_session_start",
+    "memory_session_end",
     "memory_list_revisions",
     "memory_advanced",
     "memory_review_beliefs",

@@ -83,7 +83,12 @@ def _count_core_tools() -> int:
         text = (ROOT / "tool_registry.py").read_text()
         m = re.search(r"CORE_TOOLS\s*=\s*\[(.*?)\]", text, re.DOTALL)
         if m:
-            return len([l for l in m.group(1).splitlines() if '"' in l])
+            # Count only tool entries — skip comment lines (e.g. the
+            # "# ... "Self-editing" section ..." note inside the list).
+            return len([
+                l for l in m.group(1).splitlines()
+                if '"' in l and not l.strip().startswith("#")
+            ])
     except Exception:
         pass
     return 0
