@@ -3,7 +3,11 @@
 Runs `make update-docs` (the full autogen pipeline: update-agents-md ->
 update-architecture -> update-mcp-tools -> update-readme ->
 update-mcp-surface -> update-schema -> update-config -> update-repowiki)
-and fails if any tracked file changed. This enforces that documentation is
+and fails if regeneration modified any tracked file relative to the
+staged tree. Purely staged changes (`M ` / `A ` / `D `) are the user's
+intended commit and are not drift — only worktree-vs-index deltas
+(` M`, `MM`, `AM`, ...) count, otherwise the guard fails on every
+code-bearing commit, not just stale docs. This enforces that documentation is
 committed in the same change as the code that drove it — including code-only
 changes, because every code change can affect schema/config/tool/LOC counts.
 
@@ -53,7 +57,11 @@ def main() -> int:
         return 0
     changed = [
         ln for ln in status.stdout.splitlines()
-        if ln.strip() and not ln.startswith(("??", "!!")) and not any(ln.strip().endswith(x) for x in ("ide", "scripts/check_update_docs.py"))
+        if len(ln) > 1
+        and ln[1] != " "
+        and ln.strip()
+        and not ln.startswith(("??", "!!"))
+        and not any(ln.strip().endswith(x) for x in ("ide", "scripts/check_update_docs.py"))
     ]
     if not changed:
         return 0

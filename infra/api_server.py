@@ -248,7 +248,16 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         """Auth check for WebSocket upgrades.
 
         Phase 2: tries JWT validation first (SSO-issued tokens), then
-        falls back to static bearer token comparison.
+        falls back to static token comparison via
+        ``Sec-WebSocket-Protocol`` (browser clients) or
+        ``Authorization: Bearer`` (programmatic clients).
+
+        The ``Sec-WebSocket-Protocol`` subprotocol is the primary WS auth
+        channel for the IDE webview: browser WebSockets cannot set custom
+        headers, so the token travels in the RFC 6455 subprotocol
+        negotiation and MUST be echoed in the 101 response or the browser
+        aborts the handshake. Auth-in-URL (``?token=``) is deliberately
+        not supported: it leaks credentials into access logs and proxies.
 
         Empty-token access is NOT allowed by default. The token may be
         unset only in a deliberate dev opt-in: when the server was started
@@ -306,13 +315,22 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if auth.startswith("Bearer ") and auth[7:] == token:
             self._resolve_ws_principal(auth[7:])
             return True
-        parsed = urlparse(self.path)
-        qs = parse_qs(parsed.query)
-        ws_token = qs.get("token", [""])[0]
-        if ws_token and ws_token == token:
-            self._resolve_ws_principal(ws_token)
-            return True
-        self._error("Unauthorized: provide token in Authorization header or ?token= query", 401)
+
+        # Primary browser channel: RFC 6455 Sec-WebSocket-Protocol.
+        ws_protocols = self.headers.get("Sec-WebSocket-Protocol", "")
+        if ws_protocols:
+            for candidate in (p.strip() for p in ws_protocols.split(",")):
+                if candidate == token:
+                    self._resolve_ws_principal(candidate)
+                    self._ws_subprotocol = candidate
+                    return True
+            # Fail closed: subprotocols were offered but none matched.
+            self._error("Unauthorized: Sec-WebSocket-Protocol token mismatch", 401)
+            return False
+        self._error(
+            "Unauthorized: provide token via Sec-WebSocket-Protocol or Authorization header",
+            401,
+        )
         return False
 
     def _resolve_ws_principal(self, raw_token: str) -> None:
@@ -1922,6 +1940,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Upgrade", "websocket")
         self.send_header("Connection", "Upgrade")
         self.send_header("Sec-WebSocket-Accept", accept)
+        # RFC 6455 §4.2.2: when the client offered subprotocols, the server
+        # MUST select one and echo it, or the browser fails the handshake.
+        # The subprotocol carries the auth token, so this is also the point
+        # at which the authenticated channel is established.
+        if getattr(self, "_ws_subprotocol", None):
+            self.send_header("Sec-WebSocket-Protocol", self._ws_subprotocol)
         self.end_headers()
         try:
             self.wfile.flush()

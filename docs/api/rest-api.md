@@ -571,12 +571,26 @@ curl -X POST http://localhost:9878/api/v1/compliance/gdpr/erase \
 Connect to `ws://localhost:9878/ws` for real-time events:
 
 ```bash
-# Connect (with token via query param)
+# Connect — token via RFC 6455 Sec-WebSocket-Protocol subprotocol
+# (browser-safe: the chosen subprotocol is echoed in the 101 handshake)
 curl -i -N \
   -H "Upgrade: websocket" \
   -H "Connection: Upgrade" \
-  "http://localhost:9878/ws?token=$MEMORY_API_TOKEN"
+  -H "Sec-WebSocket-Protocol: $MEMORY_API_TOKEN" \
+  "http://localhost:9878/ws"
+
+# Or via Authorization header (programmatic clients)
+curl -i -N \
+  -H "Upgrade: websocket" \
+  -H "Connection: Upgrade" \
+  -H "Authorization: Bearer $MEMORY_API_TOKEN" \
+  "http://localhost:9878/ws"
 ```
+
+Auth-in-URL (`?token=`) is **not** supported for WebSocket — credentials must
+never appear in request URLs (access logs, proxies). If a subprotocol is
+offered but none match the configured token, the handshake fails closed
+with `401`.
 
 **Event format:**
 ```json

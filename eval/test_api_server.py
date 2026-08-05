@@ -219,6 +219,50 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("memories", data)
         self.assertIn("vector_keys", data)
 
+    def _ws_handshake(self, path: str = "/ws", extra_headers: str = "") -> Tuple[int, str]:
+        """Open a raw socket, send a WS handshake, return (status, response)."""
+        sock = _socket.create_connection((self.host, self.port), timeout=2.0)
+        key = "dGhlIHNhbXBsZSBub25jZQ=="
+        handshake = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {self.host}:{self.port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            f"{extra_headers}\r\n"
+        )
+        sock.sendall(handshake.encode("utf-8"))
+        res = sock.recv(4096).decode("utf-8", errors="replace")
+        sock.close()
+        status = int(res.split(" ", 2)[1]) if res.startswith("HTTP/") else -1
+        return status, res
+
+    def test_websocket_subprotocol_auth_handshake(self):
+        # Browser clients cannot set Authorization headers on WebSocket, so
+        # the token rides in Sec-WebSocket-Protocol. RFC 6455 §4.2.2
+        # requires the server to echo the chosen subprotocol, otherwise the
+        # browser aborts the handshake.
+        status, res = self._ws_handshake(
+            extra_headers=f"Sec-WebSocket-Protocol: {self.token}\r\n"
+        )
+        self.assertEqual(status, 101, res)
+        self.assertIn("Upgrade: websocket", res)
+        self.assertIn(f"Sec-WebSocket-Protocol: {self.token}", res)
+
+    def test_websocket_subprotocol_auth_rejects_mismatch(self):
+        # Fail closed: subprotocols offered but none match the token.
+        status, res = self._ws_handshake(
+            extra_headers="Sec-WebSocket-Protocol: wrong-token\r\n"
+        )
+        self.assertEqual(status, 401, res)
+
+    def test_websocket_token_query_rejected(self):
+        # Auth-in-URL is an anti-pattern (leaks into access logs/proxies);
+        # the ?token= query path must not be supported.
+        status, res = self._ws_handshake(path=f"/ws?token={self.token}")
+        self.assertEqual(status, 401, res)
+
     def test_websocket_ping_pong_and_broadcast(self):
         # Connect raw socket for WS handshake
         sock = _socket.create_connection((self.host, self.port), timeout=2.0)
