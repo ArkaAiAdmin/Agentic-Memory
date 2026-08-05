@@ -20,7 +20,7 @@ def _coerce(val):
         return ''
     if val.startswith('[') and val.endswith(']'):
         try:
-            return json.loads(val)
+            return [str(it) for it in json.loads(val)]
         except (json.JSONDecodeError, ValueError):
             inner = val[1:-1]
             items = [it.strip().strip('"').strip("'") for it in inner.split(',') if it.strip()]

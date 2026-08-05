@@ -37,6 +37,15 @@ from infra.db_write_queue import ProxyConnection
 
 AnyConnection = Union[sqlite3.Connection, ProxyConnection]
 
+# Gate saga crash recovery so that N open_db calls in one process only run
+# the orphan scan on the first open (per DB path). Previously every open_db
+# re-ran recover_incomplete_sagas (infra/db.py:904), and with an unindexed
+# saga_log that query took ~3s each call — enough for cron jobs that open
+# one session per work item (e.g. cron_resolve_contradictions) to blow
+# past the background-worker 300s timeout and wedge in a respawn loop.
+_saga_recovery_paths: set = set()
+_saga_recovery_lock = threading.Lock()
+
 # Column list for the memories table (used by the INSTEAD OF UPDATE trigger
 # on the tenant_memories view).  Kept in sync with the migration schema.
 _MEMORIES_COLUMNS = (
@@ -900,13 +909,20 @@ def open_db(
                 conn.row_factory = row_factory
             run_schema_setup(conn)
             # Run saga crash recovery once per process (per DB path).
-            try:
-                from infra.saga import recover_incomplete_sagas
-                n = recover_incomplete_sagas(conn)
-                if n:
-                    logger.info("saga recovery: recovered %d incomplete sagas", n)
-            except Exception:
-                pass  # non-fatal: saga_log table may not exist yet
+            # gated: see _saga_recovery_paths docstring above.
+            recovery_key = str(path.resolve()) if str(path) != ":memory:" else ":memory:"
+            with _saga_recovery_lock:
+                run_recovery = recovery_key not in _saga_recovery_paths
+                if run_recovery:
+                    _saga_recovery_paths.add(recovery_key)
+            if run_recovery:
+                try:
+                    from infra.saga import recover_incomplete_sagas
+                    n = recover_incomplete_sagas(conn)
+                    if n:
+                        logger.info("saga recovery: recovered %d incomplete sagas", n)
+                except Exception:
+                    pass  # non-fatal: saga_log table may not exist yet
             t_id = tenant_id or "default"
             _setup_tenant_view(conn, t_id)
             yield conn

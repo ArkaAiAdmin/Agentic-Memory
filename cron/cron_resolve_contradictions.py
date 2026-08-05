@@ -78,27 +78,64 @@ def main() -> int:
     pairs = contradictions[:limit]
     resolved = failed = 0
     results = []
-    for c in pairs:
-        src = c.get("source", "")
-        tgt = c.get("target", "")
-        if not src or not tgt or src == tgt:
-            continue
-        if args.dry_run:
-            results.append({"source": src, "target": tgt, "action": "dry_run", "confidence": c.get("confidence")})
-            resolved += 1
-            continue
+
+    # Open ONE session and resolve all pairs through it. Previously each
+    # auto_resolve_contradiction_pair opened its own DB session, re-running
+    # run_schema_setup + saga crash recovery per pair; with an unindexed
+    # saga_log that scan cost ~3s per open, so 50 pairs (~700s) blew past
+    # the background worker's 300s timeout and wedged it in a respawn loop.
+    # Also enable global scope: detection runs cross-tenant when --tenant
+    # is unset, so the resolver must see all tenants too — otherwise
+    # non-default-tenant notes error with "note(s) not found".
+    from contextlib import nullcontext
+    from infra.db import open_db, set_include_global
+
+    shared_session = False
+    if args.dry_run:
+        session_cm = nullcontext(None)
+        shared_conn = None
+    else:
+        set_include_global(True)
         try:
-            result = auto_resolve_contradiction_pair(db, src, tgt)
-            action = result.get("action", "unknown")
-            results.append({"source": src, "target": tgt, "action": action, "strategy": result.get("strategy")})
-            if action not in ("error",):
-                resolved += 1
-            else:
-                failed += 1
+            session_cm = open_db(db, timeout=30.0)
+            shared_conn = session_cm.__enter__()
+            shared_session = True
         except Exception as e:
-            logger.warning("main failed: %s", e)
-            failed += 1
-            results.append({"source": src, "target": tgt, "action": "error", "error": str(e)})
+            print(f"contradiction_resolver: failed to open shared session, falling back per-pair: {e}", file=sys.stderr)
+            session_cm = nullcontext(None)
+            shared_conn = None
+            set_include_global(False)
+
+    try:
+        for c in pairs:
+            src = c.get("source", "")
+            tgt = c.get("target", "")
+            if not src or not tgt or src == tgt:
+                continue
+            if args.dry_run:
+                results.append({"source": src, "target": tgt, "action": "dry_run", "confidence": c.get("confidence")})
+                resolved += 1
+                continue
+            try:
+                result = auto_resolve_contradiction_pair(db, src, tgt, conn=shared_conn)
+                action = result.get("action", "unknown")
+                results.append({"source": src, "target": tgt, "action": action, "strategy": result.get("strategy")})
+                if action not in ("error",):
+                    resolved += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.warning("main failed: %s", e)
+                failed += 1
+                results.append({"source": src, "target": tgt, "action": "error", "error": str(e)})
+    finally:
+        if shared_session:
+            try:
+                session_cm.__exit__(None, None, None)
+            except Exception as e:
+                logger.warning("shared session close failed: %s", e)
+        if not args.dry_run:
+            set_include_global(False)
 
     output = {
         "scanned": len(pairs),
