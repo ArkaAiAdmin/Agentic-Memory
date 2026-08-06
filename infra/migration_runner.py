@@ -28,8 +28,10 @@ from __future__ import annotations
 import logging
 
 import argparse
+import contextlib
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -43,6 +45,37 @@ logger = logging.getLogger(__name__)
 
 # Directory containing the .sql migration files
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+
+
+@contextlib.contextmanager
+def _migration_lock():
+    """Acquire exclusive migration lock for single-writer process safety."""
+    lock_path = MIGRATIONS_DIR / ".migration.lock"
+    lock_file = None
+    try:
+        try:
+            from infra.file_lock import acquire_flock_with_retry, release_flock
+            lock_file = open(lock_path, "a+")
+            acquired = acquire_flock_with_retry(
+                lock_file,
+                max_attempts=30,
+                initial_backoff=0.05,
+                max_backoff=1.0,
+            )
+            if not acquired:
+                logger.warning(
+                    "Could not acquire exclusive migration lock %s within timeout", lock_path
+                )
+        except Exception as e:
+            logger.warning("Migration lock acquisition notice: %s", e)
+        yield
+    finally:
+        if lock_file is not None:
+            try:
+                from infra.file_lock import release_flock
+                release_flock(lock_file)
+            except Exception:
+                pass
 
 # Current schema version. Bump when adding new migrations.
 # Must match the highest-numbered migration file.
@@ -523,133 +556,157 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         return
 
     # Step 6: Apply pending migrations, each in its own transaction
-    try:
-        # NOTE (M49): PRAGMA foreign_keys = OFF inside a transaction is a
-        # no-op in SQLite.  This pragma only takes effect outside a
-        # transaction and persists for the connection's lifetime.  If the
-        # caller's connection is already inside a transaction, this is
-        # harmless but ineffective.  To truly disable FK enforcement, the
-        # pragma must be set on the connection before any BEGIN.
+    with _migration_lock():
         try:
-            conn.execute("PRAGMA foreign_keys = OFF")
-        except Exception:
-            pass
-        deferred: set[int] = set()  # migrations with forward-ref failures
-        for num, path in pending:
-            logger.info("Applying migration %03d: %s", num, path.name)
-            statements = _parse_sql_file(path)
-            migration_deferred = False
-            with conn:
-                for stmt in statements:
-                    # Pre-flight: skip ALTER TABLE ADD COLUMN when the
-                    # column already exists.  This eliminates noisy
-                    # "duplicate column" warnings on fresh DBs where
-                    # migration 000 creates tables with all columns and
-                    # later migrations (005, 035, etc.) try to add them.
-                    add_col_match = _ADD_COLUMN_RE.match(stmt)
-                    if add_col_match:
-                        tbl, col = add_col_match.group(1), add_col_match.group(2)
-                        if _column_exists(conn, tbl, col):
-                            continue
-                    try:
-                        conn.execute(stmt)
-                    except sqlite3.OperationalError as e:
-                        msg = str(e).lower()
-                        if any(
-                            re.search(rf"\b{re.escape(kw)}\b", msg)
-                            for kw in (
-                                "already exists",
-                                "duplicate column",
-                                "duplicate index",
-                                "table already exists",
-                                "index already exists",
-                                "trigger already exists",
-                            )
-                        ):
-                            logger.warning(
-                                "Migration %03d statement failed (idempotent, "
-                                "object already exists): %s",
-                                num,
-                                e,
-                            )
-                        elif any(
-                            re.search(rf"\b{re.escape(kw)}\b", msg)
-                            for kw in ("no such table", "no such column")
-                        ):
-                            # Forward-reference: the referenced table/column
-                            # is created by a later migration.  Skip THIS
-                            # statement only and continue with the rest of
-                            # the migration — later migrations in this run
-                            # likely create the missing object and must not
-                            # be skipped.
+            # NOTE (M49): PRAGMA foreign_keys = OFF inside a transaction is a
+            # no-op in SQLite. To truly disable FK enforcement, the
+            # pragma must be set outside an active transaction.
+            if not getattr(conn, "in_transaction", False):
+                try:
+                    conn.execute("PRAGMA foreign_keys = OFF")
+                except Exception:
+                    pass
+            deferred: set[int] = set()  # migrations with forward-ref failures
+            for num, path in pending:
+                logger.info("Applying migration %03d: %s", num, path.name)
+                statements = _parse_sql_file(path)
+                with conn:
+                    max_passes = max(len(statements), 1)
+                    remaining_statements = list(statements)
+                    for pass_idx in range(max_passes):
+                        next_remaining = []
+                        executed_in_pass = 0
+                        for stmt in remaining_statements:
+                            # Pre-flight: skip ALTER TABLE ADD COLUMN when the
+                            # column already exists.
+                            add_col_match = _ADD_COLUMN_RE.match(stmt)
+                            if add_col_match:
+                                tbl, col = add_col_match.group(1), add_col_match.group(2)
+                                if _column_exists(conn, tbl, col):
+                                    executed_in_pass += 1
+                                    continue
+                            try:
+                                conn.execute(stmt)
+                                executed_in_pass += 1
+                            except sqlite3.OperationalError as e:
+                                msg = str(e).lower()
+                                if any(
+                                    re.search(rf"\b{re.escape(kw)}\b", msg)
+                                    for kw in (
+                                        "already exists",
+                                        "duplicate column",
+                                        "duplicate index",
+                                        "table already exists",
+                                        "index already exists",
+                                        "trigger already exists",
+                                    )
+                                ):
+                                    logger.warning(
+                                        "Migration %03d statement failed (idempotent, "
+                                        "object already exists): %s",
+                                        num,
+                                        e,
+                                    )
+                                    executed_in_pass += 1
+                                elif any(
+                                    re.search(rf"\b{re.escape(kw)}\b", msg)
+                                    for kw in ("no such table", "no such column")
+                                ):
+                                    next_remaining.append(stmt)
+                                else:
+                                    logger.error(
+                                        "Migration %03d statement failed (non-idempotent): %s",
+                                        num,
+                                        e,
+                                    )
+                                    raise
+                        remaining_statements = next_remaining
+                        if not remaining_statements:
+                            break
+                        if executed_in_pass == 0:
+                            # Made no progress in this pass; further passes won't help
+                            break
+
+                    if remaining_statements:
+                        if os.getenv("MEMORY_ALLOW_DEFERRED_MIGRATIONS") == "1":
                             deferred.add(num)
-                            migration_deferred = True
                             logger.warning(
-                                "Migration %03d statement deferred (forward-ref: %s)",
+                                "Migration %03d statement deferred (forward-ref: %d statement(s) unresolved)",
                                 num,
-                                e,
+                                len(remaining_statements),
                             )
                         else:
-                            logger.error(
-                                "Migration %03d statement failed (non-idempotent): %s",
-                                num,
-                                e,
+                            raise RuntimeError(
+                                f"Migration {num:03d} ({path.name}) FAILED with {len(remaining_statements)} "
+                                f"unresolved forward-reference statement(s):\n"
+                                + "\n".join(f"  - {s}" for s in remaining_statements)
+                                + "\nEnsure all referenced tables and columns exist in prior migrations or 000_base_schema.sql."
                             )
-                            raise
 
-        # Build checksums for newly applied migrations, then write
-        # version + checksums to schema_version.  Exclude deferred
-        # and unattempted migrations so they re-run on next startup.
-        applied = {num for num, _ in pending} - deferred
-        checksums = _get_checksums(conn)
-        for num, path in pending:
-            if num not in deferred:
-                checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
-
-        if applied:
-            highest_applied = max(applied)
-            # When there are deferred migrations (forward-ref errors),
-            # do NOT bump version past them — they need to be retried
-            # on next startup.  Only bump to the cap when ALL pending
-            # migrations succeeded.
-            if deferred:
-                target_version = highest_applied
-            else:
-                max_pending = max((num for num, _ in pending), default=SCHEMA_VERSION)
-                target_version = min(SCHEMA_VERSION, max_pending)
-            with conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
-                    (target_version, json.dumps(checksums)),
+            if deferred and os.getenv("MEMORY_ALLOW_DEFERRED_MIGRATIONS") != "1":
+                raise RuntimeError(
+                    f"Migration execution finished with {len(deferred)} unresolved deferred migration(s): {sorted(deferred)}. "
+                    "Refusing to update schema_version. Set MEMORY_ALLOW_DEFERRED_MIGRATIONS=1 to override."
                 )
 
-        # Post-migration hooks. Run AFTER the transaction commits so
-        # the backfill can be retried independently if it fails.
-        # Each hook is keyed on the migration it accompanies so a
-        # partial migration + hook run can be resumed.
-        if any(num == 13 for num, _ in pending):
+            # Build checksums for newly applied migrations, then write
+            # version + checksums to schema_version. Exclude deferred
+            # and unattempted migrations so they re-run on next startup.
+            applied = {num for num, _ in pending} - deferred
+            checksums = _get_checksums(conn)
+            for num, path in pending:
+                if num not in deferred:
+                    checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+            if applied:
+                highest_applied = max(applied)
+                if deferred:
+                    target_version = highest_applied
+                else:
+                    max_pending = max((num for num, _ in pending), default=SCHEMA_VERSION)
+                    target_version = min(SCHEMA_VERSION, max_pending)
+                with conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
+                        (target_version, json.dumps(checksums)),
+                    )
+
+            # Post-migration integrity audit: verify foreign key integrity
             try:
-                from crdt.crdt_field import backfill_from_memories
+                fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if fk_errors:
+                    logger.error("Post-migration foreign_key_check detected %d violation(s): %s", len(fk_errors), fk_errors)
+                    raise RuntimeError(
+                        f"Post-migration integrity check FAILED: {len(fk_errors)} foreign key violation(s) detected: {fk_errors[:5]}"
+                    )
+            except sqlite3.OperationalError:
+                pass
 
-                count = backfill_from_memories(conn)
-                logger.info(
-                    "Migration 013: backfilled %d memory rows into memory_field_crdt",
-                    count,
-                )
-            except Exception as e:
-                logger.warning(
-                    "Migration 013: backfill failed (non-fatal; will "
-                    "retry on next save via _seed_note_into_field_crdt): %s",
-                    e,
-                )
-    except Exception as e:
-        logger.error("Migration failed: %s", e)
-        raise
-    finally:
-        try:
-            conn.execute("PRAGMA foreign_keys = ON")
+            # Post-migration hooks. Run AFTER the transaction commits so
+            # the backfill can be retried independently if it fails.
+            if any(num == 13 for num, _ in pending):
+                try:
+                    from crdt.crdt_field import backfill_from_memories
+
+                    count = backfill_from_memories(conn)
+                    logger.info(
+                        "Migration 013: backfilled %d memory rows into memory_field_crdt",
+                        count,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Migration 013: backfill failed (non-fatal; will "
+                        "retry on next save via _seed_note_into_field_crdt): %s",
+                        e,
+                    )
         except Exception as e:
-            logger.warning("run_migrations failed: %s", e)
+            logger.error("Migration failed: %s", e)
+            raise
+        finally:
+            try:
+                conn.execute("PRAGMA foreign_keys = ON")
+            except Exception as e:
+                logger.warning("run_migrations failed: %s", e)
 
 
 def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False) -> None:
@@ -773,10 +830,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Verify migration file checksums against stored hashes",
     )
+    parser.add_argument(
+        "--repair-checksum",
+        type=int,
+        default=None,
+        help="Repair stored SHA256 checksum for a specific migration number",
+    )
     args = parser.parse_args()
 
     if args.db is None:
-        print("Usage: python migration_runner.py --db <path> [--target-version <N>] [--dry-run] [--verify]")
+        print("Usage: python migration_runner.py --db <path> [--target-version <N>] [--dry-run] [--verify] [--repair-checksum <N>]")
         sys.exit(1)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -784,7 +847,21 @@ if __name__ == "__main__":
     conn = sqlite3.connect(args.db)
     conn.execute("PRAGMA foreign_keys=ON")
     try:
-        if args.verify:
+        if args.repair_checksum is not None:
+            available = {num: path for num, path in _get_available_migrations()}
+            if args.repair_checksum not in available:
+                print(f"Error: Migration {args.repair_checksum:03d} not found in {MIGRATIONS_DIR}")
+                sys.exit(1)
+            path = available[args.repair_checksum]
+            new_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            checksums = _get_checksums(conn)
+            checksums[str(args.repair_checksum)] = new_hash
+            conn.execute(
+                "UPDATE schema_version SET checksums = ? WHERE id = 1",
+                (json.dumps(checksums),),
+            )
+            print(f"Repaired stored checksum for Migration {args.repair_checksum:03d} ({path.name}): {new_hash}")
+        elif args.verify:
             mismatches = verify_checksums(conn)
             if not mismatches:
                 print("All migration checksums match.")

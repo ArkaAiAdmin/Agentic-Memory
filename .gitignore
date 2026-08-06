@@ -12,6 +12,7 @@ memory/
 lessons/
 preferences/
 .rebuild.lock
+.migration.lock
 BUG-FIX-REPORT.md
 E2E-TEST-REPORT.md
 auto_save.py.backup.*
