@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -19,8 +20,12 @@ HOOKS_DIR = INSTALL_ROOT / "hooks"
 VENV_PY = sys.executable
 
 
-def _run_hook(name: str, stdin: str, timeout: float = 30.0) -> tuple[int, str, str]:
+def _run_hook(name: str, stdin: str, timeout: float = 15.0) -> tuple[int, str, str]:
     """Run a hook with the given stdin. Returns (exit_code, stdout, stderr)."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(INSTALL_ROOT)
+    tmp_db = Path(tempfile.gettempdir()) / f"hook_test_{os.getpid()}.db"
+    env["MEMORY_DB_PATH"] = str(tmp_db)
     p = subprocess.run(
         [VENV_PY, str(HOOKS_DIR / name)],
         input=stdin,
@@ -28,6 +33,7 @@ def _run_hook(name: str, stdin: str, timeout: float = 30.0) -> tuple[int, str, s
         text=True,
         timeout=timeout,
         cwd=str(INSTALL_ROOT),
+        env=env,
     )
     return p.returncode, p.stdout, p.stderr
 

@@ -223,7 +223,8 @@ class TestIndexFactsForMemoryUsesRegexByDefault(unittest.TestCase):
                 invalidation_reason TEXT,
                 belief_status TEXT DEFAULT 'active',
                 epistemic_source TEXT DEFAULT 'agent',
-                fact_type TEXT DEFAULT 'observation'
+                fact_type TEXT DEFAULT 'observation',
+                tenant_id TEXT DEFAULT 'default'
             );
             """
         )
@@ -452,7 +453,8 @@ class TestBulkFunctionLLMSafe(unittest.TestCase):
                 invalidation_reason TEXT,
                 belief_status TEXT DEFAULT 'active',
                 epistemic_source TEXT DEFAULT 'agent',
-                fact_type TEXT DEFAULT 'observation'
+                fact_type TEXT DEFAULT 'observation',
+                tenant_id TEXT DEFAULT 'default'
             );
             """
         )
@@ -469,9 +471,11 @@ class TestBulkFunctionLLMSafe(unittest.TestCase):
         )
 
         self._saved_env = {}
-        for k in ("MEMORY_LLM_FORCE", "MEMORY_LLM_HYBRID"):
+        for k in ("MEMORY_LLM_FORCE", "MEMORY_LLM_HYBRID", "MEMORY_LLM_EXTRACTION"):
             self._saved_env[k] = os.environ.get(k)
-            os.environ.pop(k, None)
+        os.environ.pop("MEMORY_LLM_FORCE", None)
+        os.environ.pop("MEMORY_LLM_HYBRID", None)
+        os.environ["MEMORY_LLM_EXTRACTION"] = "1"
 
     def tearDown(self):
         for k, v in self._saved_env.items():
