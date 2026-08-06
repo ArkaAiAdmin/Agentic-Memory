@@ -165,7 +165,7 @@ def _migration_lock():
 # 2026-07-25: bumped to 74 — recreate two indexes silently destroyed by
 # table-recreation migrations (017 destroyed idx_backlinks_source_id,
 # 042 destroyed idx_memories_active partial index).
-SCHEMA_VERSION = 77
+SCHEMA_VERSION = 78
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

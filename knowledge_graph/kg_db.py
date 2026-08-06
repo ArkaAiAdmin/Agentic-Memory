@@ -52,6 +52,7 @@ def _jaccard_similarity(s1: str, s2: str) -> float:
 def _upsert_entity(
     conn: AnyConnection, name: str, entity_type: str, now: float,
     description: str = "",
+    tenant_id: str = "default",
 ) -> int:
     """Insert or update an entity. Returns the entity ID.
     
@@ -70,8 +71,8 @@ def _upsert_entity(
     
     # 0. Fast path: fingerprint already matches an existing row.
     row = conn.execute(
-        "SELECT id FROM kg_entities WHERE fingerprint = ?",
-        (_fp,),
+        "SELECT id FROM kg_entities WHERE fingerprint = ? AND tenant_id = ?",
+        (_fp, tenant_id),
     ).fetchone()
     if row:
         entity_id = row[0]
@@ -79,16 +80,16 @@ def _upsert_entity(
             raise RuntimeError(f"NULL entity id for {normalized!r}")
         conn.execute(
             "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now') "
-            "WHERE id = ?",
-            (entity_id,),
+            "WHERE id = ? AND tenant_id = ?",
+            (entity_id, tenant_id),
         )
         return int(entity_id)
     
     # 1. Exact match on name (case-insensitive on entity_type for backward
     #    compatibility with pre-normalization rows).
     row = conn.execute(
-        "SELECT id FROM kg_entities WHERE LOWER(name) = ? AND LOWER(entity_type) = ?",
-        (normalized, entity_type_norm),
+        "SELECT id FROM kg_entities WHERE LOWER(name) = ? AND LOWER(entity_type) = ? AND tenant_id = ?",
+        (normalized, entity_type_norm, tenant_id),
     ).fetchone()
     
     # 2. Exact match on alias
@@ -96,8 +97,8 @@ def _upsert_entity(
         row = conn.execute(
             "SELECT entity_id FROM kg_entity_aliases a "
             "JOIN kg_entities e ON a.entity_id = e.id "
-            "WHERE a.alias = ? AND LOWER(e.entity_type) = ?",
-            (normalized, entity_type_norm),
+            "WHERE a.alias = ? AND LOWER(e.entity_type) = ? AND e.tenant_id = ?",
+            (normalized, entity_type_norm, tenant_id),
         ).fetchone()
         
     # 3. Fuzzy match on existing entities or aliases
@@ -107,8 +108,8 @@ def _upsert_entity(
         
         # Check existing entity names
         candidates = conn.execute(
-            "SELECT id, name FROM kg_entities WHERE LOWER(entity_type) = ? ORDER BY mentions DESC LIMIT 500",
-            (entity_type_norm,)
+            "SELECT id, name FROM kg_entities WHERE LOWER(entity_type) = ? AND tenant_id = ? ORDER BY mentions DESC LIMIT 500",
+            (entity_type_norm, tenant_id)
         ).fetchall()
         for cid, cname in candidates:
             sim = _jaccard_similarity(normalized, cname.lower())
@@ -121,9 +122,9 @@ def _upsert_entity(
             alias_candidates = conn.execute(
                 "SELECT a.entity_id, a.alias "
                 "FROM kg_entity_aliases a JOIN kg_entities e ON a.entity_id = e.id "
-                "WHERE LOWER(e.entity_type) = ? "
+                "WHERE LOWER(e.entity_type) = ? AND e.tenant_id = ? "
                 "ORDER BY e.mentions DESC LIMIT 500",
-                (entity_type_norm,)
+                (entity_type_norm, tenant_id)
             ).fetchall()
             for cid, calias in alias_candidates:
                 sim = _jaccard_similarity(normalized, calias.lower())
@@ -149,16 +150,16 @@ def _upsert_entity(
         # Backfill fingerprint if the existing row lacks one (pre-migration-041 rows)
         conn.execute(
             "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now'), "
-            "fingerprint = COALESCE(fingerprint, ?) WHERE id = ?",
-            (_fp, entity_id),
+            "fingerprint = COALESCE(fingerprint, ?) WHERE id = ? AND tenant_id = ?",
+            (_fp, entity_id, tenant_id),
         )
         return int(entity_id)
     else:
         try:
             cur = conn.execute(
-                "INSERT INTO kg_entities (name, entity_type, fingerprint, created_at, updated_at) "
-                "VALUES (?, ?, ?, datetime('now'), datetime('now'))",
-                (normalized, entity_type, _fp),
+                "INSERT INTO kg_entities (name, entity_type, fingerprint, created_at, updated_at, tenant_id) "
+                "VALUES (?, ?, ?, datetime('now'), datetime('now'), ?)",
+                (normalized, entity_type, _fp, tenant_id),
             )
             if cur.lastrowid is None or cur.lastrowid == 0:
                 raise RuntimeError(f"Failed to upsert entity: {name}")
@@ -166,8 +167,8 @@ def _upsert_entity(
         except sqlite3.IntegrityError:
             # Race condition: another thread inserted between our SELECT and INSERT
             row = conn.execute(
-                "SELECT id FROM kg_entities WHERE LOWER(name) = ? AND LOWER(entity_type) = ?",
-                (normalized, entity_type_norm),
+                "SELECT id FROM kg_entities WHERE LOWER(name) = ? AND LOWER(entity_type) = ? AND tenant_id = ?",
+                (normalized, entity_type_norm, tenant_id),
             ).fetchone()
             if row:
                 raw_id = row[0]
@@ -175,8 +176,8 @@ def _upsert_entity(
                     raise RuntimeError(f"NULL entity id for {normalized!r}")
                 conn.execute(
                     "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now'), "
-                    "fingerprint = COALESCE(fingerprint, ?) WHERE id = ?",
-                    (_fp, raw_id),
+                    "fingerprint = COALESCE(fingerprint, ?) WHERE id = ? AND tenant_id = ?",
+                    (_fp, raw_id, tenant_id),
                 )
                 return int(raw_id)
             raise
@@ -189,6 +190,7 @@ def _upsert_edge(
     relation: str,
     now: float,
     context: str = "",
+    tenant_id: str = "default",
 ) -> None:
     """Insert or update an edge.
 
@@ -207,14 +209,14 @@ def _upsert_edge(
     source_id = resolve_entity_id(conn, source_id)
     target_id = resolve_entity_id(conn, target_id)
     row = conn.execute(
-        "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ? AND invalid_at IS NULL",
-        (source_id, target_id, relation),
+        "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ? AND invalid_at IS NULL AND tenant_id = ?",
+        (source_id, target_id, relation, tenant_id),
     ).fetchone()
     if row:
         inc, cap = _get_edge_weight_params()
         conn.execute(
-            "UPDATE kg_edges SET weight = MIN(weight + ?, ?) WHERE id = ?",
-            (inc, cap, row[0]),
+            "UPDATE kg_edges SET weight = MIN(weight + ?, ?) WHERE id = ? AND tenant_id = ?",
+            (inc, cap, row[0], tenant_id),
         )
     else:
         # H8 fix: mirror the IntegrityError retry pattern from
@@ -222,21 +224,21 @@ def _upsert_edge(
         # the same edge between our SELECT and our INSERT.
         try:
             conn.execute(
-                "INSERT INTO kg_edges (source_id, target_id, relation, created_at, valid_at) "
-                "VALUES (?, ?, ?, datetime('now'), datetime('now'))",
-                (source_id, target_id, relation),
+                "INSERT INTO kg_edges (source_id, target_id, relation, created_at, valid_at, tenant_id) "
+                "VALUES (?, ?, ?, datetime('now'), datetime('now'), ?)",
+                (source_id, target_id, relation, tenant_id),
             )
         except sqlite3.IntegrityError:
             # Re-SELECT and update the existing row's weight.
             row = conn.execute(
-                "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ? AND invalid_at IS NULL",
-                (source_id, target_id, relation),
+                "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ? AND invalid_at IS NULL AND tenant_id = ?",
+                (source_id, target_id, relation, tenant_id),
             ).fetchone()
             if row is not None:
                 inc, cap = _get_edge_weight_params()
                 conn.execute(
-                    "UPDATE kg_edges SET weight = MIN(weight + ?, ?) WHERE id = ?",
-                    (inc, cap, row[0]),
+                    "UPDATE kg_edges SET weight = MIN(weight + ?, ?) WHERE id = ? AND tenant_id = ?",
+                    (inc, cap, row[0], tenant_id),
                 )
 
 

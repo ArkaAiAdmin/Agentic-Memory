@@ -163,6 +163,7 @@ def _search_kg_facts(
     belief_status: str | None = None,
     epistemic_source: str | None = None,
     fact_type: str | None = None,
+    tenant_id: str = "default",
 ) -> list[dict]:
     """Surfaces structured facts (``subject --[predicate]--> object``) alongside
     the memory results.  Uses the same FTS5 query string as the memories
@@ -242,10 +243,10 @@ def _search_kg_facts(
         rows = db.execute(
             "SELECT " + select_cols + "FROM kg_facts_fts "
             "JOIN kg_facts kf ON kf.rowid = kg_facts_fts.rowid "
-            f"WHERE kg_facts_fts MATCH ?{invalid_filter}{belief_filter} "
+            f"WHERE kg_facts_fts MATCH ? AND kf.tenant_id = ?{invalid_filter}{belief_filter} "
             "ORDER BY kg_facts_fts.rank "
             "LIMIT ?",
-            (fts_query, *belief_params, limit),
+            (fts_query, tenant_id, *belief_params, limit),
         ).fetchall()
     except sqlite3.Error:
         logger.warning("KG fact search failed; returning empty list", exc_info=True)
@@ -285,7 +286,7 @@ def _search_kg_facts(
     return results
 
 
-def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> list[str]:
+def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None, tenant_id: str = "default") -> list[str]:
     """A3.1: expand a natural-language query using entailment-chain objects.
 
     When the query contains an entailment-predicate keyword (``is a``,
@@ -359,10 +360,11 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> l
                                    'part_of','has_part','located_in','subclass_of')
               AND kf.belief_status = 'active'
               AND kf.is_entailed = 1
+              AND kf.tenant_id = ?
               AND (kf.subject LIKE ? ESCAPE '\\' OR kf.object LIKE ? ESCAPE '\\')
             LIMIT ?
             """,
-            (like_pattern, like_pattern, limit),
+            (tenant_id, like_pattern, like_pattern, limit),
         ).fetchall()
         return [row[0] for row in rows if row[0]]
     except Exception as exc:

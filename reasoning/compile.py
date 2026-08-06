@@ -671,29 +671,30 @@ def compile_concept(
         return None
 
     concept_id = f"concepts/{slug}"
+    tenant_id = getattr(conn, "tenant_id", "default") if hasattr(conn, "tenant_id") else "default"
 
     # Persist a row in memories so the concept is searchable.
     try:
         existing = conn.execute(
-            "SELECT id FROM memories WHERE id = ?",
-            (concept_id,),
+            "SELECT id FROM memories WHERE id = ? AND tenant_id = ?",
+            (concept_id, tenant_id),
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE memories SET content = ?, updated_at = ? WHERE id = ?",
-                (md, time.time(), concept_id),
+                "UPDATE memories SET content = ?, updated_at = ? WHERE id = ? AND tenant_id = ?",
+                (md, time.time(), concept_id, tenant_id),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO memories
                     (id, source_file, category, content, tags, pinned,
-                     created_at, updated_at, observed_at, importance, metadata)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 3, ?)
+                     created_at, updated_at, observed_at, importance, metadata, tenant_id)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 3, ?, ?)
                 """,
                 (
                     concept_id,
-                    f"concepts/{slug}.md",
+                    str(concept_file),
                     "concepts",
                     md,
                     "[]",
@@ -706,6 +707,7 @@ def compile_concept(
                         "fact_ids": [f["id"] for f in facts],
                         "avg_confidence": avg_conf,
                     }),
+                    tenant_id,
                 ),
             )
     except Exception as exc:

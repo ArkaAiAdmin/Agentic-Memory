@@ -529,7 +529,6 @@ def project_sql_to_crdt(
     vv = json.loads(vv_str) if vv_str else {}
     clock = clock or 0
     ensure_field_crdt_schema(conn)
-    field_val = {"content": content, "tags": tags, "category": category}
     updates = [
         FieldUpdate(
             memory_id=memory_id,
@@ -538,15 +537,40 @@ def project_sql_to_crdt(
             version_vector=vv,
             logical_clock=clock,
             last_writer_agent=agent_id,
+            tenant_id=mem_tenant_id,
         )
         for fname in REPLICATED_FIELDS
     ]
-    apply_field_updates_to_db(conn, updates, tenant_id=mem_tenant_id)
+    apply_field_updates_to_db(conn, updates)
+
+
+def read_field_vv(
+    conn: AnyConnection,
+    memory_id: str,
+    field_name: str,
+    tenant_id: str | None = None,
+) -> tuple[dict[str, int], int, str, bool]:
+    """Read (version_vector, logical_clock, last_writer_agent, is_deleted)
+    for a specific field of a memory.
+    """
+    tid = tenant_id or _tenant_id_for_memory(conn, memory_id) or "default"
+    row = conn.execute(
+        "SELECT version_vector, logical_clock, last_writer_agent, is_deleted "
+        "FROM memory_field_crdt "
+        "WHERE memory_id = ? AND field_name = ? AND tenant_id = ?",
+        (memory_id, field_name, tid),
+    ).fetchone()
+    if row is None:
+        return ({}, 0, "", False)
+    vv_json, clock, lwa, is_del = row
+    vv = json.loads(vv_json) if vv_json else {}
+    return (vv, int(clock or 0), lwa or "", bool(is_del))
 
 
 def project_crdt_to_sql(
     conn: AnyConnection,
     memory_id: str,
+    tenant_id: str | None = None,
 ) -> set[str]:
     """Project winning CRDT field values back to the ``memories`` row.
 
@@ -557,10 +581,7 @@ def project_crdt_to_sql(
     Returns the set of field names that were updated (caller can use
     this to decide whether to enqueue background indexing tasks).
     """
-    mem_row = conn.execute(
-        "SELECT tenant_id FROM memories WHERE id = ?", (memory_id,)
-    ).fetchone()
-    mem_tid = mem_row[0] if mem_row else None
+    mem_tid = tenant_id or _tenant_id_for_memory(conn, memory_id) or "default"
     fields = read_fields(conn, memory_id, tenant_id=mem_tid)
     if not fields:
         return set()
@@ -577,14 +598,14 @@ def project_crdt_to_sql(
         if val is None:
             continue
         cur = conn.execute(
-            f"SELECT {field_name} FROM {_table} WHERE id=?", (memory_id,)
+            f"SELECT {field_name} FROM {_table} WHERE id=? AND tenant_id=?", (memory_id, mem_tid)
         )
         row = cur.fetchone()
         if row is None:
             continue
         if str(row[0] or "") != str(val or ""):
             conn.execute(
-                f"UPDATE memories SET {field_name}=? WHERE id=?", (val, memory_id)
+                f"UPDATE memories SET {field_name}=? WHERE id=? AND tenant_id=?", (val, memory_id, mem_tid)
             )
             updated.add(field_name)
     if updated:

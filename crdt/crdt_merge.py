@@ -367,8 +367,8 @@ def crdt_save(
                     tier="warm",
                 )
                 conn.execute(
-                    "UPDATE memories SET version_vector=?, logical_clock=? WHERE id=?",
-                    (our_vv, 1, note_id),
+                    "UPDATE memories SET version_vector=?, logical_clock=? WHERE id=? AND tenant_id=?",
+                    (our_vv, 1, note_id, mem_tenant_id),
                 )
                 applied = True
 
@@ -410,10 +410,11 @@ def crdt_save(
                         category=category,
                         pinned=False,
                         tier="warm",
+                        tenant_id=mem_tenant_id,
                     )
                     conn.execute(
-                        "UPDATE memories SET version_vector=?, logical_clock=? WHERE id=?",
-                        (json.dumps(new_vv), new_clock, note_id),
+                        "UPDATE memories SET version_vector=?, logical_clock=? WHERE id=? AND tenant_id=?",
+                        (json.dumps(new_vv), new_clock, note_id, mem_tenant_id),
                     )
                     applied = True
 
@@ -437,15 +438,15 @@ def crdt_save(
                     else:
                         policy_used = conflict_policy
 
-                    our_tie = (existing_clock, local_agent_id)
                     their_tie = (
                         remote_logical_clock or existing_clock + 1,
                         remote_agent_id,
                     )
+                    our_tie = (existing_clock, local_agent_id)
                     remote_wins = their_tie > our_tie
 
                     if policy_used == "coexist":
-                        conflict_id = f"{note_id}__conflict_{remote_agent_id}"
+                        conflict_id = f"{note_id}__conflict_{remote_agent_id[:8]}"
                         _existing = conn.execute(
                             "SELECT id FROM tenant_memories WHERE id=?", (conflict_id,)
                         ).fetchone()
@@ -455,8 +456,8 @@ def crdt_save(
                                 """INSERT INTO memories
                                    (id, content, source_file, tags, created_at, updated_at, observed_at,
                                     fitness_score, importance, pinned, version_vector, logical_clock,
-                                    conflict_policy, supersedes)
-                                   VALUES (?, ?, ?, '[]', ?, ?, ?, 0.5, 3, 0, ?, ?, ?, ?)""",
+                                    conflict_policy, supersedes, tenant_id)
+                                   VALUES (?, ?, ?, '[]', ?, ?, ?, 0.5, 3, 0, ?, ?, ?, ?, ?)""",
                                 (
                                     conflict_id,
                                     content,
@@ -468,6 +469,7 @@ def crdt_save(
                                     remote_logical_clock or 1,
                                     policy_used,
                                     note_id,
+                                    mem_tenant_id,
                                 ),
                             )
                             applied = True
@@ -489,8 +491,8 @@ def crdt_save(
                                     """INSERT INTO memories
                                        (id, content, source_file, tags, created_at, updated_at,
                                         observed_at, fitness_score, importance, pinned,
-                                        version_vector, logical_clock, valid_to, conflict_policy)
-                                       VALUES (?, ?, ?, '[]', ?, ?, ?, 0.5, 3, 0, ?, ?, ?, ?)""",
+                                        version_vector, logical_clock, valid_to, conflict_policy, tenant_id)
+                                       VALUES (?, ?, ?, '[]', ?, ?, ?, 0.5, 3, 0, ?, ?, ?, ?, ?)""",
                                     (
                                         archived_id,
                                         _old_content[0],
@@ -502,6 +504,7 @@ def crdt_save(
                                         existing_clock,
                                         now_iso,
                                         policy_used,
+                                        mem_tenant_id,
                                     ),
                                 )
 
@@ -511,7 +514,7 @@ def crdt_save(
                         new_clock = new_vv.get(remote_agent_id, their_tie[0])
                         conn.execute(
                             """UPDATE memories SET content=?, updated_at=?, version_vector=?,
-                               logical_clock=?, supersedes=?, valid_to=NULL WHERE id=?""",
+                               logical_clock=?, supersedes=?, valid_to=NULL WHERE id=? AND tenant_id=?""",
                             (
                                 content,
                                 now_iso,
@@ -519,6 +522,7 @@ def crdt_save(
                                 new_clock,
                                 archived_id,
                                 note_id,
+                                mem_tenant_id,
                             ),
                         )
                         applied = True
@@ -534,13 +538,14 @@ def crdt_save(
                             new_clock = new_vv.get(remote_agent_id, their_tie[0])
                             conn.execute(
                                 """UPDATE memories SET content=?, updated_at=?, version_vector=?,
-                                   logical_clock=? WHERE id=?""",
+                                   logical_clock=? WHERE id=? AND tenant_id=?""",
                                 (
                                     content,
                                     now_iso,
                                     json.dumps(new_vv),
                                     new_clock,
                                     note_id,
+                                    mem_tenant_id,
                                 ),
                             )
                             applied = True

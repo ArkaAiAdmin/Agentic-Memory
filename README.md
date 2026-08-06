@@ -2,8 +2,13 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-5,714\+-brightgreen)](#testing)
-[![Schema](https://img.shields.io/badge/schema-v77-orange.svg)](docs/reference/schema.md)
+<<<<<<< HEAD
+[![Tests](https://img.shields.io/badge/tests-5,720\+-brightgreen)](#testing)
+[![Schema](https://img.shields.io/badge/schema-v78-orange.svg)](docs/reference/schema.md)
+=======
+[![Tests](https://img.shields.io/badge/tests-5,720\+-brightgreen)](#testing)
+[![Schema](https://img.shields.io/badge/schema-v78-orange.svg)](docs/reference/schema.md)
+>>>>>>> feat/tenant-isolation-end-to-end
 [![MCP Tools](https://img.shields.io/badge/MCP-25%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
