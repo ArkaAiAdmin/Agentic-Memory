@@ -172,6 +172,21 @@ _AUTO_SAVE_HEADER_RE = re.compile(
     r"^#\s+Auto-save:\s+\w+\s+@", re.MULTILINE | re.IGNORECASE
 )
 
+# Tool-echo / harness-log markers. Raw captures of a tool call or a
+# sub-agent report (about-to-execute, tool-result, sub-agent-spawned/
+# completed, discovery-by-agent-subtask, tool-failure-lesson,
+# applied-change-set, modified-file) are NOT reusable procedures even
+# when they contain a code block or JSON payload. Auto-save routinely
+# records these as memories; without this veto they flood ~/.agents/skills
+# with hundreds of near-identical no-signal skills (observed 2026-08-06:
+# 758 junk dirs vs 74 junk DB rows because write_skill_md leaked).
+_JUNK_TOOL_ECHO_MARKERS = re.compile(
+    r"(About to execute[:\s]|Tool result:|Sub-agent (spawned|completed):"
+    r"|\[Discovery by Agent subtask|\[Tool Failure Lesson\]"
+    r"|Applied change-set:|Modified file:|Actual output of (the|above))",
+    re.MULTILINE | re.IGNORECASE,
+)
+
 
 # Backwards-compat alias for callers (and tests) that imported the
 # old name.
@@ -279,6 +294,11 @@ def is_skill_worthy(content: str, category: str = "") -> bool:
     # no actual procedure. Without this filter, the 8,000+ session
     # entries would flood memory_skills with duplicates.
     if _AUTO_SAVE_MARKER_RE.search(content) or _AUTO_SAVE_HEADER_RE.search(content):
+        return False
+    # Veto tool-echo / harness-log noise (about-to-execute, tool-result,
+    # sub-agent reports, applied change-set echoes). These are captures
+    # of tool calls, not procedures — reject before any positive signal.
+    if _JUNK_TOOL_ECHO_MARKERS.search(content):
         return False
 
     # 1. AST check (Tree-sitter)
@@ -1000,7 +1020,13 @@ def extract_skill_for_memory(
         skill = extract_skill_from_memory(note_id, content, category=category)
         if skill is None:
             return None
-        save_skill(conn, skill)
+        skill_id = save_skill(conn, skill)
+        # Only materialize the .md when the DB accepted the skill
+        # (save_skill returns -1 when verify_skill_contract rejects it).
+        # Writing the file regardless caused DB/disk drift: hundreds of
+        # junk skill dirs with no backing row (observed 2026-08-06).
+        if skill_id is None or int(skill_id) <= 0:
+            return None
         write_skill_md(skill)
         conn.commit()
         return skill

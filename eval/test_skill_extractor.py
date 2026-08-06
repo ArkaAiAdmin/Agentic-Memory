@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 # Make the project importable
 INSTALL = Path(__file__).resolve().parent.parent
@@ -25,6 +26,7 @@ sys.path.insert(0, str(INSTALL))
 from skill_extractor import (
     ensure_skill_schema,
     extract_skill_from_memory,
+    extract_skill_for_memory,
     save_skill,
     search_skills,
     record_skill_hit,
@@ -118,6 +120,56 @@ docker run -d myapp
 ```
 """
         self.assertTrue(is_skill_worthy(content))
+
+    def test_about_to_execute_echo_is_not_skill(self):
+        content = """\
+About to execute: memorySave({"category":"projects","content":"Seamlessness Gaps:\\n1. ...
+
+```json
+{"category": "projects", "content": "..."}
+```
+"""
+        self.assertFalse(is_skill_worthy(content))
+
+    def test_tool_result_echo_is_not_skill(self):
+        content = """\
+Tool result: gitLog
+
+- commit 1: feat(x)
+- commit 2: fix(y)
+"""
+        self.assertFalse(is_skill_worthy(content))
+
+    def test_subagent_report_echo_is_not_skill(self):
+        content = """\
+[Discovery by Agent subtask-msxyz1]: Sub-agent task completed ("Use gitLog to fetch the 5 most recent commits...")
+"""
+        self.assertFalse(is_skill_worthy(content))
+
+    def test_tool_failure_lesson_echo_is_not_skill(self):
+        content = """\
+[Tool Failure Lesson]
+
+Tool gitLog failed for agent default
+"""
+        self.assertFalse(is_skill_worthy(content))
+
+    def test_applied_change_set_echo_is_not_skill(self):
+        content = """\
+Applied change-set: Create a hello file on the desktop filesystem
+"""
+        self.assertFalse(is_skill_worthy(content))
+
+    def test_real_procedure_with_echo_marker_in_body_still_skips(self):
+        # The veto applies anywhere in content, even with a strong
+        # procedural signal — a tool-call capture is never a procedure.
+        content = """\
+## Step 1: Run the backup
+$ rsync -av data/ backup/
+
+Tool result: rsync completed with exit 0
+"""
+        self.assertFalse(is_skill_worthy(content))
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +316,7 @@ class TestExtractSkillFromMemory(unittest.TestCase):
     def test_returns_skill_dict_for_procedural(self):
         result = extract_skill_from_memory("note-1", _PROCEDURAL_CONTENT)
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertIn("name", result)
         self.assertIn("topic", result)
         self.assertIn("description", result)
@@ -274,17 +327,20 @@ class TestExtractSkillFromMemory(unittest.TestCase):
 
     def test_name_is_slug(self):
         result = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert result is not None
         # Name should be a URL-safe slug
 
         self.assertRegex(result["name"], r"^[a-z0-9-]+$")
 
     def test_topic_from_first_heading(self):
         result = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert result is not None
         self.assertIn("ubuntu", result["topic"].lower())
         self.assertIn("proxmox", result["topic"].lower())
 
     def test_triggers_non_empty(self):
         result = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert result is not None
         self.assertGreater(len(result["triggers"]), 0)
         # Should include topic tokens
         self.assertIn("ubuntu", result["triggers"])
@@ -292,6 +348,7 @@ class TestExtractSkillFromMemory(unittest.TestCase):
 
     def test_steps_extracted(self):
         result = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert result is not None
         self.assertGreater(len(result["steps"]), 0)
         # At least one step should mention the LAMP stack
         joined = " ".join(result["steps"]).lower()
@@ -300,11 +357,13 @@ class TestExtractSkillFromMemory(unittest.TestCase):
     def test_content_hash_stable(self):
         r1 = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
         r2 = extract_skill_from_memory("m2", _PROCEDURAL_CONTENT)
+        assert r1 is not None and r2 is not None
         self.assertEqual(r1["content_hash"], r2["content_hash"])
 
     def test_content_hash_different_for_different_content(self):
         r1 = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
         r2 = extract_skill_from_memory("m2", "## Step 1: Different\n$ ls -la")
+        assert r1 is not None and r2 is not None
         self.assertNotEqual(r1["content_hash"], r2["content_hash"])
 
 
@@ -322,12 +381,14 @@ class TestSaveSkill(unittest.TestCase):
 
     def test_save_returns_id(self):
         skill = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert skill is not None
         skill_id = save_skill(self.conn, skill)
         self.assertIsInstance(skill_id, int)
         self.assertGreater(skill_id, 0)
 
     def test_save_inserts_row(self):
         skill = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert skill is not None
         save_skill(self.conn, skill)
         row = self.conn.execute(
             "SELECT name, topic, description, source_memory_id FROM memory_skills WHERE name = ?",
@@ -340,6 +401,7 @@ class TestSaveSkill(unittest.TestCase):
 
     def test_save_stores_triggers_as_json(self):
         skill = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert skill is not None
         save_skill(self.conn, skill)
         row = self.conn.execute(
             "SELECT triggers FROM memory_skills WHERE name = ?",
@@ -351,6 +413,7 @@ class TestSaveSkill(unittest.TestCase):
 
     def test_save_is_idempotent_on_same_content(self):
         skill = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert skill is not None
         id1 = save_skill(self.conn, skill)
         id2 = save_skill(self.conn, skill)
         self.assertEqual(id1, id2)
@@ -360,9 +423,11 @@ class TestSaveSkill(unittest.TestCase):
 
     def test_save_updates_on_content_change(self):
         skill1 = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert skill1 is not None
         save_skill(self.conn, skill1)
         modified = _PROCEDURAL_CONTENT + "\n\n## Step 5: Reboot\n$ sudo reboot"
         skill2 = extract_skill_from_memory("m1", modified)
+        assert skill2 is not None
         self.assertNotEqual(skill1["content_hash"], skill2["content_hash"])
         save_skill(self.conn, skill2)
         # Content should now have Step 5
@@ -373,6 +438,70 @@ class TestSaveSkill(unittest.TestCase):
         steps = json.loads(row["steps"])
         joined = " ".join(steps).lower()
         self.assertIn("reboot", joined)
+
+
+class TestExtractSkillForMemoryWriteGate(unittest.TestCase):
+    """extract_skill_for_memory must NOT write .md when save_skill rejects."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="skill_gate_test_"))
+        self.db_path = self.tmpdir / "memory.db"
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        conn.executescript("""
+            CREATE TABLE memories (
+                id TEXT PRIMARY KEY, content TEXT NOT NULL,
+                source_file TEXT NOT NULL, tags TEXT DEFAULT '[]',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                observed_at TEXT NOT NULL
+            );
+        """)
+        conn.execute(
+            "INSERT INTO memories (id, content, source_file, tags, created_at, updated_at, observed_at) "
+            "VALUES (?, ?, ?, '[]', datetime('now'), datetime('now'), datetime('now'))",
+            ("lessons/install-ubuntu", _PROCEDURAL_CONTENT, "lessons/install-ubuntu.md"),
+        )
+        conn.commit()
+        ensure_skill_schema(conn)
+        self.conn = conn
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_write_skill_md_not_called_when_save_rejected(self):
+        """When save_skill returns -1 (contract reject), no .md must be written."""
+        row = self.conn.execute(
+            "SELECT id, content FROM memories WHERE id = ?",
+            ("lessons/install-ubuntu",),
+        ).fetchone()
+        assert row is not None
+
+        with patch("skill_extractor.save_skill", return_value=-1), patch(
+            "skill_extractor.write_skill_md"
+        ) as mock_write:
+            result = extract_skill_for_memory(self.conn, row["id"], row["content"])
+
+        self.assertIsNone(result)
+        mock_write.assert_not_called()
+
+    def test_write_skill_md_called_when_save_accepts(self):
+        """When save_skill returns a valid id, .md must be written."""
+        row = self.conn.execute(
+            "SELECT id, content FROM memories WHERE id = ?",
+            ("lessons/install-ubuntu",),
+        ).fetchone()
+        assert row is not None
+
+        with patch("skill_extractor.save_skill", return_value=1), patch(
+            "skill_extractor.write_skill_md"
+        ) as mock_write:
+            result = extract_skill_for_memory(self.conn, row["id"], row["content"])
+
+        self.assertIsNotNone(result)
+        mock_write.assert_called_once()
 
 
 class TestSearchSkills(unittest.TestCase):
@@ -394,6 +523,7 @@ $ sudo vi /etc/nginx/sites-available/default
             ]
         ):
             skill = extract_skill_from_memory(f"m{i}", content)
+            assert skill is not None
             save_skill(self.conn, skill)
 
     def tearDown(self):
@@ -436,6 +566,7 @@ class TestRecordSkillHit(unittest.TestCase):
     def setUp(self):
         self.conn = _make_test_db()
         skill = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
+        assert skill is not None
         self.skill_id = save_skill(self.conn, skill)
 
     def tearDown(self):
@@ -481,6 +612,7 @@ $ sudo apt install -y postgresql
             ]
         ):
             skill = extract_skill_from_memory(f"m{i}", content)
+            assert skill is not None
             save_skill(self.conn, skill)
             if i == 0:
                 for _ in range(3):
@@ -580,6 +712,7 @@ class TestIntegrationWithMemoryDB(unittest.TestCase):
         # Step 2: extract the skill (simulating cron)
         skill = extract_skill_from_memory(row["id"], row["content"])
         self.assertIsNotNone(skill, "Procedural memory should be skill-worthy")
+        assert skill is not None
 
         # Step 3: save the skill
         skill_id = save_skill(self.conn, skill)
@@ -621,6 +754,7 @@ class TestIntegrationWithMemoryDB(unittest.TestCase):
     def test_list_skills_after_extraction(self):
         """After extracting 1 skill, list_skills returns it."""
         skill = extract_skill_from_memory("lessons/install-ubuntu", _PROCEDURAL_CONTENT)
+        assert skill is not None
         save_skill(self.conn, skill)
         skills = list_skills(self.conn)
         self.assertEqual(len(skills), 1)
@@ -679,6 +813,7 @@ class TestIntegrationWithSavePipeline(unittest.TestCase):
         # Extract and save the skill
         skill = extract_skill_from_memory(row["id"], row["content"])
         self.assertIsNotNone(skill)
+        assert skill is not None
         save_skill(self.conn, skill)
         # Search and verify
         results = search_skills(self.conn, "ubuntu proxmox install")

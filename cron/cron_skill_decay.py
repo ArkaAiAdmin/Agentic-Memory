@@ -131,7 +131,10 @@ def _lc_update(hit_vector: dict) -> int:
 
 
 def _delete_skills(conn, names: list[str]) -> int:
-    """Delete skills by name. Returns count deleted."""
+    """Delete skills by name and remove their disk directories.
+
+    Returns count deleted.
+    """
     if not names:
         return 0
     placeholders = ",".join("?" * len(names))
@@ -139,6 +142,16 @@ def _delete_skills(conn, names: list[str]) -> int:
         f"DELETE FROM memory_skills WHERE name IN ({placeholders})", names
     )
     conn.commit()
+    skills_dir = Path.home() / ".agents" / "skills"
+    for name in names:
+        try:
+            d = skills_dir / name
+            if d.is_dir():
+                import shutil
+
+                shutil.rmtree(d)
+        except OSError:
+            pass
     return len(names)
 
 
