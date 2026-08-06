@@ -724,9 +724,10 @@ def hard_delete_note(db_path, note_id: str, *, tenant_id: str | None = None) -> 
                     (note_id, tenant_id),
                 ).fetchone()
             else:
+                resolved_tid = _resolve_tenant()
                 row = conn.execute(
-                    "SELECT created_at, deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
-                    (note_id,),
+                    "SELECT created_at, deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
+                    (note_id, resolved_tid),
                 ).fetchone()
             if row is None:
                 return False
@@ -750,7 +751,7 @@ def hard_delete_note(db_path, note_id: str, *, tenant_id: str | None = None) -> 
             if tenant_id is not None:
                 conn.execute("DELETE FROM memories WHERE id = ? AND tenant_id = ?", (note_id, tenant_id))
             else:
-                conn.execute("DELETE FROM memories WHERE id = ? AND tenant_id = tenant_id()", (note_id,))
+                conn.execute("DELETE FROM memories WHERE id = ? AND tenant_id = ?", (note_id, _resolve_tenant()))
             conn.commit()
             _purge_markdown_file(note_id)
             return True
@@ -803,26 +804,17 @@ def list_trash(db_path, include_expired: bool = False, *, tenant_id: str | None 
         logger.warning("RBAC check failed (fail-closed) in list_trash: %s", _rbac_exc)
         return []
     try:
+        effective_tid = tenant_id if tenant_id is not None else _resolve_tenant()
         with open_db(db_path, row_factory=sqlite3.Row) as conn:
-            if tenant_id is not None:
-                cur = conn.execute(
-                    """
-                    SELECT id, source_file, deleted_at, deleted_by
-                      FROM memories
-                     WHERE deleted_at IS NOT NULL AND tenant_id = ?
-                     ORDER BY deleted_at ASC
-                    """,
-                    (tenant_id,),
-                )
-            else:
-                cur = conn.execute(
-                    """
-                    SELECT id, source_file, deleted_at, deleted_by
-                      FROM memories
-                     WHERE deleted_at IS NOT NULL AND tenant_id = tenant_id()
-                     ORDER BY deleted_at ASC
-                    """
-                )
+            cur = conn.execute(
+                """
+                SELECT id, source_file, deleted_at, deleted_by
+                  FROM memories
+                 WHERE deleted_at IS NOT NULL AND tenant_id = ?
+                 ORDER BY deleted_at ASC
+                """,
+                (effective_tid,),
+            )
             now = _now_dt()
             results: List[dict] = []
             for row in cur.fetchall():
@@ -897,19 +889,14 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
     except Exception as _rbac_exc:
         logger.warning("RBAC check failed (fail-open) in purge_expired: %s", _rbac_exc)
     try:
+        effective_tid = tenant_id if tenant_id is not None else _resolve_tenant()
         with open_db(db_path) as conn:
             cutoff = _now_dt() - _dt.timedelta(seconds=RESTORE_WINDOW_SECONDS)
             cutoff_iso = cutoff.isoformat()
-            if tenant_id is not None:
-                cur = conn.execute(
-                    "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ? AND tenant_id = ?",
-                    (cutoff_iso, tenant_id),
-                )
-            else:
-                cur = conn.execute(
-                    "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ? AND tenant_id = tenant_id()",
-                    (cutoff_iso,),
-                )
+            cur = conn.execute(
+                "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ? AND tenant_id = ?",
+                (cutoff_iso, effective_tid),
+            )
             expired_ids = [r[0] for r in cur.fetchall()]
             if not expired_ids:
                 return 0
@@ -919,8 +906,8 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
 
             # ── 1. Backlinks ───────────────────────────────────
             conn.execute(
-                f"DELETE FROM backlinks WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})",
-                tuple(expired_ids + expired_ids),
+                f"DELETE FROM backlinks WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND tenant_id = ?",
+                tuple(expired_ids + expired_ids) + (effective_tid,),
             )
 
             # ── 2. Chunks (memory_chunks_ad trigger cleans FTS5) ─
@@ -932,8 +919,8 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
                 is not None
             ):
                 conn.execute(
-                    f"DELETE FROM memory_chunks WHERE parent_id IN ({placeholders})",
-                    tuple(expired_ids),
+                    f"DELETE FROM memory_chunks WHERE parent_id IN ({placeholders}) AND tenant_id = ?",
+                    tuple(expired_ids) + (effective_tid,),
                 )
 
             # ── 3. Embeddings ──────────────────────────────────
@@ -945,8 +932,8 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
                 is not None
             ):
                 conn.execute(
-                    f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})",
-                    tuple(expired_ids),
+                    f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders}) AND tenant_id = ?",
+                    tuple(expired_ids) + (effective_tid,),
                 )
 
             # ── 4. Vec index keys ──────────────────────────────
@@ -958,8 +945,8 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
                 is not None
             ):
                 conn.execute(
-                    f"DELETE FROM memory_vec_keys WHERE memory_id IN ({placeholders})",
-                    tuple(expired_ids),
+                    f"DELETE FROM memory_vec_keys WHERE memory_id IN ({placeholders}) AND tenant_id = ?",
+                    tuple(expired_ids) + (effective_tid,),
                 )
 
             # ── 5. KG facts ────────────────────────────────────
@@ -971,8 +958,8 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
                 is not None
             ):
                 conn.execute(
-                    f"DELETE FROM kg_facts WHERE source_memory IN ({placeholders})",
-                    tuple(expired_ids),
+                    f"DELETE FROM kg_facts WHERE source_memory IN ({placeholders}) AND tenant_id = ?",
+                    tuple(expired_ids) + (effective_tid,),
                 )
 
             # ── 6. KG edges referencing orphaned entities ───────
@@ -990,14 +977,14 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
             ):
                 try:
                     conn.execute("""
-                        DELETE FROM kg_edges WHERE source_id IN (
+                        DELETE FROM kg_edges WHERE (source_id IN (
                             SELECT e.id FROM kg_entities e
-                            WHERE NOT EXISTS (SELECT 1 FROM kg_facts f WHERE f.subject = e.name OR f.object = e.name)
+                            WHERE e.tenant_id = ? AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) AND f.tenant_id = ?)
                         ) OR target_id IN (
                             SELECT e.id FROM kg_entities e
-                            WHERE NOT EXISTS (SELECT 1 FROM kg_facts f WHERE f.subject = e.name OR f.object = e.name)
-                        )
-                    """)
+                            WHERE e.tenant_id = ? AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) AND f.tenant_id = ?)
+                        )) AND tenant_id = ?
+                    """, (effective_tid, effective_tid, effective_tid, effective_tid, effective_tid))
                 except sqlite3.OperationalError as e:
                     logger.warning("step 6 (kg_edges) in purge_expired: %s", e)
 
@@ -1023,10 +1010,11 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
                     conn.execute("""
                         DELETE FROM kg_entities WHERE id IN (
                             SELECT e.id FROM kg_entities e
-                            WHERE NOT EXISTS (SELECT 1 FROM kg_edges e2 WHERE e2.source_id = e.id OR e2.target_id = e.id)
-                            AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE f.subject = e.name OR f.object = e.name)
-                        )
-                    """)
+                            WHERE e.tenant_id = ?
+                            AND NOT EXISTS (SELECT 1 FROM kg_edges e2 WHERE (e2.source_id = e.id OR e2.target_id = e.id) AND e2.tenant_id = ?)
+                            AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) AND f.tenant_id = ?)
+                        ) AND tenant_id = ?
+                    """, (effective_tid, effective_tid, effective_tid, effective_tid))
                 except sqlite3.OperationalError as e:
                     logger.warning("step 7 (kg_entities) in purge_expired: %s", e)
 
@@ -1039,9 +1027,9 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
                     try:
                         conn.execute(
                             "DELETE FROM memories_fts WHERE rowid = ("
-                            "  SELECT m.rowid FROM memories m WHERE m.id = ?"
+                            "  SELECT m.rowid FROM memories m WHERE m.id = ? AND m.tenant_id = ?"
                             ")",
-                            (nid,),
+                            (nid, effective_tid),
                         )
                     except Exception as exc:
                         logger.warning(
@@ -1052,8 +1040,8 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
 
             # ── 9. Memories row ────────────────────────────────
             conn.execute(
-                f"DELETE FROM memories WHERE id IN ({placeholders})",
-                tuple(expired_ids),
+                f"DELETE FROM memories WHERE id IN ({placeholders}) AND tenant_id = ?",
+                tuple(expired_ids) + (effective_tid,),
             )
 
             conn.commit()
@@ -1076,17 +1064,12 @@ def is_soft_deleted(db_path, note_id: str, *, tenant_id: str | None = None) -> b
     """
     note_id = _validate_note_id(note_id)
     try:
+        effective_tid = tenant_id if tenant_id is not None else _resolve_tenant()
         with open_db(db_path) as conn:
-            if tenant_id is not None:
-                row = conn.execute(
-                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
-                    (note_id, tenant_id),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
-                    (note_id,),
-                ).fetchone()
+            row = conn.execute(
+                "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
+                (note_id, effective_tid),
+            ).fetchone()
             if row is None:
                 return False
             return row[0] is not None
@@ -1153,16 +1136,12 @@ def delete_active_where(
     if params is None:
         params = ()
     try:
+        effective_tid = tenant_id if tenant_id is not None else _resolve_tenant()
         with open_db(db_path) as conn:
             now = _now_iso()
-            # Tenant isolation: add tenant_id filter if provided.
-            tenant_params: tuple[str, ...]
-            if tenant_id is not None:
-                tenant_filter = " AND tenant_id = ?"
-                tenant_params = (tenant_id,)
-            else:
-                tenant_filter = " AND tenant_id = tenant_id()"
-                tenant_params = ()
+            # Tenant isolation: filter by effective tenant_id.
+            tenant_filter = " AND tenant_id = ?"
+            tenant_params = (effective_tid,)
             # Only touch active rows. RETURNING is SQLite 3.35+ but
             # we use a separate count to stay compatible.
             cur = conn.execute(

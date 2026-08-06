@@ -106,6 +106,22 @@ def _setup_tenant_view(conn: Any, tenant_id: str) -> None:
             f"({col_list}) = (SELECT {cols}) "
             f"WHERE id = OLD.id; END"
         )
+
+        # Engine-level defense-in-depth: BEFORE INSERT/UPDATE triggers enforcing non-empty tenant_id
+        for tbl in ("memories", "kg_facts", "kg_entities", "kg_edges", "sessions", "belief_assertions"):
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (tbl,)).fetchone():
+                conn.execute(
+                    f"CREATE TEMP TRIGGER IF NOT EXISTS _guard_tenant_insert_{tbl} "
+                    f"BEFORE INSERT ON {tbl} FOR EACH ROW "
+                    f"WHEN NEW.tenant_id IS NULL OR NEW.tenant_id = '' "
+                    f"BEGIN SELECT RAISE(ABORT, 'tenant_id isolation violation'); END;"
+                )
+                conn.execute(
+                    f"CREATE TEMP TRIGGER IF NOT EXISTS _guard_tenant_update_{tbl} "
+                    f"BEFORE UPDATE ON {tbl} FOR EACH ROW "
+                    f"WHEN NEW.tenant_id IS NULL OR NEW.tenant_id = '' "
+                    f"BEGIN SELECT RAISE(ABORT, 'tenant_id isolation violation'); END;"
+                )
     except Exception:
         pass
 

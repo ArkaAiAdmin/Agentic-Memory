@@ -549,7 +549,7 @@ def _auto_import_shared_memory(
 
 
 def _send_import_feedback(
-    source_agent_id: str, importer_id: str, shared_note_id: str, new_note_id: str, now: float
+    source_agent_id: str, importer_id: str, shared_note_id: str, new_note_id: str, now: float, tenant_id: str = "default"
 ) -> None:
     """Notify the source agent that their shared memory was imported.
 
@@ -569,21 +569,22 @@ def _send_import_feedback(
         try:
             pconn.execute("PRAGMA journal_mode=WAL")
             pconn.execute(
-                "INSERT INTO coordination_audit (action, agent_id, target, detail, timestamp) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO coordination_audit (action, agent_id, target, detail, timestamp, tenant_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     "memory_imported",
                     importer_id,
                     shared_note_id,
                     f'{{"imported_by":"{importer_id}","new_id":"{new_note_id}"}}',
                     now,
+                    tenant_id,
                 ),
             )
 
             pconn.execute(
                 "UPDATE memories SET fitness_score = MIN(COALESCE(fitness_score, 0.5) + 0.05, 1.0) "
-                "WHERE id = ?",
-                (shared_note_id,),
+                "WHERE id = ? AND tenant_id = ?",
+                (shared_note_id, tenant_id),
             )
             pconn.commit()
         finally:

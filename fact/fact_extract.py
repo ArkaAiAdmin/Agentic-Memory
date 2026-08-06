@@ -559,6 +559,7 @@ def _upsert_fact(
     belief_status: str = "active",
     epistemic_source: str = "agent",
     fact_type: str = "observation",
+    tenant_id: str = "default",
 ) -> "int | None":
     """Insert or update a fact. Used by `index_facts_for_memory`.
 
@@ -583,21 +584,21 @@ def _upsert_fact(
     """
     row = conn.execute(
         "SELECT id, locked, confidence, source_memory FROM kg_facts "
-        "WHERE subject = ? AND predicate = ? AND object = ?",
-        (subject.lower(), predicate, obj.lower()),
+        "WHERE subject = ? AND predicate = ? AND object = ? AND tenant_id = ?",
+        (subject.lower(), predicate, obj.lower(), tenant_id),
     ).fetchone()
     if row:
         if not row[1]:
             new_conf = max(row[2], confidence)
             conn.execute(
                 "UPDATE kg_facts SET last_seen = ?, mention_count = mention_count + 1, "
-                "confidence = ?, source_memory = ? WHERE id = ?",
-                (now, new_conf, source_memory or row[3], row[0]),
+                "confidence = ?, source_memory = ? WHERE id = ? AND tenant_id = ?",
+                (now, new_conf, source_memory or row[3], row[0], tenant_id),
             )
         else:
             conn.execute(
-                "UPDATE kg_facts SET last_seen = ? WHERE id = ?",
-                (now, row[0]),
+                "UPDATE kg_facts SET last_seen = ? WHERE id = ? AND tenant_id = ?",
+                (now, row[0], tenant_id),
             )
         return int(row[0])
     # C2 fix: handle the race where another writer INSERTs the same
@@ -608,10 +609,10 @@ def _upsert_fact(
     obj_entity_id = None
     try:
         subj_entity_id = conn.execute(
-            "SELECT id FROM kg_entities WHERE name = ?", (subject.lower(),)
+            "SELECT id FROM kg_entities WHERE name = ? AND tenant_id = ?", (subject.lower(), tenant_id)
         ).fetchone()
         obj_entity_id = conn.execute(
-            "SELECT id FROM kg_entities WHERE name = ?", (obj.lower(),)
+            "SELECT id FROM kg_entities WHERE name = ? AND tenant_id = ?", (obj.lower(), tenant_id)
         ).fetchone()
     except sqlite3.OperationalError:
         pass
@@ -621,8 +622,8 @@ def _upsert_fact(
             "first_seen, last_seen, source_memory, context, "
             "subject_entity_id, object_entity_id, "
             "event_time, event_time_granularity, transaction_time, "
-            "belief_status, epistemic_source, fact_type) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "belief_status, epistemic_source, fact_type, tenant_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 subject.lower(),
                 predicate,
@@ -640,6 +641,7 @@ def _upsert_fact(
                 belief_status,
                 epistemic_source,
                 fact_type,
+                tenant_id,
             ),
         )
         assert cur.lastrowid is not None
@@ -647,8 +649,8 @@ def _upsert_fact(
     except sqlite3.IntegrityError:
         row = conn.execute(
             "SELECT id, locked, confidence, source_memory FROM kg_facts "
-            "WHERE subject = ? AND predicate = ? AND object = ?",
-            (subject.lower(), predicate, obj.lower()),
+            "WHERE subject = ? AND predicate = ? AND object = ? AND tenant_id = ?",
+            (subject.lower(), predicate, obj.lower(), tenant_id),
         ).fetchone()
         if row is None:
             return None

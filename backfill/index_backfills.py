@@ -56,12 +56,18 @@ def _backfill_memories_from_markdown(conn, source_dir: Path, db_path: Path):
         logger.error("Could not rebuild memories from markdown: %s", e)
 
 
-def _backfill_fts(conn):
-    """Rebuild memories_fts from memories table."""
+def _backfill_fts(conn, tenant_id: str | None = None):
+    """Populate memories_fts from memories for rows missing from FTS5."""
     try:
-        conn.execute("DELETE FROM memories_fts")
-    except Exception:
-        # FTS5 virtual table doesn't exist — create it
+        from infra.fts import fts5_available
+
+        if not fts5_available(conn):
+            return
+    except Exception as e:
+        logger.warning("FTS5 check failed — skipping FTS backfill: %s", e)
+        return
+
+    if not _has_table(conn, "memories_fts"):
         try:
             conn.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(id, content, tags, category, tokenize='porter unicode61')"
@@ -69,9 +75,15 @@ def _backfill_fts(conn):
         except Exception as e:
             logger.warning("Cannot create memories_fts: %s", e)
             return
-    rows = conn.execute(
-        "SELECT rowid, id, content, tags, category FROM memories WHERE deleted_at IS NULL"
-    ).fetchall()
+    if tenant_id is not None:
+        rows = conn.execute(
+            "SELECT rowid, id, content, tags, category FROM memories WHERE deleted_at IS NULL AND tenant_id = ?",
+            (tenant_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT rowid, id, content, tags, category FROM memories WHERE deleted_at IS NULL"
+        ).fetchall()
     for rowid, mem_id, content, tags, category in rows:
         if content:
             try:
@@ -84,7 +96,7 @@ def _backfill_fts(conn):
     logger.info("FTS backfilled: %d rows", len(rows))
 
 
-def _backfill_embeddings(conn):
+def _backfill_embeddings(conn, tenant_id: str | None = None):
     """Batch-encode all memories into memory_embeddings."""
     try:
         from infra.embedding_search import get_embedding_search
@@ -97,18 +109,24 @@ def _backfill_embeddings(conn):
         logger.warning("Cannot load embedding model: %s", e)
         return
 
-    rows = conn.execute(
-        "SELECT id, content FROM memories WHERE deleted_at IS NULL"
-    ).fetchall()
+    if tenant_id is not None:
+        rows = conn.execute(
+            "SELECT id, content FROM memories WHERE deleted_at IS NULL AND tenant_id = ?",
+            (tenant_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, content FROM memories WHERE deleted_at IS NULL"
+        ).fetchall()
     if not rows:
         return
 
     items = [(mid, content) for mid, content in rows if content]
-    written = es.index_embeddings_batch(conn, items)
+    written = es.index_embeddings_batch(conn, items, tenant_id=tenant_id or "default")
     logger.info("Embeddings backfilled: %d rows", written)
 
 
-def _backfill_chunks(conn):
+def _backfill_chunks(conn, tenant_id: str | None = None):
     """Create memory_chunks for all memories that lack them."""
     try:
         from search.chunk_index import _qw5_index_chunks_for
@@ -119,9 +137,15 @@ def _backfill_chunks(conn):
             logger.warning("Cannot import _qw5_index_chunks_for — skipping chunks")
             return
 
-    rows = conn.execute(
-        "SELECT id, content FROM memories WHERE deleted_at IS NULL"
-    ).fetchall()
+    if tenant_id is not None:
+        rows = conn.execute(
+            "SELECT id, content FROM memories WHERE deleted_at IS NULL AND tenant_id = ?",
+            (tenant_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, content FROM memories WHERE deleted_at IS NULL"
+        ).fetchall()
     count = 0
     for mem_id, content in rows:
         if not content:
@@ -131,7 +155,7 @@ def _backfill_chunks(conn):
         ).fetchone()[0]
         if existing == 0:
             try:
-                _qw5_index_chunks_for(conn, mem_id, content)
+                _qw5_index_chunks_for(conn, mem_id, content, tenant_id=tenant_id or "default")
                 count += 1
             except Exception as e:
                 logger.warning("Chunk backfill failed for %s: %s", mem_id, e)

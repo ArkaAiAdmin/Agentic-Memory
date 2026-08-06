@@ -1069,24 +1069,30 @@ def _unlink_file(path: Path) -> None:
         logger.warning("saga undo: unlink %s failed: %r", path, exc)
 
 
-def _capture_pre_existing(conn, note_id: str):
-    """Read the memories row (if any) before the save runs.
+def _capture_pre_existing(conn, note_id: str, tenant_id: str | None = None) -> tuple[str, str] | None:
+    """Read the pre-existing (content, tags) for a note before a save.
 
     Used by the upsert undo path: if the row pre-existed, the undo
     restores its old content/tags; if it was a fresh insert, the undo
     just deletes the row.
     """
     try:
-        row = conn.execute(
-            "SELECT content, tags FROM memories WHERE id = ?", (note_id,)
-        ).fetchone()
+        if tenant_id is not None:
+            row = conn.execute(
+                "SELECT content, tags FROM memories WHERE id = ? AND tenant_id = ?",
+                (note_id, tenant_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT content, tags FROM memories WHERE id = ?", (note_id,)
+            ).fetchone()
         if row is not None:
             return (row[0], row[1])
     except Exception as _capture_exc:
         logger.debug("_capture_pre_existing failed for %s: %s", note_id, _capture_exc)
 
 
-def _capture_full_row(conn, note_id: str) -> dict | None:
+def _capture_full_row(conn, note_id: str, tenant_id: str | None = None) -> dict | None:
     """Snapshot the *complete* memories row before the save runs.
 
     Sprint 1.1 hardening: restoring only content/tags (the prior undo
@@ -1097,7 +1103,10 @@ def _capture_full_row(conn, note_id: str) -> dict | None:
     failed UPDATE rolls the row back to its exact pre-save state.
     """
     try:
-        cur = conn.execute("SELECT * FROM memories WHERE id = ?", (note_id,))
+        if tenant_id is not None:
+            cur = conn.execute("SELECT * FROM memories WHERE id = ? AND tenant_id = ?", (note_id, tenant_id))
+        else:
+            cur = conn.execute("SELECT * FROM memories WHERE id = ?", (note_id,))
         cols = [c[0] for c in cur.description] if cur.description else []
         row = cur.fetchone()
         if row is not None:
