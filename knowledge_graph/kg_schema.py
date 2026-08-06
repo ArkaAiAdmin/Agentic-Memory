@@ -18,17 +18,20 @@ CREATE TABLE IF NOT EXISTS kg_entities (
     created_at TEXT,
     updated_at TEXT,
     fingerprint TEXT,
-    UNIQUE(name, entity_type)
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    UNIQUE(tenant_id, name, entity_type)
 );
 
 CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name);
 CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_kg_entities_tenant ON kg_entities(tenant_id);
 
 CREATE TABLE IF NOT EXISTS kg_entity_aliases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_id INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
     alias TEXT NOT NULL,
-    UNIQUE(entity_id, alias)
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    UNIQUE(tenant_id, entity_id, alias)
 );
 
 CREATE INDEX IF NOT EXISTS idx_kg_entity_aliases_alias ON kg_entity_aliases(alias);
@@ -44,7 +47,8 @@ CREATE TABLE IF NOT EXISTS kg_edges (
     -- while kg_facts uses REAL epoch seconds.  Inconsistency preserved for
     -- backward compat; new columns should use TEXT ISO timestamps.
     valid_at TEXT,
-    invalid_at TEXT
+    invalid_at TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default'
     -- M38: Replaced blanket UNIQUE(source_id, target_id, relation) with a
     -- partial index on current (non-invalidated) edges only. This allows
     -- temporal versioning: after invalidating an edge (setting invalid_at),
@@ -54,7 +58,7 @@ CREATE TABLE IF NOT EXISTS kg_edges (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_edges_current
-    ON kg_edges(source_id, target_id, relation)
+    ON kg_edges(tenant_id, source_id, target_id, relation)
     WHERE invalid_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_kg_edges_source ON kg_edges(source_id);
@@ -91,7 +95,7 @@ END;
 def ensure_kg_schema(conn: AnyConnection) -> None:
     """Create KG tables if they don't exist. Also add temporal columns to existing tables."""
     conn.executescript(_KG_SCHEMA_SQL)
-    # Migrate existing tables: add valid_at/invalid_at/centrality if missing
+    # Migrate existing tables: add valid_at/invalid_at/centrality/tenant_id if missing
     try:
         cols_edges = {
             row[1] for row in conn.execute("PRAGMA table_info(kg_edges)").fetchall()
@@ -100,7 +104,9 @@ def ensure_kg_schema(conn: AnyConnection) -> None:
             conn.execute("ALTER TABLE kg_edges ADD COLUMN valid_at TEXT")
         if "invalid_at" not in cols_edges:
             conn.execute("ALTER TABLE kg_edges ADD COLUMN invalid_at TEXT")
-        
+        if "tenant_id" not in cols_edges:
+            conn.execute("ALTER TABLE kg_edges ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
+
         cols_entities = {
             row[1] for row in conn.execute("PRAGMA table_info(kg_entities)").fetchall()
         }
@@ -129,6 +135,11 @@ def ensure_kg_schema(conn: AnyConnection) -> None:
         if "fingerprint" not in cols_entities:
             try:
                 conn.execute("ALTER TABLE kg_entities ADD COLUMN fingerprint TEXT")
+            except Exception as e:
+                logger.warning("ensure_kg_schema failed: %s", e)
+        if "tenant_id" not in cols_entities:
+            try:
+                conn.execute("ALTER TABLE kg_entities ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
             except Exception as e:
                 logger.warning("ensure_kg_schema failed: %s", e)
     except Exception as exc:

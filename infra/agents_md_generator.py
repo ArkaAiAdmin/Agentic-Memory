@@ -48,7 +48,7 @@ def _count_test_files() -> tuple[int, int]:
         except OSError:
             continue
         for line in text.splitlines():
-            if re.match(r"\s+def test_", line):
+            if re.match(r"^\s*def test_", line):
                 func_count += 1
     return file_count, func_count
 

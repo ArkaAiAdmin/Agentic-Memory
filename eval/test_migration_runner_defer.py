@@ -42,8 +42,8 @@ class TestMigrationRunnerDefer(unittest.TestCase):
             "CREATE TABLE dependent_table (id INT PRIMARY KEY);"
         )
 
-        import sqlite3
-        with mock.patch("infra.migration_runner.MIGRATIONS_DIR", mig_dir):
+        import sqlite3, os
+        with mock.patch("infra.migration_runner.MIGRATIONS_DIR", mig_dir), mock.patch.dict(os.environ, {"MEMORY_ALLOW_DEFERRED_MIGRATIONS": "1"}):
             conn = sqlite3.connect(self.db_path)
             try:
                 run_migrations(conn)

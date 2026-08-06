@@ -509,9 +509,14 @@ def _slugify(text: str, max_len: int = 80) -> str:
 def _gather_entities(conn: Any, memory_ids: Sequence[str]) -> list[dict]:
     """Fetch entities linked to memories via kg_edges or kg_facts."""
     placeholders = ",".join("?" for _ in memory_ids)
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(kg_entities)").fetchall()}
+    except Exception:
+        cols = set()
+    cent_col = "e.centrality" if "centrality" in cols else "0.0 AS centrality"
     rows = conn.execute(
         f"""
-        SELECT DISTINCT e.id, e.name, e.entity_type, e.centrality
+        SELECT DISTINCT e.id, e.name, e.entity_type, {cent_col}
           FROM kg_entities e
           JOIN kg_edges ed ON ed.source_id = e.id OR ed.target_id = e.id
           JOIN kg_facts f ON f.subject_entity_id = e.id OR f.object_entity_id = e.id
@@ -690,7 +695,7 @@ def compile_concept(
                 INSERT INTO memories
                     (id, source_file, category, content, tags, pinned,
                      created_at, updated_at, observed_at, importance, metadata, tenant_id)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 3, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     concept_id,
@@ -698,9 +703,11 @@ def compile_concept(
                     "concepts",
                     md,
                     "[]",
+                    0,
                     time.time(),
                     time.time(),
                     time.time(),
+                    3,
                     json.dumps({
                         "derived_from": sorted(set(memory_ids)),
                         "entities": entity_ids,

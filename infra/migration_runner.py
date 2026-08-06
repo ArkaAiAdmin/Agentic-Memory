@@ -47,35 +47,34 @@ logger = logging.getLogger(__name__)
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 
 
-@contextlib.contextmanager
-def _migration_lock():
-    """Acquire exclusive migration lock for single-writer process safety."""
-    lock_path = MIGRATIONS_DIR / ".migration.lock"
-    lock_file = None
+def _get_db_path_from_conn(conn: "AnyConnection") -> Path | str | None:
+    """Extract file path from a SQLite connection's database_list PRAGMA."""
     try:
+        rows = conn.execute("PRAGMA database_list").fetchall()
+        for row in rows:
+            if row[1] == "main" and row[2]:
+                return Path(row[2])
+    except Exception:
+        pass
+    return None
+
+
+@contextlib.contextmanager
+def _migration_lock(conn: "AnyConnection" | None = None):
+    """Acquire exclusive migration lock per DB path for single-writer safety."""
+    db_path = _get_db_path_from_conn(conn) if conn is not None else None
+    if db_path and str(db_path) != ":memory:":
         try:
-            from infra.file_lock import acquire_flock_with_retry, release_flock
-            lock_file = open(lock_path, "a+")
-            acquired = acquire_flock_with_retry(
-                lock_file,
-                max_attempts=30,
-                initial_backoff=0.05,
-                max_backoff=1.0,
-            )
-            if not acquired:
-                logger.warning(
-                    "Could not acquire exclusive migration lock %s within timeout", lock_path
-                )
+            from infra.db_path_flock import db_path_flock
+            with db_path_flock(db_path):
+                yield
+            return
         except Exception as e:
-            logger.warning("Migration lock acquisition notice: %s", e)
-        yield
-    finally:
-        if lock_file is not None:
-            try:
-                from infra.file_lock import release_flock
-                release_flock(lock_file)
-            except Exception:
-                pass
+            if "flock" in str(e).lower() or "lock" in type(e).__name__.lower():
+                logger.warning("Migration db_path_flock acquisition notice: %s", e)
+            else:
+                raise
+    yield
 
 # Current schema version. Bump when adding new migrations.
 # Must match the highest-numbered migration file.
@@ -556,7 +555,7 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         return
 
     # Step 6: Apply pending migrations, each in its own transaction
-    with _migration_lock():
+    with _migration_lock(conn):
         try:
             # NOTE (M49): PRAGMA foreign_keys = OFF inside a transaction is a
             # no-op in SQLite. To truly disable FK enforcement, the

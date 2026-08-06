@@ -419,6 +419,7 @@ def _migrate_add_fk_constraints(conn) -> None:
                 end_offset INTEGER NOT NULL,
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                tenant_id TEXT NOT NULL DEFAULT 'default',
                 UNIQUE(parent_id, chunk_idx),
                 FOREIGN KEY (parent_id) REFERENCES memories(id) ON DELETE CASCADE
             )
@@ -454,6 +455,7 @@ def _migrate_add_fk_constraints(conn) -> None:
                 embedding BLOB,
                 fact_type TEXT DEFAULT 'observation',
                 is_entailed BOOLEAN DEFAULT 0,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
                 UNIQUE(subject, predicate, object),
                 FOREIGN KEY (source_memory) REFERENCES memories(id) ON DELETE SET NULL
             )
@@ -482,6 +484,7 @@ def _migrate_add_fk_constraints(conn) -> None:
                 category TEXT,
                 tags TEXT,
                 accessed_at REAL NOT NULL,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
                 FOREIGN KEY (note_id) REFERENCES memories(id) ON DELETE CASCADE
             )
         """,

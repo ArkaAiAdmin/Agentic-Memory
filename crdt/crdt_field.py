@@ -115,6 +115,7 @@ class FieldUpdate:
     version_vector: dict[str, int] = field(default_factory=dict)
     logical_clock: int = 0
     last_writer_agent: str = ""
+    tenant_id: str = "default"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for transport (sync protocol, JSON)."""
@@ -125,6 +126,7 @@ class FieldUpdate:
             "version_vector": dict(self.version_vector),
             "logical_clock": self.logical_clock,
             "last_writer_agent": self.last_writer_agent,
+            "tenant_id": self.tenant_id,
         }
 
     @classmethod
@@ -137,6 +139,7 @@ class FieldUpdate:
             version_vector=dict(d.get("version_vector") or {}),
             logical_clock=int(d.get("logical_clock", 0)),
             last_writer_agent=str(d.get("last_writer_agent", "")),
+            tenant_id=str(d.get("tenant_id", "default")),
         )
 
 
@@ -529,11 +532,12 @@ def project_sql_to_crdt(
     vv = json.loads(vv_str) if vv_str else {}
     clock = clock or 0
     ensure_field_crdt_schema(conn)
+    field_vals = {"content": content, "tags": tags, "category": category}
     updates = [
         FieldUpdate(
             memory_id=memory_id,
             field_name=fname,
-            value=str(field_val.get(fname) or ""),
+            value=str(field_vals.get(fname) or ""),
             version_vector=vv,
             logical_clock=clock,
             last_writer_agent=agent_id,

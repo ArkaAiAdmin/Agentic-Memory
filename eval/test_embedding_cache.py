@@ -287,7 +287,7 @@ class TestEmbeddingCache(unittest.TestCase):
         chash = _content_hash(text)
         vec_bytes = _unit_vec(1).tobytes()
         self.conn.execute(
-            "INSERT INTO memory_embeddings VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO memory_embeddings (memory_id, content_hash, embedding, model_revision, dim, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
             ("a", chash, vec_bytes, "stale-revision-xxx", DIM, time.time()),
         )
         self.conn.commit()

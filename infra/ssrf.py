@@ -59,26 +59,30 @@ def _ssrf_block_private(ip: str) -> None:
             raise ValueError(f"SSRF guard: blocked network address {ip} ({net})")
 
 
-def _ssrf_validate_host(hostname: str, allowed_hosts: frozenset[str] | None = None) -> None:
+def _ssrf_validate_host(hostname: str, allowed_hosts: frozenset[str] | None = None, allow_local: bool = False) -> None:
     """Validate a host: optional allowlist, then resolve + reject private IPs."""
     if not hostname:
         raise ValueError("SSRF guard: missing host")
+    if allow_local and hostname.lower() in ("localhost", "127.0.0.1", "::1"):
+        return
     if allowed_hosts:
         if hostname.lower() in allowed_hosts:
             return
         raise ValueError(f"SSRF guard: host {hostname!r} not in allowlist {sorted(allowed_hosts)}")
     for ip in _resolve_ip(hostname):
+        if allow_local and ip in ("127.0.0.1", "::1"):
+            continue
         _ssrf_block_private(ip)
 
 
-def _ssrf_validate_url(target_url: str, allowed_hosts: frozenset[str] | None = None) -> None:
+def _ssrf_validate_url(target_url: str, allowed_hosts: frozenset[str] | None = None, allow_local: bool = False) -> None:
     """Validate scheme + host of a URL before fetching (and on each redirect)."""
     parsed = urlparse(target_url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"SSRF guard: only http/https allowed, got {parsed.scheme!r}")
     if not parsed.hostname:
         raise ValueError("SSRF guard: URL has no host")
-    _ssrf_validate_host(parsed.hostname, allowed_hosts=allowed_hosts)
+    _ssrf_validate_host(parsed.hostname, allowed_hosts=allowed_hosts, allow_local=allow_local)
 
 
 class _SSRFRedirectHandler(urllib.request.HTTPRedirectHandler):

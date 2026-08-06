@@ -57,27 +57,20 @@ def _count_test_files() -> int:
 
 
 def _count_test_functions() -> int:
-    import subprocess, sys
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "--collect-only", "-q", "--no-header", str(REPO / "eval")],
-            capture_output=True, text=True, timeout=120,
-        )
-        m = re.search(r"(\d+)\s+tests?\s+collected", result.stdout)
-        if m:
-            return int(m.group(1))
+        from infra.agents_md_generator import get_meta_for_json
+        return get_meta_for_json()["num_test_functions"]
     except Exception:
-        pass
-    # Fallback to source-level count
-    count = 0
-    for f in (REPO / "eval").glob("test_*.py"):
-        try:
-            for line in f.read_text(encoding="utf-8").splitlines():
-                if re.match(r"\s*def test_", line):
-                    count += 1
-        except OSError:
-            pass
-    return count
+        count = 0
+        for f in (REPO / "eval").glob("test_*.py"):
+            try:
+                for line in f.read_text(encoding="utf-8").splitlines():
+                    sline = line.strip()
+                    if sline.startswith("def test_") or sline.startswith("async def test_"):
+                        count += 1
+            except OSError:
+                pass
+        return count
 
 
 def _count_hooks() -> int:

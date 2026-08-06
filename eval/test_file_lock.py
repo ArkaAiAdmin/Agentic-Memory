@@ -161,8 +161,8 @@ class TestSavePipelineAcquireLock(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             db_path.touch()
-            # The lock manager uses <path>.flock as the actual lock file.
-            lock_path = db_path.parent / ".rebuild.lock.flock"
+            # The lock manager uses <path.parent> / .rebuild.lock as the actual lock file.
+            lock_path = db_path.parent / ".rebuild.lock"
             # Hold the flock in a subprocess on the SAME file the lock manager uses.
             script = (
                 "import fcntl, os, time, sys; "

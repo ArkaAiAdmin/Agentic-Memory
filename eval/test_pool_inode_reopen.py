@@ -35,11 +35,14 @@ from infra.db import _ConnectionPool  # noqa: E402
 def _make_db(path: Path) -> None:
     """Create a minimal sqlite db at *path* with a memories table."""
     conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         "CREATE TABLE IF NOT EXISTS memories ("
-        "id TEXT PRIMARY KEY, content TEXT, value INTEGER)"
+        "id TEXT PRIMARY KEY, content TEXT, category TEXT, title_slug TEXT, tags TEXT, "
+        "created_at TEXT, updated_at TEXT, pinned INTEGER, is_global INTEGER, importance INTEGER, "
+        "tenant_id TEXT DEFAULT 'default')"
     )
-    conn.execute("INSERT INTO memories VALUES ('a', 'first', 1)")
+    conn.execute("INSERT INTO memories (id, content) VALUES ('a', 'first')")
     conn.commit()
     conn.close()
 
@@ -94,6 +97,8 @@ class TestPoolInodeTracking(unittest.TestCase):
         self.assertNotEqual(new_ino, initial_ino, "test setup: inodes should differ")
 
         os.replace(str(new_path), str(self.db_path))
+        Path(str(self.db_path) + "-wal").unlink(missing_ok=True)
+        Path(str(self.db_path) + "-shm").unlink(missing_ok=True)
 
         # The next get() should detect the mismatch, close the old
         # conn, and open a fresh one against the new inode.

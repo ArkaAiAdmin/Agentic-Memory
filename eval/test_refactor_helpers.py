@@ -1046,14 +1046,14 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
             # background.auto_save pulls in circuit_breaker, config, daemon,
             # inbox, tool_complete, daily_digest, purge) regularly exceeds
             # 2 s on a loaded CI machine.
-            deadline = time.time() + 5.0
+            deadline = time.time() + 15.0
             ready = False
             while time.time() < deadline:
                 if auto_save._is_daemon_running():
                     ready = True
                     break
                 time.sleep(0.05)
-            self.assertTrue(ready, "daemon did not become ready in 5s")
+            self.assertTrue(ready, "daemon did not become ready in 15s")
 
             # Now send SIGTERM and verify it exits within 2s.
             proc.terminate()

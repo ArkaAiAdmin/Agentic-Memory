@@ -363,12 +363,12 @@ class TestRESTTenantIsolationE2E(unittest.TestCase):
         ``principal_id`` field).  This means ALL deletes via the REST
         API fail, regardless of tenant.
         """
-        self._set_tenant("agent-a")
+        self._set_tenant("unauthorized-agent")
         try:
             status, data = self._http(
                 "DELETE", "/api/v1/memories/lessons/a-secret"
             )
-            # Should fail — RBAC denies the delete (closed mode, no principal)
+            # Should fail — RBAC denies the delete (unauthorized agent)
             self.assertIn(
                 status, (404, 403, 500),
                 f"Delete should be blocked by RBAC, got status={status}",

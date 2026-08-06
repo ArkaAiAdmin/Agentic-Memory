@@ -7,7 +7,7 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 ---
 <!--AUTO-GEN:START key="what_this_system_is"-->
 - **Surface**: 25 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 55+ cron jobs
-- **Schema**: v78, ~102 tables
+- **Schema**: v78, ~103 tables
 - **Code**: ~138k LOC production, ~146k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
@@ -119,7 +119,7 @@ agentic-memory/
 ├── mcp_surface/         ← 32 MCP modules
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md
-└── eval/             ← 367 test files, 5320+ test functions
+└── eval/             ← 367 test files, 5542+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** CORE tools return user-facing JSON. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback. `defer_expensive=True` by default — returns <200ms.
@@ -198,13 +198,13 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 
 ---
 <!--AUTO-GEN:START key="current_state"-->
-- **Schema v78**: 79 migrations (100% down-coverage), ~102 tables.
+- **Schema v78**: 79 migrations (100% down-coverage), ~103 tables.
 - **MCP surface**: 25 CORE + 1 router (92 ADMIN + 3 DEPRECATED). See `docs/MCP_SURFACE.md`.
 - **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
-- **Testing**: 367 test files, 5320+ test functions, ~146k+ test LOC. Subprocess-per-file runner.
+- **Testing**: 367 test files, 5542+ test functions, ~146k+ test LOC. Subprocess-per-file runner.
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 

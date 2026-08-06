@@ -169,6 +169,7 @@ def memory_save(
             note_id="",
             tenant_id=tenant_id,
             defer_expensive=True,
+            safety_wiring=True,
         )
         return json.dumps({"note_id": result, "status": "success"})
     except SaveValidationError as e:

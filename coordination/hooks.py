@@ -52,7 +52,7 @@ def _make_conn() -> sqlite3.Connection | None:
             db_path = resolve_active_memory_dir() / "memory.db"
         if not db_path.exists():
             return None
-        conn = sqlite3.connect(str(db_path), timeout=0)
+        conn = sqlite3.connect(str(db_path), timeout=30)
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
     except Exception as e:

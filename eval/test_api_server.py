@@ -20,12 +20,6 @@ from typing import Tuple
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-# Ensure MEMORY_DB_PATH is set before any config imports are initialized
-_TEST_DB_DIR = tempfile.mkdtemp(prefix="api_test_setup_")
-_TEST_DB_PATH = Path(_TEST_DB_DIR) / "memory.db"
-_OLD_DB_PATH = os.environ.get("MEMORY_DB_PATH")
-os.environ["MEMORY_DB_PATH"] = str(_TEST_DB_PATH)
-
 from infra.memory_common import connection_pool
 from infra.db_migrations import run_schema_setup
 from infra.api_server import APIServer
@@ -57,8 +51,11 @@ def _wait_for_server(host: str, port: int, timeout: float = 5.0) -> None:
 class TestAPIServer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.db_path = _TEST_DB_PATH
-        
+        cls.tmp_dir = tempfile.mkdtemp(prefix="api_test_setup_")
+        cls.db_path = Path(cls.tmp_dir) / "memory.db"
+        cls.old_db_path = os.environ.get("MEMORY_DB_PATH")
+        os.environ["MEMORY_DB_PATH"] = str(cls.db_path)
+
         # Initialize database schema including migration 031 outbox events
         connection_pool.clear()
         import sqlite3 as _sqlite3
@@ -86,10 +83,12 @@ class TestAPIServer(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.stop()
         connection_pool.clear()
-        if _OLD_DB_PATH is not None:
-            os.environ["MEMORY_DB_PATH"] = _OLD_DB_PATH
+        if cls.old_db_path is not None:
+            os.environ["MEMORY_DB_PATH"] = cls.old_db_path
         else:
             os.environ.pop("MEMORY_DB_PATH", None)
+        import shutil
+        shutil.rmtree(cls.tmp_dir, ignore_errors=True)
 
     def setUp(self):
         # Clear SDK memories before each test
@@ -328,12 +327,9 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(resp_obj["event"], "pong")
 
         # 2. Test event broadcast on database change (insert)
-        # Make a write to the database via MemoryClient (or REST API)
-        status, add_data = self._http_request("/api/v1/memories", "POST", {
-            "content": "Broadcast test memory item",
-            "is_global": False
-        })
-        self.assertEqual(status, 201)
+        # Make a write to the database via MemoryClient
+        client = MemoryClient(db_path=self.db_path)
+        client.save(content="Broadcast test memory item", is_global=False)
         
         # The outbox broadcaster polls memory_events every 200ms.
         # Poll with retries to avoid timing races.

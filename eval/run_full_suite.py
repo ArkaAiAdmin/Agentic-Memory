@@ -174,6 +174,13 @@ def run_one_test(f):
     test_env["AGENTIC_MEMORY_DIR"] = str(temp_db_path.parent)
     test_env["PYTHONPATH"] = str(HERE.parent)
 
+    include_slow = (
+        os.environ.get("INCLUDE_SLOW") == "1"
+        or os.environ.get("MEMORY_TEST_INCLUDE_SLOW") == "1"
+        or "--include-slow" in sys.argv
+    )
+    marker_args = [] if include_slow else ["-m", "not slow"]
+
     # Pre-flight: check if any tests match the marker filter.
     # If 0 match but the file has tests, they are all slow-marked.
     _collect_result = subprocess.run(
@@ -184,8 +191,7 @@ def run_one_test(f):
             str(f),
             "-p",
             "no:xdist",
-            "-m",
-            "not slow",
+            *marker_args,
             "--collect-only",
             "-q",
         ],
@@ -209,8 +215,7 @@ def run_one_test(f):
                 str(f),
                 "-p",
                 "no:xdist",
-                "-m",
-                "not slow",
+                *marker_args,
                 "--tb=line",
                 "-q",
                 f"--junit-xml={junit_path}",

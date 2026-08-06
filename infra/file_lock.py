@@ -148,7 +148,7 @@ def release_flock(lock_file) -> bool:
     try:
         import fcntl
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-    except (IOError, OSError) as e:
+    except (IOError, OSError, ValueError) as e:
         logger.debug("release_flock unlock failed: %s", e)
     try:
         lock_file.close()

@@ -998,6 +998,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_delete_memory(self, note_id: str) -> None:
         try:
+            from infra.authorizer import mcp_authorize
+            principal_id = getattr(self, "_principal_id", None) or os.environ.get("MEMORY_AGENT_ID", "") or getattr(self.server, "agent_id", "") or "default"
+            tenant_id = os.environ.get("MEMORY_AGENT_ID", "default")
+            if not mcp_authorize(principal_id, "delete", "memory", str(self.server.db_path), tenant_id=tenant_id):
+                self._error("Access denied: missing authorization to delete memory", 403)
+                return
             client = MemoryClient(db_path=self.server.db_path)
             success = client.delete(note_id)
             if success:

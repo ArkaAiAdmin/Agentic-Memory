@@ -29,9 +29,11 @@ def fetch_peer_policy_hash(
     *,
     timeout_s: float = 5.0,
     sync_token: str = "",
+    allow_local: bool = True,
+    allowed_hosts: frozenset[str] | set[str] | None = None,
 ) -> tuple[str, float, dict]:
     url = _peer_policy_url(peer_url)
-    _ssrf_validate_url(url)
+    _ssrf_validate_url(url, allowed_hosts=frozenset(allowed_hosts) if allowed_hosts else None, allow_local=allow_local)
     t0 = time.monotonic()
     try:
         req = urllib.request.Request(url, method="GET")

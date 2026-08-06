@@ -142,6 +142,15 @@ def _now_dt() -> _dt.datetime:
     return _dt.datetime.now(_dt.timezone.utc)
 
 
+def _has_table(conn: AnyConnection, table_name: str) -> bool:
+    """Return True if ``table_name`` exists in sqlite_master."""
+    try:
+        row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table_name,)).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
 def _has_column(conn: AnyConnection, table: str, column: str) -> bool:
     """Return True if ``table`` has a column named ``column``.
 
@@ -275,6 +284,18 @@ def _restore_edges_for_note(conn: AnyConnection, note_id: str) -> None:
     except sqlite3.OperationalError:
         # kg_edges or kg_entities may not exist yet — ignore
         pass
+
+
+def _resolve_tenant() -> str:
+    """Resolve the effective tenant ID for the current context/principal."""
+    try:
+        from agent_context import get_agent_context
+        ctx = get_agent_context()
+        principal_id = ctx.get("principal_id") if ctx else None
+        from infra.authorizer import resolve_tenant_for_principal
+        return resolve_tenant_for_principal(principal_id)
+    except Exception:
+        return "default"
 
 
 def soft_delete_note(
@@ -893,9 +914,13 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
         with open_db(db_path) as conn:
             cutoff = _now_dt() - _dt.timedelta(seconds=RESTORE_WINDOW_SECONDS)
             cutoff_iso = cutoff.isoformat()
+            mem_has_tid = _has_column(conn, "memories", "tenant_id")
+            t_clause = " AND tenant_id = ?" if mem_has_tid else ""
+            t_args = (effective_tid,) if mem_has_tid else ()
+
             cur = conn.execute(
-                "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ? AND tenant_id = ?",
-                (cutoff_iso, effective_tid),
+                f"SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ?{t_clause}",
+                (cutoff_iso,) + t_args,
             )
             expired_ids = [r[0] for r in cur.fetchall()]
             if not expired_ids:
@@ -905,116 +930,91 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
             placeholders = ",".join("?" for _ in expired_ids)
 
             # ── 1. Backlinks ───────────────────────────────────
+            b_has_tid = _has_column(conn, "backlinks", "tenant_id")
+            b_clause = " AND tenant_id = ?" if b_has_tid else ""
+            b_args = (effective_tid,) if b_has_tid else ()
             conn.execute(
-                f"DELETE FROM backlinks WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND tenant_id = ?",
-                tuple(expired_ids + expired_ids) + (effective_tid,),
+                f"DELETE FROM backlinks WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})){b_clause}",
+                tuple(expired_ids + expired_ids) + b_args,
             )
 
             # ── 2. Chunks (memory_chunks_ad trigger cleans FTS5) ─
-            if (
+            if _has_table(conn, "memory_chunks"):
+                mc_has_tid = _has_column(conn, "memory_chunks", "tenant_id")
+                mc_clause = " AND tenant_id = ?" if mc_has_tid else ""
+                mc_args = (effective_tid,) if mc_has_tid else ()
                 conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("memory_chunks",),
-                ).fetchone()
-                is not None
-            ):
-                conn.execute(
-                    f"DELETE FROM memory_chunks WHERE parent_id IN ({placeholders}) AND tenant_id = ?",
-                    tuple(expired_ids) + (effective_tid,),
+                    f"DELETE FROM memory_chunks WHERE parent_id IN ({placeholders}){mc_clause}",
+                    tuple(expired_ids) + mc_args,
                 )
 
             # ── 3. Embeddings ──────────────────────────────────
-            if (
+            if _has_table(conn, "memory_embeddings"):
+                me_has_tid = _has_column(conn, "memory_embeddings", "tenant_id")
+                me_clause = " AND tenant_id = ?" if me_has_tid else ""
+                me_args = (effective_tid,) if me_has_tid else ()
                 conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("memory_embeddings",),
-                ).fetchone()
-                is not None
-            ):
-                conn.execute(
-                    f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders}) AND tenant_id = ?",
-                    tuple(expired_ids) + (effective_tid,),
+                    f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders}){me_clause}",
+                    tuple(expired_ids) + me_args,
                 )
 
             # ── 4. Vec index keys ──────────────────────────────
-            if (
+            if _has_table(conn, "memory_vec_keys"):
+                vk_has_tid = _has_column(conn, "memory_vec_keys", "tenant_id")
+                vk_clause = " AND tenant_id = ?" if vk_has_tid else ""
+                vk_args = (effective_tid,) if vk_has_tid else ()
                 conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("memory_vec_keys",),
-                ).fetchone()
-                is not None
-            ):
-                conn.execute(
-                    f"DELETE FROM memory_vec_keys WHERE memory_id IN ({placeholders}) AND tenant_id = ?",
-                    tuple(expired_ids) + (effective_tid,),
+                    f"DELETE FROM memory_vec_keys WHERE memory_id IN ({placeholders}){vk_clause}",
+                    tuple(expired_ids) + vk_args,
                 )
 
             # ── 5. KG facts ────────────────────────────────────
-            if (
+            if _has_table(conn, "kg_facts"):
+                kf_has_tid = _has_column(conn, "kg_facts", "tenant_id")
+                kf_clause = " AND tenant_id = ?" if kf_has_tid else ""
+                kf_args = (effective_tid,) if kf_has_tid else ()
                 conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("kg_facts",),
-                ).fetchone()
-                is not None
-            ):
-                conn.execute(
-                    f"DELETE FROM kg_facts WHERE source_memory IN ({placeholders}) AND tenant_id = ?",
-                    tuple(expired_ids) + (effective_tid,),
+                    f"DELETE FROM kg_facts WHERE source_memory IN ({placeholders}){kf_clause}",
+                    tuple(expired_ids) + kf_args,
                 )
 
             # ── 6. KG edges referencing orphaned entities ───────
-            if (
-                conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("kg_edges",),
-                ).fetchone()
-                is not None
-                and conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("kg_facts",),
-                ).fetchone()
-                is not None
-            ):
+            if _has_table(conn, "kg_edges") and _has_table(conn, "kg_facts"):
+                ke_has_tid = _has_column(conn, "kg_edges", "tenant_id")
+                ke_t_where = "WHERE e.tenant_id = ? " if ke_has_tid else ""
+                ke_f_where = "AND f.tenant_id = ?" if ke_has_tid else ""
+                del_t_where = " AND tenant_id = ?" if ke_has_tid else ""
+                ke_args = (effective_tid, effective_tid, effective_tid, effective_tid, effective_tid) if ke_has_tid else ()
                 try:
-                    conn.execute("""
+                    conn.execute(f"""
                         DELETE FROM kg_edges WHERE (source_id IN (
                             SELECT e.id FROM kg_entities e
-                            WHERE e.tenant_id = ? AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) AND f.tenant_id = ?)
+                            {ke_t_where}AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) {ke_f_where})
                         ) OR target_id IN (
                             SELECT e.id FROM kg_entities e
-                            WHERE e.tenant_id = ? AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) AND f.tenant_id = ?)
-                        )) AND tenant_id = ?
-                    """, (effective_tid, effective_tid, effective_tid, effective_tid, effective_tid))
+                            {ke_t_where}AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) {ke_f_where})
+                        )){del_t_where}
+                    """, ke_args)
                 except sqlite3.OperationalError as e:
                     logger.warning("step 6 (kg_edges) in purge_expired: %s", e)
 
             # ── 7. Orphaned KG entities ────────────────────────
-            if (
-                conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("kg_entities",),
-                ).fetchone()
-                is not None
-                and conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("kg_facts",),
-                ).fetchone()
-                is not None
-                and conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                    ("kg_edges",),
-                ).fetchone()
-                is not None
-            ):
+            if _has_table(conn, "kg_entities") and _has_table(conn, "kg_facts") and _has_table(conn, "kg_edges"):
+                ent_has_tid = _has_column(conn, "kg_entities", "tenant_id")
+                ent_where = "WHERE e.tenant_id = ? " if ent_has_tid else ""
+                ent_e_where = "AND e2.tenant_id = ?" if ent_has_tid else ""
+                ent_f_where = "AND f.tenant_id = ?" if ent_has_tid else ""
+                ent_del_where = " AND tenant_id = ?" if ent_has_tid else ""
+                ent_args = (effective_tid, effective_tid, effective_tid, effective_tid) if ent_has_tid else ()
                 try:
-                    conn.execute("""
+                    conn.execute(f"""
                         DELETE FROM kg_entities WHERE id IN (
                             SELECT e.id FROM kg_entities e
-                            WHERE e.tenant_id = ?
-                            AND NOT EXISTS (SELECT 1 FROM kg_edges e2 WHERE (e2.source_id = e.id OR e2.target_id = e.id) AND e2.tenant_id = ?)
-                            AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) AND f.tenant_id = ?)
-                        ) AND tenant_id = ?
-                    """, (effective_tid, effective_tid, effective_tid, effective_tid))
+                            {ent_where}
+                            AND NOT EXISTS (SELECT 1 FROM kg_edges e2 WHERE (e2.source_id = e.id OR e2.target_id = e.id) {ent_e_where})
+                            AND NOT EXISTS (SELECT 1 FROM kg_facts f WHERE (f.subject = e.name OR f.object = e.name) {ent_f_where})
+                        ){ent_del_where}
+                    """, ent_args)
                 except sqlite3.OperationalError as e:
                     logger.warning("step 7 (kg_entities) in purge_expired: %s", e)
 
@@ -1026,10 +1026,10 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
                 for nid in expired_ids:
                     try:
                         conn.execute(
-                            "DELETE FROM memories_fts WHERE rowid = ("
-                            "  SELECT m.rowid FROM memories m WHERE m.id = ? AND m.tenant_id = ?"
-                            ")",
-                            (nid, effective_tid),
+                            f"DELETE FROM memories_fts WHERE rowid = ("
+                            f"  SELECT m.rowid FROM memories m WHERE m.id = ?{t_clause}"
+                            f")",
+                            (nid,) + t_args,
                         )
                     except Exception as exc:
                         logger.warning(
@@ -1040,8 +1040,8 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
 
             # ── 9. Memories row ────────────────────────────────
             conn.execute(
-                f"DELETE FROM memories WHERE id IN ({placeholders}) AND tenant_id = ?",
-                tuple(expired_ids) + (effective_tid,),
+                f"DELETE FROM memories WHERE id IN ({placeholders}){t_clause}",
+                tuple(expired_ids) + t_args,
             )
 
             conn.commit()
