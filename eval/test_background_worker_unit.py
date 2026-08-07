@@ -61,6 +61,42 @@ class TestVecDriftCheck(unittest.TestCase):
         _check_and_reconcile_vec_drift(conn, self.db_path)
         conn.close()
 
+    def test_defers_orphan_repair_when_write_session_unavailable(self):
+        """Journal-drainer fix: when the saga helpers (which acquire a
+        write session via the flock) raise ``TimeoutError`` because
+        another long-lived writer holds the flock, the drift check must
+        defer — not crash the worker at boot."""
+        from unittest import mock
+
+        from background_worker import _check_and_reconcile_vec_drift
+
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute(
+            "INSERT INTO memories (id, content, source_file, tags, created_at, updated_at, observed_at) "
+            "VALUES ('test/a', 'hello', 'test/a.md', '[]', '2026-01-01T00:00:00', '2026-01-01T00:00:00', '2026-01-01T00:00:00')"
+        )
+        # Create drift the way it happens in production: the memory is
+        # soft-deleted (deleted_at set -> excluded from n_memories) while its
+        # vec_key row survives. Because memory_vec_keys has a FK to
+        # memories(id), an orphan 'ghost' row cannot be inserted — the
+        # soft-delete path is the only legitimate way n_vec > n_memories.
+        conn.execute(
+            "UPDATE memories SET deleted_at = '2026-02-01T00:00:00' WHERE id = 'test/a'"
+        )
+        conn.commit()
+
+        with mock.patch(
+            "background_worker.repair_kg_orphans",
+            side_effect=TimeoutError("write session unavailable"),
+        ), mock.patch(
+            "background_worker.repair_vec_orphans",
+            side_effect=TimeoutError("write session unavailable"),
+        ):
+            # Must not raise — the check defers orphan repair instead.
+            _check_and_reconcile_vec_drift(conn, self.db_path)
+        conn.close()
+
 
 class TestHandlerRegistry(unittest.TestCase):
     def test_all_handlers_registered(self):
@@ -220,13 +256,13 @@ class TestWalCheckpointHandler(unittest.TestCase):
         re-run the checkpoint.  We test by calling
         _maybe_run_wal_checkpoint twice and checking the
         timestamp only advanced once."""
-        from background_worker import (
+        from background.background_worker import (
             _maybe_run_wal_checkpoint,
         )
-        import background_worker
+        import background.background_worker as bg_module
 
         # Reset state
-        background_worker._last_wal_checkpoint_at = 0.0
+        bg_module._last_wal_checkpoint_at = 0.0
         # 0 interval → must always run (no time-based skip)
         # 0 threshold → must always run (no size-based skip)
         old_interval = os.environ.get("MEMORY_WAL_CHECKPOINT_INTERVAL_S")
@@ -234,12 +270,12 @@ class TestWalCheckpointHandler(unittest.TestCase):
         try:
             conn = sqlite3.connect(str(self.db_path))
             _maybe_run_wal_checkpoint(conn, self.db_path)
-            ts_after_first = background_worker._last_wal_checkpoint_at
+            ts_after_first = bg_module._last_wal_checkpoint_at
             self.assertGreater(ts_after_first, 0.0)
 
             # Second call within 60s must NOT update timestamp.
             _maybe_run_wal_checkpoint(conn, self.db_path)
-            ts_after_second = background_worker._last_wal_checkpoint_at
+            ts_after_second = bg_module._last_wal_checkpoint_at
             self.assertEqual(ts_after_first, ts_after_second)
             conn.close()
         finally:

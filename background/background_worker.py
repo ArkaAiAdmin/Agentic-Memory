@@ -772,8 +772,26 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
         # H2 fix: delegate orphan cleanup to the saga-aware helpers so the
         # file-lock / write-lock are acquired properly and the operation
         # is recorded as operational maintenance (Rule 1).
-        repair_kg_orphans(db_path)
-        vec_result = repair_vec_orphans(db_path)
+        #
+        # Journal-drainer fix: the saga helpers open OpenDB with a write
+        # session (infra.db.open_db(write=True) ->
+        # infr.db_write_queue.start_session) which acquires the per-DB flock
+        # with a bounded timeout (default 15s).
+        # If another long-lived writer (rest-api daemon, journal reconciler,
+        # mcp_surface server) is holding the flock, session establishment
+        # raises ``TimeoutError``. At boot this propagated uncaught and killed
+        # the worker whole (launchd saw exit 1). Orphan repair is not
+        # time-critical — the next 5-minute cycle retries — so defer instead
+        # of crashing.
+        try:
+            repair_kg_orphans(db_path)
+            vec_result = repair_vec_orphans(db_path)
+        except TimeoutError:
+            logger.warning(
+                "vec_drift_check: write session unavailable (flock contended) "
+                "- deferring kg/vec orphan repair; will retry next cycle"
+            )
+            return
         n_orphan_vec = vec_result.get("deleted_vec_keys", 0)
         n_orphan_emb = vec_result.get("deleted_embeddings", 0)
         if n_orphan_vec or n_orphan_emb:
