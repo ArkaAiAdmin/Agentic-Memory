@@ -144,6 +144,8 @@ def enqueue_task(
     else:
         _policy = reject_policy or DEFAULT_REJECT_POLICY
 
+    in_outer = bool(getattr(conn, "in_transaction", False))
+
     # --- backpressure check ---
     if _max_qs > 0:
         pending_row = conn.execute(
@@ -173,7 +175,8 @@ def enqueue_task(
                     "  ORDER BY priority ASC, created_at ASC LIMIT 1"
                     ")"
                 )
-                conn.commit()
+                if not in_outer:
+                    conn.commit()
             if _policy == RejectPolicy.BLOCK:
                 import time as _time
 
@@ -195,7 +198,6 @@ def enqueue_task(
                     ).fetchone()
                     pending = pending_row[0] if pending_row is not None else 0
 
-    in_outer = bool(getattr(conn, "in_transaction", False))
     if in_outer:
         conn.execute("SAVEPOINT enqueue_sp")
         sp_open = True
