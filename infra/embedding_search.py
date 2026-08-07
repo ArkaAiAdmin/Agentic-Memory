@@ -669,7 +669,7 @@ class EmbeddingSearch:
         except Exception as e:
             logger.warning("index_embedding failed for %s: %s", memory_id, e)
 
-    def index_embeddings_batch(self, db, items: list, stale_days: int = 30) -> int:
+    def index_embeddings_batch(self, db, items: list, stale_days: int = 30, tenant_id: str = "default") -> int:
         """Batch-index a list of (memory_id, content) tuples.
 
         Returns the number of rows actually written (skips model2vec-

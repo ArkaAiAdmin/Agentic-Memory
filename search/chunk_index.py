@@ -293,7 +293,7 @@ def _qw5_ensure_schema(db) -> None:
         logger.warning("Failed to create memory_chunks schema: %s", e)
 
 
-def _qw5_index_chunks_for(db, parent_id: str, content: str) -> int:
+def _qw5_index_chunks_for(db, parent_id: str, content: str, tenant_id: str = "default") -> int:
     """QW5: replace the chunks for a parent with fresh ones derived
     from the given content. Returns the number of chunks written.
     """

@@ -358,31 +358,25 @@ class TestVeryLongTags:
 class TestEmptyContent:
     def test_empty_content(self, fresh_db):
         slug = _unique_slug("empty")
-        result = save_memory(
-            content="",
-            category="test",
-            title_slug=slug,
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str)
-        assert not result.startswith("Error"), (
-            f"Empty content should be accepted (stripped), got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="",
+                category="test",
+                title_slug=slug,
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
     def test_whitespace_only(self, fresh_db):
         slug = _unique_slug("whitespace")
-        result = save_memory(
-            content="   \n\n  \t  ",
-            category="test",
-            title_slug=slug,
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str)
-        assert not result.startswith("Error"), (
-            f"Whitespace-only content should be accepted, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="   \n\n  \t  ",
+                category="test",
+                title_slug=slug,
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
 
 # ===================================================================
@@ -555,11 +549,11 @@ class TestReadOnlyDb:
                     db_path=fresh_db,
                     safety_wiring=False,
                 )
-            except RuntimeError as e:
-                # Saga path raises instead of returning an error string
+            except (RuntimeError, SaveValidationError) as e:
+                # Saga/validation path raises instead of returning an error string
                 # when the DB refuses writes. Both are valid signals.
-                assert "saga" in str(e).lower() or "operational" in str(e).lower(), (
-                    f"Expected saga/operational error, got: {e}"
+                assert "saga" in str(e).lower() or "operational" in str(e).lower() or "db_error" in str(e).lower() or "readonly" in str(e).lower(), (
+                    f"Expected saga/operational/db error, got: {e}"
                 )
                 return
             assert isinstance(result, str) and result.startswith("Error"), (
