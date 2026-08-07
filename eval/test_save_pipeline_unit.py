@@ -339,6 +339,10 @@ class TestBoundaryConditions(unittest.TestCase):
                 _hard_delete(PROD_DB, nid)
             except Exception:
                 pass
+        try:
+            connection_pool.clear()
+        except Exception:
+            pass
 
     def test_content_at_50kb_limit(self):
         slug = f"unit-bound-{int(time.time())}"
@@ -1375,6 +1379,12 @@ class TestComputeFinalScoreEdge(unittest.TestCase):
 
 class TestSaveMemoryFullFlow(unittest.TestCase):
     """End-to-end save_memory tests that exercise the full code path."""
+
+    def tearDown(self):
+        try:
+            connection_pool.clear()
+        except Exception:
+            pass
 
     def test_save_and_verify_return_format(self):
         """Verify return is a string note_id, not error dict."""

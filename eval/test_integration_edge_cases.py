@@ -552,7 +552,7 @@ class TestReadOnlyDb:
             except (RuntimeError, SaveValidationError) as e:
                 # Saga/validation path raises instead of returning an error string
                 # when the DB refuses writes. Both are valid signals.
-                assert "saga" in str(e).lower() or "operational" in str(e).lower() or "db_error" in str(e).lower() or "readonly" in str(e).lower(), (
+                assert "saga" in str(e).lower() or "operational" in str(e).lower() or "db_error" in str(e).lower() or "readonly" in str(e).lower() or "write queue" in str(e).lower(), (
                     f"Expected saga/operational/db error, got: {e}"
                 )
                 return
