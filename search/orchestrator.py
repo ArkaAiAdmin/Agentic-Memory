@@ -1027,8 +1027,10 @@ def search_memories(
                 _entities.append(" ".join(_current))
 
             if _entities:
-                # Phrase match only — the entity name must appear exactly
-                fts_query = " OR ".join(f'"{e}"' for e in _entities)
+                # Combine exact phrase match with individual token fallback
+                phrase_terms = [f'"{e}"' for e in _entities]
+                token_terms = [f'"{t}"' for t in _bare_tokens if len(t) > 1]
+                fts_query = " OR ".join(phrase_terms + token_terms)
             else:
                 # Single-token queries: use OR
                 fts_query = " OR ".join(f'"{t}"' for t in _bare_tokens if len(t) > 1)

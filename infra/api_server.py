@@ -691,12 +691,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Missing required query parameter", 400)
                 return
             limit = int(query_params.get("limit", ["10"])[0])
-            rerank = query_params.get("rerank", ["true"])[0].lower() == "true"
+            rerank = query_params.get("rerank", ["false"])[0].lower() == "true"
+            light_param = query_params.get("light", [None])[0]
+            light = light_param.lower() == "true" if light_param else (not rerank)
             tags_str = query_params.get("tags", [None])[0]
             tags = tags_str.split(",") if tags_str else None
             mode = query_params.get("mode", ["hybrid"])[0]
             client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode)
+            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
             
             # Serialize SearchResults object
             results_list = [
@@ -727,11 +729,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Missing query field in request body", 400)
                 return
             limit = req.get("limit", 10)
-            rerank = req.get("rerank", True)
+            rerank = req.get("rerank", False)
+            light = req.get("light", not rerank)
             tags = req.get("tags", None)
             mode = req.get("mode", "hybrid")
             client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode)
+            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
             
             # Serialize SearchResults object
             results_list = [

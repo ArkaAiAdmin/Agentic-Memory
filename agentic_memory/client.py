@@ -117,6 +117,7 @@ class MemoryClient:
         max_synthesis_sentences: int = 5,
         tags: list[str] | None = None,
         mode: str = "hybrid",
+        light: bool = False,
     ) -> SearchResults:
         """Search memories by semantic and keyword relevance.
 
@@ -139,6 +140,7 @@ class MemoryClient:
             max_synthesis_sentences: Max sentences in synthesis output
                 when synthesize=True (default 5).
             tags: Optional list of tag strings to filter results by.
+            light: Skip expensive cross-encoder reranking pass for fast retrieval (default False).
 
         Returns:
             SearchResults containing a list of MemoryResult objects
@@ -172,6 +174,7 @@ class MemoryClient:
             max_synthesis_sentences=max_synthesis_sentences,
             tags=tags,
             mode=mode,
+            light=light,
         )
 
         items = parse_search_results(raw)
