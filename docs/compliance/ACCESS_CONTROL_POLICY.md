@@ -14,7 +14,7 @@ This policy defines how access to the agentic-memory system is controlled, inclu
 ## 2. Scope
 
 This policy applies to all principals (agents, users, services) that access the agentic-memory system, including:
-- AI agents (OpenCode, MIMOCODE, and future agents)
+- AI agents (OpenCode, Agentic Memory IDE, and future agents)
 - Dashboard operators
 - API consumers
 - Background workers

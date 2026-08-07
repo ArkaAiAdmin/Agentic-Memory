@@ -1100,6 +1100,33 @@ def api_server_main() -> None:
 
     agent_id = _crdt_agent_id()
 
+    # Start the optional CRDT sync server as a daemon thread (same as
+    # server_main) so the API server exposes the agent on its [[sync.peers]]
+    # port for cross-agent CRDT sync and coordination.
+    try:
+        from infra.sync_server import start_server_from_config
+
+        start_server_from_config(db_path_obj)
+    except Exception as exc:
+        logger.warning("sync server failed to start (non-fatal): %s", exc)
+
+    # Periodic heartbeat so coordination durability sees this agent as alive
+    # even while the API server is idle.
+    def _heartbeat_loop() -> None:
+        from coordination.durability import ensure_durability_tables, update_heartbeat
+
+        while True:
+            try:
+                conn = sqlite3.connect(str(db_path_obj), timeout=30)
+                ensure_durability_tables(conn)
+                update_heartbeat(conn, agent_id, project_id="default")
+                conn.close()
+            except Exception as exc:
+                logger.warning("heartbeat loop failed: %s", exc)
+            threading.Event().wait(60)
+
+    threading.Thread(target=_heartbeat_loop, name="api-heartbeat", daemon=True).start()
+
     server = APIServer(
         db_path=db_path,
         agent_id=agent_id,

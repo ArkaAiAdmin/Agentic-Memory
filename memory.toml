@@ -130,22 +130,15 @@ enable_server = true                  # MEMORY_SYNC_ENABLE_SERVER — start HTTP
 listen_host = "127.0.0.1"            # MEMORY_SYNC_LISTEN_HOST
 listen_port = 9877                    # MEMORY_SYNC_LISTEN_PORT — fallback if agent has no peer entry
 
-[[sync.peers]]                        # Qoder harness (primary DB, port 9877)
-name = "QODER"
-url = "http://127.0.0.1:9877"
-agent_id = "QODER-HARNESS"
-
 [[sync.peers]]                        # OPENCODE workspace (port 9878)
 name = "OPENCODE"
 url = "http://127.0.0.1:9878"
 agent_id = "OPENCODE"
 
-
-
 [[sync.peers]]                        # Agentic Memory IDE (port 9880)
 name = "IDE"
 url = "http://127.0.0.1:9880"
-agent_id = "AGENTIC-MEMORY-IDE"
+agent_id = "ami"
 
 [sync.schedule]
 interval_minutes = 5                  # MEMORY_SYNC_INTERVAL_MINUTES

@@ -107,7 +107,7 @@ def _get_live_values_fallback() -> dict[str, Any]:
     # LOC
     excludes = [
         "./.venv/*", "./venv/*", "./node_modules/*", "./memory/*",
-        "./.mimocode/*", "./.opencode/*", "./ts-sdk/node_modules/*", "*/__pycache__/*",
+        "./.opencode/*", "./ts-sdk/node_modules/*", "*/__pycache__/*",
     ]
     total_loc = _count_lines(excludes)
     eval_excludes = excludes + ["*/eval/*"]

@@ -113,6 +113,13 @@ class TestAPIServerContract(unittest.TestCase):
         cls._tmp = Path("/tmp") / f"am_api_test_{os.getpid()}"
         cls._db_path = cls._tmp / "memory.db"
 
+        # Point the coordination save-lock hook (and any other env-resolved
+        # DB access) at the test DB — the CLI sets this at startup (cli.py:81);
+        # without it the fenced lock targets the live production DB and blocks
+        # on the running daemon's write lock.
+        cls._saved_env["MEMORY_DB_PATH"] = os.environ.get("MEMORY_DB_PATH")
+        os.environ["MEMORY_DB_PATH"] = str(cls._db_path)
+
         _bootstrap_db(cls._db_path)
 
         cls._host = "127.0.0.1"

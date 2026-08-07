@@ -27,7 +27,7 @@ This single tool does four things depending on `action=`:
 | `"stats"` | Overview: how many shared, by whom, categories | *(none)* |
 
 **Tip:** `share_with` is the target agent's `MEMORY_AGENT_ID`. The pool is
-scoped per target — a memory shared with `MIMOCODE` won't appear for
+scoped per target — a memory shared with `ami` won't appear for
 `OPENCODE` unless shared with both.
 
 **Examples:**
@@ -36,8 +36,8 @@ scoped per target — a memory shared with `MIMOCODE` won't appear for
 # See what other agents have shared
 memory_share(action="list")
 
-# Share a lesson about something MIMOCODE should know
-memory_share(note_id="lessons/api-deadlock-fix", share_with="MIMOCODE", action="share")
+# Share a lesson about something the IDE agent should know
+memory_share(note_id="lessons/api-deadlock-fix", share_with="ami", action="share")
 
 # Pull a shared decision into your own DB
 memory_share(note_id="decisions/cache-strategy", share_with="OPENCODE", action="import")
@@ -109,7 +109,7 @@ memory_coordinate(action="claim_task", task_id=1)
 memory_coordinate(action="lock_file", file_path="infra/auth.py")
 
 # Message another agent
-memory_coordinate(action="send_message", to_agent="MIMOCODE", message_type="info", payload="Auth refactor started")
+memory_coordinate(action="send_message", to_agent="ami", message_type="info", payload="Auth refactor started")
 
 # Check project state
 memory_coordinate(action="get_project_state", project_id="default")
@@ -141,7 +141,7 @@ Two background HTTP daemons keep agent DBs in sync:
 | Daemon | Port | Manages |
 |--------|------|---------|
 | OPENCODE sync | 9878 | Main DB |
-| MIMOCODE sync | 9877 | Agent-b (MIMOCODE) DB |
+| AMI sync | 9880 | Agent-b (AMI) DB |
 
 Check health:
 

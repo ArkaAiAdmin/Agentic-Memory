@@ -3,10 +3,10 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 <<<<<<< HEAD
-[![Tests](https://img.shields.io/badge/tests-5,723\+-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-5,733\+-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v78-orange.svg)](docs/reference/schema.md)
 =======
-[![Tests](https://img.shields.io/badge/tests-5,723\+-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-5,733\+-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v78-orange.svg)](docs/reference/schema.md)
 >>>>>>> feat/tenant-isolation-end-to-end
 [![MCP Tools](https://img.shields.io/badge/MCP-25%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)

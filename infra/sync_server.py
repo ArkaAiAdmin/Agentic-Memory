@@ -52,7 +52,8 @@ logger = logging.getLogger(__name__)
 # Health is still unauthenticated; /crdt/changes and /crdt/push check.
 # Falls back to MEMORY_API_TOKEN so the dashboard's Bearer token (same value
 # it sends to OPENCODE's rest-api on 9879) also authorizes against the
-# MIMOCODE sync server on 9877 — read-only /api/v1/query included.
+# peer sync servers (OPENCODE on 9878, AMI on 9880) — read-only
+# /api/v1/query included.
 SYNC_AUTH_TOKEN = (
     os.environ.get("MEMORY_SYNC_TOKEN", "").strip()
     or os.environ.get("MEMORY_API_TOKEN", "").strip()

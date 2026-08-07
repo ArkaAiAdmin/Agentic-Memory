@@ -2,7 +2,7 @@
 
 Ensures only one memory_mcp instance runs per agent per memory directory.
 The lock file is scoped by MEMORY_AGENT_ID so multiple agents (e.g.,
-OPENCODE and MIMOCODE) can each run their own MCP server against the
+OPENCODE and AMI) can each run their own MCP server against the
 same memory directory without conflict.
 
 Uses flock-based mutual exclusion (same pattern as the auto-save daemon

@@ -49,7 +49,7 @@ MEMORY_SPLADE_RETRY=1; offline fallback produces non-empty splade_tokens.
 must accept a `tenant_id` and filter `WHERE tenant_id = ?` (or read the
 tenant_memories view). Update cron_resolve_contradictions.py caller +
 auto_resolve_contradiction_pair to pass tenant_id consistently.
-**Verify:** test with OPENCODE+MIMOCODE notes asserting cross-tenant pairs are
+**Verify:** test with OPENCODE+Agentic Memory IDE notes asserting cross-tenant pairs are
 NOT returned.
 
 ## CHANGE 3 — PageRank off the save path [HIGH]
