@@ -41,7 +41,7 @@ The agent-facing surface is composed of **24 core verbs**, plus **2 escape hatch
 * `memory_compile_skill(lesson_slug, skill_name, primary_triggers)`: Compile a lesson into a reusable skill.
 
 **Multi-Agent:**
-* `memory_share(note_id, action="list")`: Share memories between agents or view the shared pool.
+* `memory_share(action="list")`: Share memories between agents or view the shared pool (note_id needed only for share/import).
 * `memory_coordinate(action="get_project_state")`: Task management, file locking, and agent messaging.
 
 **Audit & Health:**

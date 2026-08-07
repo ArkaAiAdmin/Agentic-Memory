@@ -287,6 +287,22 @@ class TestVerbShareBehavior:
             result = memory_share(note_id="", action="list")
             assert "shared items" in result
 
+    def test_share_list_without_note_id(self):
+        with mock.patch("mcp_surface.mcp_sharing.memory_shared_list") as msl:
+            msl.return_value = "shared items"
+            result = memory_share(action="list")
+            assert "shared items" in result
+
+    def test_share_requires_note_id(self):
+        result = memory_share(action="share", share_with="ami")
+        assert "note_id required" in result
+        assert "Error" in result
+
+    def test_import_requires_note_id(self):
+        result = memory_share(action="import", share_with="OPENCODE")
+        assert "note_id required" in result
+        assert "Error" in result
+
     def test_share_unknown_action_returns_error(self):
         result = memory_share(note_id="", action="invalid")
         assert "Error" in result

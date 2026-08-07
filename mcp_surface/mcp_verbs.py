@@ -997,15 +997,15 @@ def memory_organize(
 @mcp.tool()
 @with_audit("memory_share")
 def memory_share(
-    note_id: str,
+    note_id: str = "",
     share_with: str = "",
     action: str = "list",
 ) -> str:
     """Share memories with other agents or view shared pool.
 
     Args:
-        note_id: Memory to share (required for action=share).
-        share_with: Target agent ID (for action=share).
+        note_id: Memory to share (required for action=share/import).
+        share_with: Target agent ID (for action=share/import).
         action: "list" | "share" | "import" | "stats".
     """
     auth_err = _check_authorization("admin", "memory")
@@ -1022,6 +1022,8 @@ def memory_share(
         if action == "list":
             return str(memory_shared_list(agent_id="", category="", limit=50))
         elif action == "share":
+            if not note_id:
+                return _err(ErrorCode.INVALID_PARAMS, "note_id required for action=share")
             if not share_with:
                 return _err(ErrorCode.INVALID_PARAMS, "share_with required for action=share")
             try:
@@ -1036,6 +1038,8 @@ def memory_share(
                 shared_with=share_with,
             ))
         elif action == "import":
+            if not note_id:
+                return _err(ErrorCode.INVALID_PARAMS, "note_id required for action=import")
             return str(memory_shared_import(shared_id=note_id, target_agent_id=share_with))
         elif action == "stats":
             return str(memory_shared_stats())

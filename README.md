@@ -3,10 +3,10 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 <<<<<<< HEAD
-[![Tests](https://img.shields.io/badge/tests-5,720\+-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-5,723\+-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v78-orange.svg)](docs/reference/schema.md)
 =======
-[![Tests](https://img.shields.io/badge/tests-5,720\+-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-5,723\+-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v78-orange.svg)](docs/reference/schema.md)
 >>>>>>> feat/tenant-isolation-end-to-end
 [![MCP Tools](https://img.shields.io/badge/MCP-25%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
@@ -24,7 +24,7 @@
 
 Agentic Memory gives AI agents **persistent, cross-session, local-first memory** — no cloud, no vendor lock-in, no API keys required. Memories are stored as human-readable Markdown files. A derived SQLite index enables fast full-text, semantic, and knowledge-graph search.
 
-Built for **Claude Code**, **OpenCode**, **MiMoCode**, and any MCP-compatible agent harness.
+Built for **Claude Code**, **OpenCode**, the **Agentic Memory IDE**, and any MCP-compatible agent harness.
 
 ```mermaid
 graph TD
