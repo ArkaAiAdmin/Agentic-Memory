@@ -634,6 +634,7 @@ def memory_delete(
 def memory_recall(
     query: str = "", session_id: str = "", tenant_id: str = "default",
     include_global: Optional[bool] = None,
+    mode: Optional[str] = None,
 ) -> str:
     """Recall context for the current session or a named thread.
 
@@ -647,6 +648,11 @@ def memory_recall(
             derives from the calling agent's namespace (default
             namespace -> global included); when True/False, overrides
             the derived default.
+        mode: Search mode: "hybrid" (default when an explicit query is
+            given), "semantic", "fts". Recent-activity browsing (no
+            query) defaults to "fts" so the bridge recall returns in
+            well under a second instead of running the full hybrid
+            pipeline (semantic expansion + cross-encoder rerank).
     """
     auth_err = _check_authorization("search", "memory")
     if auth_err:
@@ -663,12 +669,14 @@ def memory_recall(
         except (ImportError, Exception):
             _default_global = True
         _include_global = _default_global if include_global is None else include_global
+        _mode = mode or ("fts" if not query else "hybrid")
         result = search_memories(
             db_path=db_path,
             query=q,
             limit=5,
             include_global=_include_global,
             tenant_id=tenant_id,
+            mode=_mode,
         )
         return str(result.get("output", str(result)))
     except Exception as e:

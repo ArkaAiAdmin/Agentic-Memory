@@ -116,6 +116,7 @@ class MemoryClient:
         synthesize: bool = False,
         max_synthesis_sentences: int = 5,
         tags: list[str] | None = None,
+        mode: str = "hybrid",
     ) -> SearchResults:
         """Search memories by semantic and keyword relevance.
 
@@ -170,6 +171,7 @@ class MemoryClient:
             synthesize=synthesize,
             max_synthesis_sentences=max_synthesis_sentences,
             tags=tags,
+            mode=mode,
         )
 
         items = parse_search_results(raw)
@@ -182,7 +184,7 @@ class MemoryClient:
                 category=r.get("category", ""),
                 created_at=r.get("created_at", ""),
                 pinned=bool(r.get("pinned", False)),
-                importance=int(r.get("importance", 3)),
+                importance=int(r.get("importance") or 3),
                 metadata={
                     k: v
                     for k, v in r.items()

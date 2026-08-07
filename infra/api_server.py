@@ -694,8 +694,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             rerank = query_params.get("rerank", ["true"])[0].lower() == "true"
             tags_str = query_params.get("tags", [None])[0]
             tags = tags_str.split(",") if tags_str else None
+            mode = query_params.get("mode", ["hybrid"])[0]
             client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank, tags=tags)
+            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode)
             
             # Serialize SearchResults object
             results_list = [
@@ -728,8 +729,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             limit = req.get("limit", 10)
             rerank = req.get("rerank", True)
             tags = req.get("tags", None)
+            mode = req.get("mode", "hybrid")
             client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank, tags=tags)
+            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode)
             
             # Serialize SearchResults object
             results_list = [
