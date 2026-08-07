@@ -1168,8 +1168,6 @@ def _resolve_peer_db_path(mem_dir: Path, agent_id: str) -> Path | None:
     aid = agent_id.upper().strip()
     if aid == "OPENCODE" or aid == "DEFAULT":
         return mem_dir / "memory.db"
-    if aid == "MIMOCODE":
-        return mem_dir / "memory-mimocode.db"
     candidate = mem_dir / f"memory-{agent_id.lower().replace(' ', '-')}.db"
     return candidate
 

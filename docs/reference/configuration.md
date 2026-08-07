@@ -373,10 +373,7 @@ name = "OPENCODE"
 url = "http://127.0.0.1:9878"
 agent_id = "OPENCODE"
 
-[[sync.peers]]                        # MIMOCODE workspace (port 9879)
-name = "MIMOCODE"
-url = "http://127.0.0.1:9879"
-agent_id = "MIMOCODE"
+
 
 [[sync.peers]]                        # Agentic Memory IDE (port 9880)
 name = "IDE"

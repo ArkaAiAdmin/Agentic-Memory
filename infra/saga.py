@@ -525,7 +525,11 @@ class Saga:
                             # transaction for the compensating undo writes.
                             try:
                                 self.conn.rollback()
-                                self.conn._cmd_queue = queue.Queue()
+                                while not self.conn._cmd_queue.empty():
+                                    try:
+                                        self.conn._cmd_queue.get_nowait()
+                                    except Exception:
+                                        break
                             except Exception as proxy_rb_err:
                                 logger.warning("saga proxy rollback failed: %r", proxy_rb_err)
                     # H17: use _SAGA_STEP_FAILED sentinel instead of True

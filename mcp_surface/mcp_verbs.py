@@ -133,26 +133,14 @@ def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
     Resolution order:
     1. Explicit db_path argument
     2. MEMORY_DB_PATH env var (for multi-agent isolation)
-    3. Per-agent DB: MIMOCODE → memory-mimocode.db (if it exists)
-    4. Global path (if is_global)
-    5. Default memory/memory.db
+    3. Global path (if is_global)
+    4. Default memory/memory.db
     """
     if db_path:
         return Path(db_path)
     env_path = os.environ.get("MEMORY_DB_PATH")
     if env_path:
         return Path(env_path)
-    # Per-agent database isolation: MIMOCODE gets its own database
-    try:
-        from agent_context import get_agent
-        ctx = get_agent()
-        if ctx.agent_id == "MIMOCODE":
-            _, local_mem, _ = get_memory_paths()
-            agent_db = local_mem / "memory-mimocode.db"
-            if agent_db.exists():
-                return agent_db
-    except (ImportError, Exception):
-        pass
     if is_global:
         return GLOBAL_MEM_DIR / "memory.db"
     _, local_mem, _ = get_memory_paths()

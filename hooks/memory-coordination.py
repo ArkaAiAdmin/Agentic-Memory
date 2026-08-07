@@ -58,7 +58,6 @@ AGENT_CAPABILITIES = {
     "search-optimizer": ["search_quality", "implement", "fix"],
     "security-auditor": ["security_audit", "review", "fix"],
     "test-writer": ["test", "review", "fix"],
-    "mimocode": ["implement", "fix", "test", "review", "document"],
     "opencode": ["implement", "fix", "test", "review", "document"],
 }
 
@@ -90,6 +89,7 @@ def _on_session_start(agent_id: str, project_id: str = "default") -> str:
         from coordination.durability import (
             ensure_durability_tables, release_stale_locks,
             abandon_stale_tasks, update_heartbeat, record_coordination_event,
+            get_safety_report,
         )
         ensure_durability_tables(conn)
         release_stale_locks(conn)
@@ -184,7 +184,7 @@ def _on_session_start(agent_id: str, project_id: str = "default") -> str:
         conn.close()
 
     except Exception as e:
-        log_error(f"coordination session_start failed: {e}")
+        log_error(e, context="memory-coordination.session_start")
 
     return "".join(output)
 
@@ -229,7 +229,7 @@ def _on_session_end(agent_id: str, project_id: str = "default") -> str:
         conn.close()
 
     except Exception as e:
-        log_error(f"coordination session_end failed: {e}")
+        log_error(e, context="memory-coordination.session_end")
 
     return "".join(output)
 
@@ -261,7 +261,7 @@ def _check_file_lock(file_path: str, agent_id: str) -> bool:
         return False
 
     except Exception as e:
-        log_error(f"coordination lock check failed: {e}")
+        log_error(e, context="memory-coordination.check_lock")
         return False  # Fail closed — don't allow writes if coordination is broken
 
 
@@ -301,7 +301,7 @@ def _acquire_file_lock(file_path: str, agent_id: str, ttl: int = 300) -> bool:
         return True
 
     except Exception as e:
-        log_error(f"coordination lock acquire failed: {e}")
+        log_error(e, context="memory-coordination.acquire_lock")
         return False  # Fail closed — don't allow lock acquisition if coordination is broken
 
 
@@ -344,7 +344,7 @@ def main():
             print(json.dumps({"error": f"Unknown action: {action}"}))
 
     except Exception as e:
-        log_error(f"coordination hook failed: {e}")
+        log_error(e, context="memory-coordination.main")
         print(json.dumps({"error": str(e)}))
 
 

@@ -41,19 +41,22 @@ class CompositionTestBase(unittest.TestCase):
         cls._tmpdir = tempfile.mkdtemp(prefix="comp_test_")
         cls._db_path = Path(cls._tmpdir) / "memory.db"
         cls._orig = _setup_test_env(cls._tmpdir)
-        connection_pool._pool.clear()
-        connection_pool._pooled_ids.clear()
-
     @classmethod
     def tearDownClass(cls):
+        try:
+            connection_pool.close_all()
+        except Exception:
+            pass
         _restore_test_env(*cls._orig)
         shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     def setUp(self):
         self.db_path = self.__class__._db_path
         self.tmpdir = self.__class__._tmpdir
-        connection_pool._pool.clear()
-        connection_pool._pooled_ids.clear()
+        try:
+            connection_pool.close_all()
+        except Exception:
+            pass
         # Clear out tables before each test
         with open_db(self.db_path) as conn:
             conn.execute("DELETE FROM memories")
@@ -67,7 +70,10 @@ class CompositionTestBase(unittest.TestCase):
             conn.commit()
 
     def tearDown(self):
-        # Cleanup temp locks or settings if any
+        try:
+            connection_pool.close_all()
+        except Exception:
+            pass
         pass
 
 
@@ -206,7 +212,7 @@ class TestSagaRollbackPreservesKGConsistency(CompositionTestBase):
         slug = "saga-fail-test"
 
         # 1. Mock _index_facts to raise an exception mid-save.
-        with patch("save.pipeline._index_facts", side_effect=ValueError("Simulated indexing error")):
+        with patch("save.indexers._index_facts", side_effect=ValueError("Simulated indexing error")), patch("save.pipeline._index_facts", side_effect=ValueError("Simulated indexing error")):
             try:
                 save_memory(
                     content="Procedural notes: 1. Setup server. 2. Verify config works.",
@@ -288,18 +294,16 @@ class TestFullWriteChainUnderPartialFailure(CompositionTestBase):
 
     def test_partial_failures(self):
         stages = [
-            "save.pipeline._index_backlinks",
-            "save.pipeline._index_chunks",
-            "save.pipeline._index_chunk_embeddings",
-            "save.pipeline._index_embedding",
-            "save.pipeline._index_kg",
-            "save.pipeline._index_facts",
-            "save.pipeline._auto_fts_backlinks",
-            "save.pipeline._index_adaptive_retention",
+            "save.indexers._index_backlinks",
+            "save.indexers._index_chunks",
+            "save.indexers._index_chunk_embeddings",
+            "save.indexers._index_embedding",
+            "save.indexers._index_kg",
+            "save.indexers._index_facts",
         ]
 
         for stage in stages:
-            with patch(stage, side_effect=RuntimeError(f"Failure at {stage}")):
+            with patch(stage, side_effect=RuntimeError(f"Failure at {stage}")), patch(stage.replace("save.indexers.", "save.pipeline."), side_effect=RuntimeError(f"Failure at {stage}")):
                 try:
                     save_memory(
                         content="Some robust procedurals: 1. Do step A. 2. Verify outcome.",

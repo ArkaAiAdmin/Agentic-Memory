@@ -10,13 +10,11 @@ from dashboard import _run_health_checks, _compute_health_score
 from dashboard.api_client import ApiClient, _try_count_api
 
 
-# Agent identity → API base URL. OPENCODE happens to coincide with the rest-api
-# port (9879) when the launchd managed rest-api is running; MIMOCODE routes via
-# its sync daemon (9877) which proxies read-only query requests against its DB.
-# Direct sqlite access is restricted to OPENCODE = dashboard.DB.
+# Agent identity → API base URL. OPENCODE coincides with the rest-api
+# port (9879) when the launchd managed rest-api is running. Direct sqlite
+# access is restricted to OPENCODE = dashboard.DB.
 _AGENT_API_BASE = {
     "OpenCode": os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879"),
-    "MIMOCODE": os.environ.get("MEMORY_API_BASE_MIMO", "http://127.0.0.1:9877"),
 }
 
 
@@ -95,7 +93,6 @@ def render_sidebar():
         _base = dashboard.resolve_db().parent
         _agents = {
             "OpenCode": _base / "memory.db",
-            "MIMOCODE": _base / "memory-agent-b.db",
         }
         _valid = {k: v for k, v in _agents.items() if v.exists()}
         if _Valid := _valid:
@@ -111,11 +108,7 @@ def render_sidebar():
                 options=list(_Valid.keys()),
                 index=list(_Valid.keys()).index(st.session_state["agent_view"]),
                 key="agent_view_select",
-                help=(
-                    "Switch API client only. Direct sqlite file access is restricted "
-                    "to OPENCODE — viewing MIMOCODE is read-only via the sync daemon "
-                    "(port 9877). Writes to MIMOCODE go through its own MCP."
-                ),
+                help="Switch API client only. Direct sqlite file access is restricted to OPENCODE.",
             )
             if st.session_state.get("agent_view") != _choice:
                 # Agent changed — rewire the API client to the right port.
