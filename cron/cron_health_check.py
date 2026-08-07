@@ -137,45 +137,44 @@ def _check_auto_save_health() -> dict:
 
 
 def _check_semantic_search() -> dict:
-    """Quick check that semantic search (usearch) is functional.
+    """Quick check that semantic search is functional.
 
-    Wrapped in a 10s SIGALRM timeout so a hung embedding/vector probe
-    degrades to a 'critical' status instead of blocking the whole check.
+    Uses a thread join timeout instead of SIGALRM so PyTorch / OpenMP
+    C++ model initialization is not interrupted by signals (which causes
+    deadlocks on macOS).
     """
-    class _Timeout(Exception):
-        pass
-
-    def _handler(signum, frame):
-        raise _Timeout("Semantic search probe timed out")
-
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    signal.signal(signal.SIGALRM, _handler)
-    signal.alarm(10)
-    try:
+
+    db_path = GLOBAL_MEM_DIR / "memory.db"
+    if not db_path.exists():
+        return {"status": "skipped", "reason": "no_db"}
+
+    res_container: dict[str, Any] = {}
+
+    def _runner():
         try:
             from search.orchestrator import search_memories
 
-            db_path = GLOBAL_MEM_DIR / "memory.db"
-            if not db_path.exists():
-                return {"status": "skipped", "reason": "no_db"}
-
-            result = search_memories(
+            res = search_memories(
                 db_path=db_path,
                 query="health check probe",
                 limit=1,
                 include_global=False,
             )
-            return {
-                "status": "ok",
-                "results_count": len(result.get("results", [])),
-            }
-        except _Timeout:
-            return {"status": "critical", "error": "Timed out after 10s"}
+            count = len(res) if isinstance(res, list) else len(res.get("results", []))
+            res_container["val"] = {"status": "ok", "results_count": count}
         except Exception as e:
             logger.warning("_check_semantic_search failed: %s", e)
-            return {"status": "error", "message": str(e)}
-    finally:
-        signal.alarm(0)
+            res_container["val"] = {"status": "error", "message": str(e)}
+
+    import threading
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    t.join(timeout=10.0)
+    if t.is_alive():
+        return {"status": "critical", "error": "Timed out after 10s"}
+    return res_container.get("val", {"status": "error", "message": "no result"})
 
 
 def _check_disk_space(mem_dir: Path) -> dict:

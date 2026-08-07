@@ -47,10 +47,12 @@ def rotate_log(log_path: Path) -> bool:
 def main() -> int:
     acquire_lock_or_exit("cron_log_retention")
 
-    log_patterns = list(MEMORY_DIR.glob("*.log"))
+    # Match both *.log and *.jsonl log sinks
+    log_patterns = list(MEMORY_DIR.glob("*.log")) + list(MEMORY_DIR.glob("*.jsonl"))
 
-    # Also check the system root logs
-    for p in list(Path(__file__).resolve().parent.parent.glob("*.log")):
+    # Also check system root logs
+    root_dir = Path(__file__).resolve().parent.parent
+    for p in list(root_dir.glob("*.log")) + list(root_dir.glob("*.jsonl")):
         if p not in log_patterns:
             log_patterns.append(p)
 
@@ -61,7 +63,21 @@ def main() -> int:
             size_mb = log_path.stat().st_size / 1_000_000
             print(f"  Rotated: {log_path.name} (now {size_mb:.1f} MB)")
 
-    print(f"Log retention: {rotated} files rotated")
+    # Prune old .drift_cron_*.json files older than 14 days in cron/
+    import time
+    cron_dir = root_dir / "cron"
+    now = time.time()
+    pruned_drift = 0
+    if cron_dir.exists():
+        for df in cron_dir.glob(".drift_cron_*.json"):
+            try:
+                if now - df.stat().st_mtime > 14 * 86400:
+                    df.unlink(missing_ok=True)
+                    pruned_drift += 1
+            except Exception:
+                pass
+
+    print(f"Log retention: {rotated} files rotated, {pruned_drift} old drift snapshots pruned")
     return 0
 
 
