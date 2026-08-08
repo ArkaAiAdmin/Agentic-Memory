@@ -314,6 +314,18 @@ class TestRealModelSmoke(unittest.TestCase):
             raise unittest.SkipTest(
                 "set RUN_RERANKER_SMOKE=1 to run the model load smoke test"
             )
+        # On Apple Silicon the deep reranker auto-disables by default
+        # (2026-06-19 MPS kernel hang insurance), so the real-model smoke
+        # test opts in explicitly. Restored in tearDownClass.
+        cls._old_mps_opt_in = os.environ.get("MEMORY_RERANKER_MPS_ENABLED")
+        os.environ["MEMORY_RERANKER_MPS_ENABLED"] = "1"
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._old_mps_opt_in is None:
+            os.environ.pop("MEMORY_RERANKER_MPS_ENABLED", None)
+        else:
+            os.environ["MEMORY_RERANKER_MPS_ENABLED"] = cls._old_mps_opt_in
 
     def test_load_and_score_real_model(self):
         r = reranker.Reranker()

@@ -315,5 +315,88 @@ class TestConfigDeepRerankTimeout(unittest.TestCase):
             reset_config()
 
 
+class TestMpsAutoFallback(unittest.TestCase):
+    """2026-06-19 MPS hang insurance: on Apple Silicon the deep reranker
+    must refuse to load by default (a PyTorch MPS kernel can hang the
+    process indefinitely) unless MEMORY_RERANKER_MPS_ENABLED is truthy."""
+
+    OPT_IN_ENV = "MEMORY_RERANKER_MPS_ENABLED"
+
+    def _make_mps_reranker(self):
+        from infra.reranker import Reranker
+
+        r = Reranker()
+        r._resolve_device = lambda: "mps"  # type: ignore[method-assign]
+        return r
+
+    def _stub_backends(self, r, outcome=True):
+        r._load_qwen3 = lambda device: outcome  # type: ignore[method-assign]
+        r._load_bge = lambda device: outcome  # type: ignore[method-assign]
+
+    def _assert_never_called(self, r):
+        called = []
+
+        def boom(*args, **kwargs):
+            called.append(True)
+            return True
+
+        r._load_qwen3 = boom  # type: ignore[method-assign]
+        r._load_bge = boom  # type: ignore[method-assign]
+        return called
+
+    def tearDown(self):
+        import os
+
+        os.environ.pop(self.OPT_IN_ENV, None)
+
+    def test_mps_refuses_load_by_default(self):
+        import os
+
+        os.environ.pop(self.OPT_IN_ENV, None)
+        r = self._make_mps_reranker()
+        called = self._assert_never_called(r)
+        self.assertFalse(r.load())
+        self.assertFalse(r.is_loaded())
+        self.assertEqual(called, [])
+        err = r.load_error() or ""
+        self.assertIn("MEMORY_RERANKER_MPS_ENABLED", err)
+
+    def test_mps_falsy_env_also_refuses(self):
+        import os
+
+        for value in ("0", "false", "no", "off", ""):
+            os.environ[self.OPT_IN_ENV] = value
+            r = self._make_mps_reranker()
+            self.assertFalse(r.load())
+            self.assertIn("MEMORY_RERANKER_MPS_ENABLED", r.load_error() or "")
+
+    def test_mps_loads_when_env_opt_in(self):
+        import os
+
+        os.environ[self.OPT_IN_ENV] = "1"
+        r = self._make_mps_reranker()
+        self._stub_backends(r)
+        self.assertTrue(r.load())
+        self.assertIsNone(r.load_error())
+
+    def test_mps_truthy_values_opt_in(self):
+        import os
+
+        for value in ("1", "true", "yes", "on", " TRUE "):
+            os.environ[self.OPT_IN_ENV] = value
+            r = self._make_mps_reranker()
+            self._stub_backends(r)
+            self.assertTrue(r.load(), f"MPS opt-in value rejected: {value!r}")
+
+    def test_cpu_unaffected_without_env(self):
+        from infra.reranker import Reranker
+
+        r = Reranker()
+        r._resolve_device = lambda: "cpu"  # type: ignore[method-assign]
+        self._stub_backends(r)
+        self.assertTrue(r.load())
+        self.assertIsNone(r.load_error())
+
+
 if __name__ == "__main__":
     unittest.main()

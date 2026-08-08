@@ -19,6 +19,13 @@ path (top-50 ~few seconds) but it stays opt-in. Failure handling: any
 load/score error degrades to None from score() so the caller can fall back
 to the weak CE. The model is never required.
 
+On Apple Silicon (MPS) the deep reranker is AUTO-DISABLED by default: a
+PyTorch MPS kernel can hang the process indefinitely (2026-06-19 incident:
+PIDs 68335, 10086). load() refuses with device=="mps" unless the operator
+opts in via the MEMORY_RERANKER_MPS_ENABLED env var ("1"/"true"/"yes"/"on").
+MEMORY_RERANKER_DISABLED / `reranker_disabled = true` still fully disables
+the reranker on every device.
+
 License note: both primary and fallback are commercially usable. The
 previous jina-reranker-v3 (CC BY-NC 4.0) was disabled because it SIGSEGVs
 on Apple Silicon at load time, likely from its custom modeling.py hitting
@@ -59,6 +66,26 @@ FALLBACK_REVISION = "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
 # The active load path is PRIMARY_MODEL_ID → FALLBACK_MODEL_ID.
 RERANKER_MODEL_ID = PRIMARY_MODEL_ID
 RERANKER_REVISION = PRIMARY_REVISION
+
+# 2026-06-19 MPS hang insurance: a PyTorch MPS kernel can hang the process
+# indefinitely on Apple Silicon, so the deep reranker auto-disables itself
+# on MPS unless the operator explicitly opts in via this env var.
+_MPS_RERANKER_OPT_IN_ENV = "MEMORY_RERANKER_MPS_ENABLED"
+_MPS_RERANKER_TRUTHY_VALUES = ("1", "true", "yes", "on")
+
+
+def _mps_rerank_allowed() -> bool:
+    """True when the deep reranker may run on MPS (Apple Silicon).
+
+    Reads MEMORY_RERANKER_MPS_ENABLED; the default (unset, or any falsy
+    value such as "0"/"false"/"no"/"off") means load() refuses on MPS and
+    the caller falls back to the weak cross-encoder.
+    """
+    return (
+        os.environ.get(_MPS_RERANKER_OPT_IN_ENV, "").strip().lower()
+        in _MPS_RERANKER_TRUTHY_VALUES
+    )
+
 
 # Singleton state. The lock guards the instance pointer; per-instance locks
 # guard the load() path so concurrent first-callers don't double-load.
@@ -214,6 +241,17 @@ class Reranker:
                 self._load_attempted = True
                 return False
             device = self._resolve_device()
+            # 2026-06-19 MPS hang insurance (auto-fallback): a PyTorch MPS
+            # kernel can hang the process indefinitely (PIDs 68335, 10086),
+            # so refuse MPS by default. Opt in via MEMORY_RERANKER_MPS_ENABLED.
+            if device == "mps" and not _mps_rerank_allowed():
+                self._load_error = (
+                    "deep reranker disabled on MPS by default; "
+                    "set MEMORY_RERANKER_MPS_ENABLED=1 to enable"
+                )
+                logger.warning("Reranker: %s", self._load_error)
+                self._load_attempted = True
+                return False
             # Try MPS first, then CPU. (MPS is what Jina SIGSEGV'd on;
             # both new backends have been smoke-tested clean on MPS.)
             if self._load_qwen3(device):
@@ -414,6 +452,7 @@ def reset_reranker_for_tests() -> None:
 # ---------------------------------------------------------------------------
 # Persistent MPS worker pool — avoids per-call model reload
 # ---------------------------------------------------------------------------
+
 
 class _MpsWorkerPool:
     """Manages a persistent child process for MPS scoring.

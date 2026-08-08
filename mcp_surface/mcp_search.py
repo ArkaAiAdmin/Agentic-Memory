@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Search MCP tools — memory_search, memory_semantic_search, memory_recall_context, memory_session_start.
 """
@@ -139,7 +140,12 @@ def memory_search(
     global_db = global_mem / "memory.db"
 
     local_results: dict[str, Any] = {"results": [], "count": 0, "output": ""}
-    logger.warning("MCP_SEARCH: query=%r include_global=%s tenant_id=%s", query, include_global, tenant_id)
+    logger.warning(
+        "MCP_SEARCH: query=%r include_global=%s tenant_id=%s",
+        query,
+        include_global,
+        tenant_id,
+    )
     if local_db.exists():
         try:
             local_results = search_memories(
@@ -277,13 +283,13 @@ def memory_recall_context(
 
     deep_rerank: when True, runs the Qwen3-0.6B / BGE-m3 deep reranker on
     the relevant-memories section (1-5s extra CPU, best ranking quality).
-    Default False so the briefing is bounded to <100ms. ON APPLE SILICON
-    (MPS) the deep reranker can hang indefinitely in a PyTorch MPS kernel
-    (2026-06-19 incident: PIDs 68335, 10086). If you don't need the
-    best-quality ranking, leave this False. If you do need it and the call
-    hangs, set the MEMORY_RERANKER_DISABLED env var or
-    `reranker_disabled = true` in memory.toml to fully disable the
-    reranker (falls back to the lightweight weak cross-encoder).
+    Default False so the briefing is bounded to <100ms. On Apple Silicon
+    (MPS) the deep reranker is auto-disabled by default — a PyTorch MPS
+    kernel can hang the process indefinitely (2026-06-19 incident: PIDs
+    68335, 10086) — and the call falls back to the lightweight weak
+    cross-encoder. Opt in with the env var MEMORY_RERANKER_MPS_ENABLED=1;
+    MEMORY_RERANKER_DISABLED / `reranker_disabled = true` in memory.toml
+    still fully disable the reranker everywhere.
     """
     from recall.recall import recall_context
 
@@ -324,8 +330,11 @@ def memory_session_start(query: str = "") -> str:
     A human-readable text briefing with database statistics and session context.
     """
     from infra.memory_common import is_session_active
+
     if is_session_active(max_age_seconds=3600):
-        return "Session already initialized. Use memory_search or memory_save to continue."
+        return (
+            "Session already initialized. Use memory_search or memory_save to continue."
+        )
 
     from recall.recall import recall_context
     from self_directed import SELF_DIRECTED_ENABLED
@@ -339,6 +348,7 @@ def memory_session_start(query: str = "") -> str:
         if query:
             try:
                 from infra.embedding_search import get_embedding_search
+
                 es = get_embedding_search()
                 if es._model_load_failed:
                     embedding_status = (
@@ -388,10 +398,16 @@ def memory_session_start(query: str = "") -> str:
         try:
             import datetime as _dt
             from infra.db import open_db
+
             with open_db(db_path, timeout=5.0, pooled=True, write=False) as rconn:
                 today = _dt.date.today().isoformat()
-                row_total = rconn.execute("SELECT COUNT(*) FROM review_schedule").fetchone()
-                row_due = rconn.execute("SELECT COUNT(*) FROM review_schedule WHERE next_review <= ?", (today,)).fetchone()
+                row_total = rconn.execute(
+                    "SELECT COUNT(*) FROM review_schedule"
+                ).fetchone()
+                row_due = rconn.execute(
+                    "SELECT COUNT(*) FROM review_schedule WHERE next_review <= ?",
+                    (today,),
+                ).fetchone()
                 if row_total and row_due:
                     review_section = f"\n**Review Schedule**:\n  Total scheduled: {row_total[0]}\n  Due for review: {row_due[0]}\n"
         except Exception:
@@ -401,6 +417,7 @@ def memory_session_start(query: str = "") -> str:
     except Exception:
         logger.exception("Session start failed")
         return _err(ErrorCode.SESSION_START_ERROR, "Session start failed")
+
 
 # Legacy alias for backward compatibility with older test suites
 memory_recall_stats = memory_recall_context

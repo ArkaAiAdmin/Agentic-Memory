@@ -253,8 +253,8 @@ graph_rag_hops = 3                    # MEMORY_GRAPH_RAG_HOPS
 graph_rag_expansions = 5              # MEMORY_GRAPH_RAG_EXPANSIONS
 query_cache = true                    # MEMORY_QUERY_CACHE
 search_parallel_enabled = true        # MEMORY_SEARCH_PARALLEL — run FTS + KG fact search in parallel when both are requested
-reranker_disabled = false             # MEMORY_RERANKER_DISABLED — Qwen3-0.6B primary, BGE-m3 fallback (both MPS-safe, verified 2026-06-15). Set to true to disable.
-deep_rerank_timeout = 30              # MEMORY_DEEP_RERANK_TIMEOUT — wall-clock seconds before the deep reranker subprocess is killed (2026-06-19 MPS hang insurance). Set to 0 to disable the timeout (run in-process, fast but no kill switch on hang).
+reranker_disabled = false             # MEMORY_RERANKER_DISABLED — Qwen3-0.6B primary, BGE-m3 fallback (both MPS-safe to load, verified 2026-06-15). Set to true to disable. On Apple Silicon the deep reranker AUTO-disables by default (2026-06-19 MPS kernel hang); set MEMORY_RERANKER_MPS_ENABLED=1 to force it on.
+deep_rerank_timeout = 30              # MEMORY_DEEP_RERANK_TIMEOUT — wall-clock seconds before the deep reranker subprocess is killed (2026-06-19 MPS hang insurance). Set to 0 to disable the timeout (run in-process, fast but no kill switch on hang). Pairs with MEMORY_RERANKER_MPS_ENABLED: on MPS the deep reranker stays off unless that env var is truthy.
 contextual_retrieval = true           # MEMORY_CONTEXTUAL_RETRIEVAL — prepend category+tags context to embeddings
 contextual_enrichment = true          # MEMORY_CONTEXTUAL_ENRICHMENT
 forgetting_curve = true               # MEMORY_FORGETTING_CURVE — Ebbinghaus decay boosts recent notes
