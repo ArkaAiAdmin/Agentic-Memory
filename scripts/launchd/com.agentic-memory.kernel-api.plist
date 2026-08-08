@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentic-memory.kernel-api</string>
+
+    <!--
+      Kernel API server for the Desktop IDE harness (port 9876).
+      Durability design:
+        - RunAtLoad + KeepAlive(SuccessfulExit=false) -> launchd restarts
+          the kernel whenever it dies with a non-zero exit; a successful
+          exit (wrapper finds 9876 already healthy, e.g. the harness owns
+          it) is NOT restarted, so this never double-binds or fights the
+          harness.
+        - The wrapper (scripts/kernel_api_server.sh) reads the live Bearer
+          token from memory/.api_token (same file the harness uses), sets
+          the agent identity env (ami / sync port 9880), and falls back to
+          memory.toml [api] token if .api_token is missing.
+      Replace the old com.agentic-memory.rest-api / :9879 job, which
+      contended with the harness kernel for the memory.db flock.
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/arka/.config/agentic-memory/scripts/kernel_api_server.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OBJC_DISABLE_INITIALIZE_FORK_SAFETY</key>
+        <string>YES</string>
+        <key>HF_HUB_OFFLINE</key>
+        <string>1</string>
+    </dict>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>ThrottleInterval</key>
+        <integer>15</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>AbandonProcessGroup</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/arka/.config/agentic-memory</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/arka/.config/agentic-memory/memory/kernel_api.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/arka/.config/agentic-memory/memory/kernel_api.launchd.log</string>
+</dict>
+</plist>

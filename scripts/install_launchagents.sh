@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# Install launchd agents so the agentic-memory REST API server and Streamlit
-# dashboard start at login and restart on crash (reboot-stable).
+# Install launchd agents so the agentic-memory kernel API server (9876, the
+# Desktop IDE harness bridge) and Streamlit dashboard start at login and
+# restart on crash (reboot-stable).
 #
 #   ./scripts/install_launchagents.sh       # load both
 #   ./scripts/install_launchagents.sh stop  # unload both
+#
+# The old com.agentic-memory.rest-api job (port 9879) is retired: it
+# contended with the harness kernel for the memory.db flock. Its plist is
+# kept on disk as com.agentic-memory.rest-api.plist.disabled.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 AGENT_DIR="$HOME/Library/LaunchAgents"
+SRC_DIR="scripts/launchd"
 PLISTS=(
-    "com.agentic-memory.rest-api.plist"
+    "com.agentic-memory.kernel-api.plist"
     "com.agentic-memory.dashboard.plist"
 )
 
@@ -22,10 +28,14 @@ if [[ "${1:-load}" == "stop" ]]; then
 fi
 
 for p in "${PLISTS[@]}"; do
-    if [[ ! -f "$AGENT_DIR/$p" ]]; then
+    if [[ -f "$SRC_DIR/$p" ]]; then
+        cp "$SRC_DIR/$p" "$AGENT_DIR/$p"
+        echo "installed $p (from scripts/launchd)"
+    elif [[ ! -f "$AGENT_DIR/$p" ]]; then
         echo "ERROR: $AGENT_DIR/$p not found" >&2
         exit 1
     fi
+    launchctl unload "$AGENT_DIR/$p" 2>/dev/null || true
     launchctl load "$AGENT_DIR/$p"
     echo "loaded $p"
 done

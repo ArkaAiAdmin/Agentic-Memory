@@ -70,11 +70,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _cors_headers(self, origin: str) -> list[tuple[str, str]]:
         """Return CORS header tuples for the given origin."""
         headers = [
-            ("Access-Control-Allow-Headers", "Content-Type, Authorization"),
+            ("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Idempotency-Key"),
             ("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"),
         ]
         is_local = origin in ("http://localhost", "http://127.0.0.1", "http://localhost:9878",
-                               "http://127.0.0.1:9878", "tauri://localhost")
+                               "http://127.0.0.1:9878", "http://localhost:1420",
+                               "http://127.0.0.1:1420", "tauri://localhost")
         if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS or is_local):
             headers.append(("Access-Control-Allow-Origin", origin))
         elif not API_CORS_ORIGINS:
