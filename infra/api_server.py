@@ -698,8 +698,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             tags_str = query_params.get("tags", [None])[0]
             tags = tags_str.split(",") if tags_str else None
             mode = query_params.get("mode", ["hybrid"])[0]
-            client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                client = MemoryClient(db_path=self.server.db_path)
+                results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
             
             # Serialize SearchResults object
             results_list = [
@@ -734,8 +735,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             light = req.get("light", not rerank)
             tags = req.get("tags", None)
             mode = req.get("mode", "hybrid")
-            client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                client = MemoryClient(db_path=self.server.db_path)
+                results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
             
             # Serialize SearchResults object
             results_list = [
@@ -915,29 +917,30 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             importance = req.get("importance", 3)
             title_slug = req.get("title_slug", "")
 
-            client = MemoryClient(db_path=self.server.db_path)
-            # CHANGE 5: tenant write-path validation. The authenticated
-            # principal's tenant is authoritative; it is threaded through to
-            # the save pipeline so the row is scoped to the principal's tenant
-            # (the pipeline refuses to re-derive a different tenant).
-            _principal_tenant = "default"
-            try:
-                if getattr(self, "_principal", None) is not None:
-                    _principal_tenant = getattr(
-                        self._principal, "tenant_id", "default"
-                    ) or "default"
-            except Exception:
-                pass
-            note_id = client.save(
-                content=content,
-                tags=tags,
-                category=category,
-                is_global=is_global,
-                pinned=pinned,
-                importance=importance,
-                title_slug=title_slug,
-                tenant_id=_principal_tenant,
-            )
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                client = MemoryClient(db_path=self.server.db_path)
+                # CHANGE 5: tenant write-path validation. The authenticated
+                # principal's tenant is authoritative; it is threaded through to
+                # the save pipeline so the row is scoped to the principal's tenant
+                # (the pipeline refuses to re-derive a different tenant).
+                _principal_tenant = "default"
+                try:
+                    if getattr(self, "_principal", None) is not None:
+                        _principal_tenant = getattr(
+                            self._principal, "tenant_id", "default"
+                        ) or "default"
+                except Exception:
+                    pass
+                note_id = client.save(
+                    content=content,
+                    tags=tags,
+                    category=category,
+                    is_global=is_global,
+                    pinned=pinned,
+                    importance=importance,
+                    title_slug=title_slug,
+                    tenant_id=_principal_tenant,
+                )
             # Audit: tag as dashboard REST call
             try:
                 from infra.audit import enqueue_audit
@@ -2715,6 +2718,7 @@ class APIServer(ThreadingHTTPServer):
 
         self._ws_lock = threading.Lock()
         self._ws_send_lock = threading.Lock()
+        self._db_lock = threading.Lock()
         
         self._thread: Optional[threading.Thread] = None
         self._outbox_thread: Optional[threading.Thread] = None
