@@ -179,7 +179,8 @@ class TestSyncServer(unittest.TestCase):
         resp = urllib.request.urlopen(f"{self.url}/health", timeout=5)
         data = json.loads(resp.read().decode("utf-8"))
         self.assertEqual(data["status"], "ok")
-        self.assertEqual(data["agent_id"], "agent-A")
+        # SEC (LOW-2): unauth /health must not leak agent identity
+        self.assertNotIn("agent_id", data)
         self.assertGreaterEqual(data["note_count"], 2)
 
     def test_changes_since(self):

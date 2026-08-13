@@ -1111,21 +1111,35 @@ def api_server_main() -> None:
         logger.warning("sync server failed to start (non-fatal): %s", exc)
 
     # Periodic heartbeat so coordination durability sees this agent as alive
-    # even while the API server is idle.
+    # even while the API server is idle. Doubles as a liveness watchdog:
+    # after 3 consecutive DB failures (e.g. EMFILE / lock death) or a dead
+    # serve thread, exit non-zero so launchd KeepAlive restarts the kernel
+    # instead of leaving it hung-but-alive and silently unresponsive.
     def _heartbeat_loop() -> None:
         from coordination.durability import ensure_durability_tables, update_heartbeat
 
+        consecutive_failures = 0
         while True:
             try:
                 conn = sqlite3.connect(str(db_path_obj), timeout=30)
                 ensure_durability_tables(conn)
                 update_heartbeat(conn, agent_id, project_id="default")
                 conn.close()
+                consecutive_failures = 0
             except Exception as exc:
-                logger.warning("heartbeat loop failed: %s", exc)
+                consecutive_failures += 1
+                logger.error(
+                    "heartbeat loop failed (%d consecutive): %s",
+                    consecutive_failures,
+                    exc,
+                )
+                if consecutive_failures >= 3:
+                    logger.error("heartbeat unrecoverable — exiting for launchd restart")
+                    os._exit(1)
+            if server._thread is not None and not server._thread.is_alive():
+                logger.error("API server serve thread died — exiting for launchd restart")
+                os._exit(1)
             threading.Event().wait(60)
-
-    threading.Thread(target=_heartbeat_loop, name="api-heartbeat", daemon=True).start()
 
     server = APIServer(
         db_path=db_path,
@@ -1137,6 +1151,7 @@ def api_server_main() -> None:
     )
     server.start()
     print(f"API server running on http://{host}:{port}")
+    threading.Thread(target=_heartbeat_loop, name="api-heartbeat", daemon=True).start()
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

@@ -63,11 +63,13 @@ curl http://localhost:9878/health
 ```json
 {
   "status": "healthy",
-  "agent_id": "default",
-  "note_count": 1234,
-  "version": "1.1.0"
+  "note_count": 1234
 }
 ```
+
+> SEC (LOW-2): unauthenticated `/health` intentionally does not expose
+> `agent_id` or `version` — identity/metadata are stripped to avoid leaking
+> deployment info to any localhost caller.
 
 ---
 

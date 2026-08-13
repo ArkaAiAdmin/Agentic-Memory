@@ -220,7 +220,7 @@ class FlockLockManager(LockManager):
     def __init__(self, base_path: str | Path):
         self.base_path = str(base_path)
         self._lock_fds: dict[str, int] = {}
-        self._lock_tokens: dict[str, str] = {}
+        self._lock_tokens: dict[str, set[str]] = {}
         self._mu = threading.Lock()  # protects _lock_fds / _lock_tokens
 
     def _lock_file(self, lock_name: str) -> str:
@@ -230,42 +230,53 @@ class FlockLockManager(LockManager):
         return self.base_path + f".flock.{h}"
 
     def acquire_lock(self, lock_name: str, holder_id: str, ttl_seconds: int = 60) -> Tuple[bool, str]:
-        path = self._lock_file(lock_name)
-        fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Cache ONE fd per lock_name per process. flock(2) is per
+        # open-file-description: locking the SAME fd again is re-entrant and
+        # succeeds immediately, while locking a FRESH fd for the same file
+        # self-conflicts (EWOULDBLOCK) — that fresh-fd-per-acquire pattern
+        # deadlocked same-process threads (main loop vs. SQLiteWriteQueue
+        # thread) while the contradiction-resolver cron held the flock.
+        with self._mu:
+            fd = self._lock_fds.get(lock_name)
+            if fd is not None:
+                token = str(uuid.uuid4())
+                self._lock_tokens.setdefault(lock_name, set()).add(token)
+                return True, token
+            path = self._lock_file(lock_name)
+            fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (IOError, OSError):
+                os.close(fd)
+                return False, ""
+            self._lock_fds[lock_name] = fd
             token = str(uuid.uuid4())
-            with self._mu:
-                self._lock_fds[lock_name] = fd
-                self._lock_tokens[lock_name] = token
+            self._lock_tokens[lock_name] = {token}
             return True, token
-        except (IOError, OSError):
-            os.close(fd)
-            return False, ""
 
     def release_lock(self, lock_name: str, lease_token: str) -> bool:
         with self._mu:
-            fd = self._lock_fds.pop(lock_name, None)
-            stored_token = self._lock_tokens.pop(lock_name, None)
-        if fd is not None and stored_token == lease_token:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except Exception:
-                pass
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-            return True
-        if fd is not None:
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-        return False
+            fd = self._lock_fds.get(lock_name)
+            tokens = self._lock_tokens.get(lock_name)
+            if fd is None or tokens is None or lease_token not in tokens:
+                return False
+            tokens.discard(lease_token)
+            if tokens:
+                return True
+            self._lock_tokens.pop(lock_name, None)
+            self._lock_fds.pop(lock_name, None)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        return True
 
     def renew_lock(self, lock_name: str, lease_token: str, ttl_seconds: int = 60) -> bool:
-        return lock_name in self._lock_fds and self._lock_tokens.get(lock_name) == lease_token
+        return lock_name in self._lock_fds and lease_token in self._lock_tokens.get(lock_name, ())
 
     def is_locked(self, lock_name: str) -> bool:
         path = self._lock_file(lock_name)

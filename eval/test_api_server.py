@@ -121,7 +121,8 @@ class TestAPIServer(unittest.TestCase):
         status, data = self._http_request("/health")
         self.assertEqual(status, 200)
         self.assertEqual(data["status"], "healthy")
-        self.assertEqual(data["agent_id"], "test-agent")
+        # SEC (LOW-2): unauth /health must not leak agent identity
+        self.assertNotIn("agent_id", data)
 
     def test_add_and_get_memory(self):
         # 1. Add memory

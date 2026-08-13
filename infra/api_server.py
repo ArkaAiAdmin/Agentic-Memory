@@ -647,6 +647,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     # Handlers
     def _handle_health(self) -> None:
+        # SEC: liveness only — no agent_id/version metadata for unauth
+        # callers (LOW-2). note_count is a tenant-scoped aggregate.
         note_count = 0
         try:
             client = MemoryClient(db_path=self.server.db_path)
@@ -656,9 +658,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             pass
         self._write_json({
             "status": "healthy",
-            "agent_id": self.server.agent_id,
-            "note_count": note_count,
-            "version": "1.1.0"
+            "note_count": note_count
         })
 
     def _handle_list_memories(self, query_params: dict) -> None:

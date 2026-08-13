@@ -250,7 +250,9 @@ class TestTlsServerEndToEnd(unittest.TestCase):
         resp = conn_ctx.getresponse()
         self.assertEqual(resp.status, 200)
         body = resp.read().decode("utf-8")
-        self.assertIn("test-tls-agent", body)
+        # SEC (LOW-2): unauth /health must not leak agent identity
+        self.assertNotIn("test-tls-agent", body)
+        self.assertIn("note_count", body)
         conn_ctx.close()
 
 

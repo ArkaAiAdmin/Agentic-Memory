@@ -88,7 +88,7 @@ def main() -> int:
     # is unset, so the resolver must see all tenants too — otherwise
     # non-default-tenant notes error with "note(s) not found".
     from contextlib import nullcontext
-    from infra.db import open_db, set_include_global
+    from infra.db import connection_pool, set_include_global
 
     shared_session = False
     if args.dry_run:
@@ -97,12 +97,16 @@ def main() -> int:
     else:
         set_include_global(True)
         try:
-            session_cm = open_db(db, timeout=30.0)
-            shared_conn = session_cm.__enter__()
+            # Use the pool's thread-keyed connection instead of open_db():
+            # open_db() takes the per-DB-path flock for the whole shared
+            # session, which starved the kernel's queue drain + audit flush
+            # for the run's duration. Pooled connections are flock-free —
+            # writes via conn=shared_conn bypass the lock entirely, so the
+            # flock on the shared session was vestigial.
+            shared_conn = connection_pool.get(str(db))
             shared_session = True
         except Exception as e:
             print(f"contradiction_resolver: failed to open shared session, falling back per-pair: {e}", file=sys.stderr)
-            session_cm = nullcontext(None)
             shared_conn = None
             set_include_global(False)
 
@@ -131,7 +135,7 @@ def main() -> int:
     finally:
         if shared_session:
             try:
-                session_cm.__exit__(None, None, None)
+                connection_pool.put(shared_conn)
             except Exception as e:
                 logger.warning("shared session close failed: %s", e)
         if not args.dry_run:

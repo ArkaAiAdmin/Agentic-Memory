@@ -179,20 +179,16 @@ def _audit_writer_loop() -> None:
                 timeout=AUDIT_FLUSH_INTERVAL_S,
             )
             if rows:
-                try:
-                    _flush_audit_rows(rows)
-                finally:
-                    _mark_rows_processed(len(rows))
+                written = _flush_audit_rows(rows)
+                _mark_rows_processed(written)
         except Exception as e:
             logger.exception("audit writer loop caught exception, will retry: %s", e)
     # Final drain on shutdown
     try:
         final = _drain_queue(max_rows=AUDIT_BATCH_MAX_ROWS, timeout=0.0)
         if final:
-            try:
-                _flush_audit_rows(final)
-            finally:
-                _mark_rows_processed(len(final))
+            written = _flush_audit_rows(final)
+            _mark_rows_processed(written)
     except Exception as e:
         logger.exception("audit final-drain on shutdown failed: %s", e)
 
@@ -203,6 +199,25 @@ def _mark_rows_processed(n: int) -> None:
         global _PENDING
         _PENDING -= n
         _PENDING_COND.notify_all()
+
+
+# Upper bound on retained (re-queued) audit rows. When the DB is
+# persistently unavailable this caps memory growth; beyond it the
+# oldest rows are dropped with an ERROR log — never silently.
+_AUDIT_BACKLOG_MAX_ROWS = 50_000
+
+
+def _requeue_audit_rows(rows: list) -> None:
+    """Re-enqueue failed rows for the next flush attempt (bounded)."""
+    with _PENDING_COND:
+        global _PENDING
+        overflow = max(0, _PENDING + len(rows) - _AUDIT_BACKLOG_MAX_ROWS)
+        if overflow:
+            logger.error("audit backlog overflow: dropping %d oldest rows", overflow)
+            rows = rows[overflow:]
+        _PENDING += len(rows)
+    for row in rows:
+        _AUDIT_QUEUE.put(row)
 
 
 def _drain_queue(max_rows: int, timeout: float) -> list:
@@ -221,11 +236,13 @@ def _drain_queue(max_rows: int, timeout: float) -> list:
     return rows
 
 
-def _flush_audit_rows(rows: list) -> None:
+def _flush_audit_rows(rows: list) -> int:
     """Group rows by db_path, open one connection per path, write a batch.
 
-    Best-effort: any exception is logged at WARNING and the batch is
-    dropped. The audit log must never propagate failures.
+    Returns the number of rows successfully written. Failed rows are
+    re-enqueued (bounded backlog) instead of dropped — audit data must
+    survive transient DB/flock failures (Hard Rule 19: no silent data
+    loss). The audit log never propagates failures.
     """
     # Local import to avoid circular dependency with memory_common.
     from infra._lazy_imports import open_db
@@ -233,6 +250,8 @@ def _flush_audit_rows(rows: list) -> None:
     by_path: dict = {}
     for row in rows:
         by_path.setdefault(row["db_path"], []).append(row)
+    written = 0
+    failed: list = []
     for db_path, batch in by_path.items():
         try:
             with open_db(Path(db_path), timeout=5.0) as conn:
@@ -258,13 +277,17 @@ def _flush_audit_rows(rows: list) -> None:
                             for r in batch
                         ],
                     )
+            written += len(batch)
         except Exception as e:
             logger.warning(
-                "audit flush failed for %s (%d rows dropped): %s",
+                "audit flush failed for %s (%d rows retained for retry, not dropped): %s",
                 db_path,
                 len(batch),
                 e,
             )
+            failed.extend(batch)
+    if failed:
+        _requeue_audit_rows(failed)
 
     # Phase 5: real-time MCP call metering — increment cloud usage
     # counters after each successful batch so the SaaS billing plane
@@ -274,6 +297,7 @@ def _flush_audit_rows(rows: list) -> None:
     # Resolve deployment_id from the db_path of the first row
     source_db = rows[0]["db_path"] if rows else None
     _try_increment_cloud_usage(mcp_call_count, source_db)
+    return written
 
 
 def _try_increment_cloud_usage(mcp_calls: int, source_db: str | None = None) -> None:

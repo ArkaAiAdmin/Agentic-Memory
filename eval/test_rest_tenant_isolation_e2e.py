@@ -412,11 +412,12 @@ class TestRESTTenantIsolationE2E(unittest.TestCase):
         self.assertIn(status, (401, 403))
 
     def test_health_endpoint_returns_server_info(self):
-        """GET /health must return 200 with server metadata."""
+        """GET /health must return 200 with liveness status."""
         status, data = self._http("GET", "/health")
         self.assertEqual(status, 200)
         self.assertEqual(data["status"], "healthy")
-        self.assertEqual(data["agent_id"], "test-tenant-server")
+        # SEC (LOW-2): unauth /health must not leak agent identity
+        self.assertNotIn("agent_id", data)
 
 
 if __name__ == "__main__":

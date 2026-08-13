@@ -408,12 +408,17 @@ class _SyncHandler(BaseHTTPRequestHandler):
         self._json_response(
             {
                 "status": "ok",
-                "agent_id": self.server_agent_id,
+                # SEC: no agent_id/version for unauth callers (LOW-2);
+                # note_count stays (tenant-scoped).
                 "note_count": note_count,
             }
         )
 
     def _handle_get_peers(self) -> None:
+        # SEC (LOW-3): peer directory is network topology metadata —
+        # same auth gate as every other sync endpoint.
+        if not self._require_auth():
+            return
         from infra.pex_protocol import peer_directory
 
         active = peer_directory.get_active_peers(max_age_s=60.0)

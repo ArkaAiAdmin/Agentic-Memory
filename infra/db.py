@@ -167,7 +167,14 @@ class _ConnectionPool:
         self._reval_thread = threading.Thread(target=self._revalidate_loop, daemon=True)
         self._reval_thread.start()
         # H6: tracked journal connections for pool-lifecycle cleanup.
-        self._journal_conns: dict[int, sqlite3.Connection] = {}
+        # Journal connections are thread-local (one per request thread).
+        # Track the owning thread alongside the connection and prune entries
+        # whose owner died, so short-lived REST request threads release their
+        # FDs promptly. An unbounded strong-ref dict with no pruning leaked
+        # 2 FDs per request until EMFILE killed the whole process.
+        # NOTE: sqlite3.Connection is not weak-referenceable on Python 3.14,
+        # so owner-thread pruning is used instead of a WeakValueDictionary.
+        self._journal_conns: dict[int, tuple[threading.Thread, sqlite3.Connection]] = {}
 
     def _revalidate_loop(self) -> None:
         import time
@@ -289,11 +296,30 @@ class _ConnectionPool:
                 f"all active, cannot allocate another"
             )
 
+    def _prune_journal_conns(self) -> None:
+        """Close and drop tracked journal connections whose owner thread died.
+
+        ThreadingHTTPServer request threads exit after each request; their
+        thread-local journal connections would otherwise pin the FDs forever
+        (the 2026-08-10 EMFILE incident). Must be called with self._lock held.
+        """
+        dead: list[int] = []
+        for key, (owner, conn) in self._journal_conns.items():
+            if not owner.is_alive():
+                try:
+                    conn.close()
+                except Exception:
+                    logger.warning("db: journal connection close_failed during prune")
+                dead.append(key)
+        for key in dead:
+            self._journal_conns.pop(key, None)
+
     def _track_journal_conn(self, conn: sqlite3.Connection) -> None:
         """Register a journal connection for pool-lifecycle cleanup."""
         with self._lock:
+            self._prune_journal_conns()
             if id(conn) not in self._journal_conns:
-                self._journal_conns[id(conn)] = conn
+                self._journal_conns[id(conn)] = (threading.current_thread(), conn)
 
     def _untrack_journal_conn(self, conn: sqlite3.Connection) -> None:
         """Remove a journal connection from lifecycle tracking."""
@@ -309,7 +335,7 @@ class _ConnectionPool:
 
     def _close_journal_conns(self) -> None:
         """Close all tracked journal connections."""
-        for conn in self._journal_conns.values():
+        for _owner, conn in self._journal_conns.values():
             try:
                 conn.close()
             except Exception:
