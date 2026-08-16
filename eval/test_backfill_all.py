@@ -1,5 +1,6 @@
 """Tests for backfill_all.py — universal backfill orchestrator."""
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -23,10 +24,9 @@ def isolated_db(tmp_path, monkeypatch):
 def sample_db(isolated_db, monkeypatch):
     """Create a minimal DB with memories table populated."""
     monkeypatch.setenv("MEMORY_KNOWLEDGE_GRAPH", "1")
-    import sqlite3
-    from infra.db_migrations import run_schema_setup
+    from eval._fixtures import bootstrap_temp_db_clean
+    bootstrap_temp_db_clean(isolated_db)
     conn = sqlite3.connect(str(isolated_db))
-    run_schema_setup(conn)
     # Use markdown-formatted content so fact_extraction can extract SPO triples
     conn.execute(
         "INSERT INTO memories (id, content, category, tags, source_file, observed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))",

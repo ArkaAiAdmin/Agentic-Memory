@@ -20,7 +20,7 @@ from kg.contradiction_detector import detect_contradictions_semantic  # noqa: E4
 
 _es = get_embedding_search()
 _es.wait_for_model(timeout_s=10.0)
-_HAVE_EMBEDDING = _es.model is not None
+_HAVE_EMBEDDING = _es.model is not None and getattr(_es, "is_transformer", False)
 
 
 @unittest.skipIf(not _HAVE_EMBEDDING, "model2vec not available; skipping semantic contradiction tests")

@@ -285,11 +285,8 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
 
         tmpdir = tempfile.mkdtemp()
         db_path = Path(tmpdir) / "memory.db"
-        from infra.migration_runner import run_migrations
-        import sqlite3
-        with sqlite3.connect(db_path) as init_conn:
-            init_conn.execute("PRAGMA journal_mode=WAL")
-            run_migrations(init_conn)
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(db_path)
 
         p_func = lambda: (Path(tmpdir), Path(tmpdir), Path(tmpdir))
         r_func = lambda **_: Path(tmpdir)
@@ -366,11 +363,8 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
 
         tmpdir = tempfile.mkdtemp()
         db_path = Path(tmpdir) / "memory.db"
-        from infra.migration_runner import run_migrations
-        import sqlite3
-        with sqlite3.connect(db_path) as init_conn:
-            init_conn.execute("PRAGMA journal_mode=WAL")
-            run_migrations(init_conn)
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(db_path)
 
         p_func = lambda: (Path(tmpdir), Path(tmpdir), Path(tmpdir))
         r_func = lambda **_: Path(tmpdir)

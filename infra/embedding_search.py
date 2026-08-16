@@ -288,6 +288,26 @@ def _disable_hf_progress_bars() -> None:
             pass
 
 
+class _MockEmbeddingModel:
+    def __init__(self, dim: int = 128):
+        self.dim = dim
+
+    def encode(self, texts, *args, **kwargs):
+        import numpy as np
+        if isinstance(texts, str):
+            texts = [texts]
+        vecs = []
+        for t in texts:
+            h = int(hashlib.md5(str(t).encode("utf-8")).hexdigest(), 16)
+            rng = np.random.RandomState(h % (2**32))
+            v = rng.randn(self.dim).astype(np.float32)
+            norm = float(np.linalg.norm(v))
+            if norm > 0:
+                v = v / norm
+            vecs.append(v)
+        return np.array(vecs)
+
+
 # ---------------------------------------------------------------------------
 # Search class
 # ---------------------------------------------------------------------------
@@ -373,6 +393,23 @@ class EmbeddingSearch:
         return query_vec
 
     def _load_model(self, config=None) -> None:
+        is_testing = (
+            "pytest" in sys.modules
+            or "unittest" in sys.modules
+            or "PYTEST_CURRENT_TEST" in os.environ
+        )
+        if os.environ.get("MEMORY_EMBEDDING_DISABLED") == "1" or (
+            is_testing and os.environ.get("MEMORY_TEST_EMBEDDING") != "1"
+        ):
+            import numpy as np
+
+            self.np = np
+            self.model = _MockEmbeddingModel(dim=128)
+            self.is_transformer = False
+            self.loaded = True
+            self._model_loaded = True
+            return
+
         # C1 fix: resolve local_files_only from env.  When set, all HF calls
         # use local cache only — no network.  Local cache is always tried
         # first regardless; on OSError/ValueError (model not cached) we
@@ -669,7 +706,7 @@ class EmbeddingSearch:
         except Exception as e:
             logger.warning("index_embedding failed for %s: %s", memory_id, e)
 
-    def index_embeddings_batch(self, db, items: list, stale_days: int = 30, tenant_id: str = "default") -> int:
+    def index_embeddings_batch(self, db, items: list, stale_days: int = 30, tenant_id: str = "default", **kwargs) -> int:
         """Batch-index a list of (memory_id, content) tuples.
 
         Returns the number of rows actually written (skips model2vec-

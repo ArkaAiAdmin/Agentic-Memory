@@ -1311,7 +1311,8 @@ def render_concept_drift():
                     f"</div>",
                 )
 
-                st.markdown(f"**Concept**: {html.escape(str(r.get('concept', '\u2014')))}")
+                concept_val = str(r.get("concept", "—"))
+                st.markdown(f"**Concept**: {html.escape(concept_val)}")
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Drift Score", f"{r['drift_score']:.3f}")
                 m2.metric("Threshold", f"{r['threshold']}")

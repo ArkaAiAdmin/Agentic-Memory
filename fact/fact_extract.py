@@ -582,24 +582,45 @@ def _upsert_fact(
     ``fact_type`` classifies the belief type taxonomy:
     observation | agent_inference | external_stated | hypothesis | derived
     """
-    row = conn.execute(
-        "SELECT id, locked, confidence, source_memory FROM kg_facts "
-        "WHERE subject = ? AND predicate = ? AND object = ? AND tenant_id = ?",
-        (subject.lower(), predicate, obj.lower(), tenant_id),
-    ).fetchone()
+    try:
+        row = conn.execute(
+            "SELECT id, locked, confidence, source_memory FROM kg_facts "
+            "WHERE subject = ? AND predicate = ? AND object = ? AND tenant_id = ?",
+            (subject.lower(), predicate, obj.lower(), tenant_id),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = conn.execute(
+            "SELECT id, locked, confidence, source_memory FROM kg_facts "
+            "WHERE subject = ? AND predicate = ? AND object = ?",
+            (subject.lower(), predicate, obj.lower()),
+        ).fetchone()
+
     if row:
         if not row[1]:
             new_conf = max(row[2], confidence)
-            conn.execute(
-                "UPDATE kg_facts SET last_seen = ?, mention_count = mention_count + 1, "
-                "confidence = ?, source_memory = ? WHERE id = ? AND tenant_id = ?",
-                (now, new_conf, source_memory or row[3], row[0], tenant_id),
-            )
+            try:
+                conn.execute(
+                    "UPDATE kg_facts SET last_seen = ?, mention_count = mention_count + 1, "
+                    "confidence = ?, source_memory = ? WHERE id = ? AND tenant_id = ?",
+                    (now, new_conf, source_memory or row[3], row[0], tenant_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute(
+                    "UPDATE kg_facts SET last_seen = ?, mention_count = mention_count + 1, "
+                    "confidence = ?, source_memory = ? WHERE id = ?",
+                    (now, new_conf, source_memory or row[3], row[0]),
+                )
         else:
-            conn.execute(
-                "UPDATE kg_facts SET last_seen = ? WHERE id = ? AND tenant_id = ?",
-                (now, row[0], tenant_id),
-            )
+            try:
+                conn.execute(
+                    "UPDATE kg_facts SET last_seen = ? WHERE id = ? AND tenant_id = ?",
+                    (now, row[0], tenant_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute(
+                    "UPDATE kg_facts SET last_seen = ? WHERE id = ?",
+                    (now, row[0]),
+                )
         return int(row[0])
     # C2 fix: handle the race where another writer INSERTs the same
     # (subject, predicate, object) between our SELECT and INSERT. The
@@ -642,6 +663,35 @@ def _upsert_fact(
                 epistemic_source,
                 fact_type,
                 tenant_id,
+            ),
+        )
+        assert cur.lastrowid is not None
+        return int(cur.lastrowid)
+    except sqlite3.OperationalError:
+        cur = conn.execute(
+            "INSERT INTO kg_facts (subject, predicate, object, confidence, "
+            "first_seen, last_seen, source_memory, context, "
+            "subject_entity_id, object_entity_id, "
+            "event_time, event_time_granularity, transaction_time, "
+            "belief_status, epistemic_source, fact_type) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                subject.lower(),
+                predicate,
+                obj.lower(),
+                confidence,
+                now,
+                now,
+                source_memory,
+                context[:500],
+                subj_entity_id[0] if subj_entity_id else None,
+                obj_entity_id[0] if obj_entity_id else None,
+                event_time,
+                event_time_granularity,
+                now,
+                belief_status,
+                epistemic_source,
+                fact_type,
             ),
         )
         assert cur.lastrowid is not None

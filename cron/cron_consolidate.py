@@ -37,6 +37,7 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 
 
+from typing import Any
 from infra.memory_common import (
     cleanup_fts5_orphans,
 )
@@ -44,7 +45,7 @@ from infra.infrastructure import resolve_active_memory_dir
 try:
     from infra.tenant_query import install_tenant_context
 except Exception:  # pragma: no cover
-    def install_tenant_context(conn, tenant_id=None):
+    def install_tenant_context(conn: Any, tenant_id: str | None = None) -> str:
         import os
         tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
         conn.create_function("tenant_id", 0, lambda: tid)

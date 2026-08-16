@@ -35,12 +35,10 @@ from infra.api_server import APIServer
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _bootstrap_db(db_path: Path) -> None:
-    from infra._lazy_imports import connection_pool, safe_close_db
-    from infra.migration_runner import run_migrations
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = connection_pool.get(str(db_path))
-    run_migrations(conn)
-    safe_close_db(conn)
+    from eval._fixtures import bootstrap_temp_db_clean
+    bootstrap_temp_db_clean(db_path)
+    for cat in ("lessons", "decisions", "sessions", "projects", "architecture"):
+        (db_path.parent / "memory" / cat).mkdir(parents=True, exist_ok=True)
 
 
 def _url(host: str, port: int, path: str) -> str:
@@ -123,7 +121,10 @@ class TestAPIServerContract(unittest.TestCase):
         _bootstrap_db(cls._db_path)
 
         cls._host = "127.0.0.1"
-        cls._port = 19878
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            cls._port = s.getsockname()[1]
 
         cls._server = APIServer(
             db_path=cls._db_path,

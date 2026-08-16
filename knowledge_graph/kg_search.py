@@ -47,6 +47,16 @@ def _get_graph_cache_ttl_s() -> float:
 
 _GRAPH_CACHE_MAX = _get_graph_cache_max()
 _GRAPH_CACHE_TTL_S = _get_graph_cache_ttl_s()
+def _conn_db_key(conn: Any) -> str:
+    try:
+        row = conn.execute("PRAGMA database_list").fetchone()
+        if row and len(row) > 2 and row[2]:
+            return str(row[2])
+    except Exception:
+        pass
+    return str(id(conn))
+
+
 _graph_cache: _OrderedDict = _OrderedDict()
 _graph_cache_lock = threading.Lock()
 
@@ -318,7 +328,8 @@ def graph_search(
         return {"entities": [], "edges": []}
 
     query_lower = query.lower().strip()
-    cache_key = (query_lower, limit, max_hops, as_of)
+    db_key = _conn_db_key(conn)
+    cache_key = (db_key, query_lower, limit, max_hops, as_of)
     cached = _graph_cache_get(cache_key)
     if cached is not None:
         return cached

@@ -279,13 +279,16 @@ def _flush_audit_rows(rows: list) -> int:
                     )
             written += len(batch)
         except Exception as e:
-            logger.warning(
-                "audit flush failed for %s (%d rows retained for retry, not dropped): %s",
-                db_path,
-                len(batch),
-                e,
-            )
-            failed.extend(batch)
+            if not Path(db_path).exists() and not Path(db_path).parent.exists():
+                logger.debug("audit flush discarded for deleted db %s: %s", db_path, e)
+            else:
+                logger.warning(
+                    "audit flush failed for %s (%d rows retained for retry, not dropped): %s",
+                    db_path,
+                    len(batch),
+                    e,
+                )
+                failed.extend(batch)
     if failed:
         _requeue_audit_rows(failed)
 

@@ -93,7 +93,8 @@ def _setup_test_env(tmpdir: str):
         infrastructure.resolve_active_memory_dir = mock_resolve
 
     connection_pool.clear()
-    rebuild_index(tmp, db_path)
+    from eval._fixtures import bootstrap_temp_db_clean
+    bootstrap_temp_db_clean(db_path)
     with sqlite3.connect(str(db_path)) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA busy_timeout=10000;")

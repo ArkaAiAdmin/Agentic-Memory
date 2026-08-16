@@ -377,8 +377,8 @@ class TestUpsertPreservesSubsystems(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "sink_test.db")
-        bare = _make_bare_db(self.db_path)
-        bare.close()
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
 
     def tearDown(self):
         import shutil
@@ -513,8 +513,8 @@ class TestHardDeleteCascade(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "cascade_test.db")
-        bare = _make_bare_db(self.db_path)
-        bare.close()
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
 
     def tearDown(self):
         import shutil
@@ -620,8 +620,8 @@ class TestPurgeExpiredCascade(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "purge_test.db")
-        bare = _make_bare_db(self.db_path)
-        bare.close()
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
 
     def tearDown(self):
         import shutil
@@ -674,8 +674,8 @@ class TestSavePipelineEndToEnd(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "e2e_test.db")
-        bare = _make_bare_db(self.db_path)
-        bare.close()
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
         from infra.embedding_search import get_embedding_search
         get_embedding_search().wait_for_model(timeout_s=30.0)
 
@@ -791,8 +791,8 @@ class TestSyncInvariant(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "sync_test.db")
-        bare = _make_bare_db(self.db_path)
-        bare.close()
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
 
     def tearDown(self):
         import shutil
@@ -931,8 +931,8 @@ class TestConnectionPoolThreadIsolation(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "thread_test.db")
-        bare = _make_bare_db(self.db_path)
-        bare.close()
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
 
     def tearDown(self):
         import shutil

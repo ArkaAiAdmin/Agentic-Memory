@@ -10,6 +10,7 @@ here.
 import os
 import shutil
 import sqlite3
+import tempfile
 from pathlib import Path
 
 from infra.memory_common import get_memory_paths
@@ -54,19 +55,26 @@ def bootstrap_temp_db(db_path: Path) -> None:
         conn.close()
 
 
-def bootstrap_temp_db_clean(db_path: Path) -> None:
-    """Create a fresh DB with the full schema (incl. all 4 FTS5 + triggers) but NO data.
+import threading as _threading
 
-    Uses run_schema_setup + ensure_facts_schema from the production
-    codebase instead of copying the prod DB and truncating. This
-    eliminates the prod-copy dependency and the fragile truncation-
-    plus-FTS5-rebuild dance.
-    """
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    try:
+_TEMPLATE_DB_PATH: Path | None = None
+_TEMPLATE_DB_LOCK = _threading.Lock()
+
+
+def _get_or_create_template_db() -> Path:
+    global _TEMPLATE_DB_PATH
+    if _TEMPLATE_DB_PATH is not None and _TEMPLATE_DB_PATH.exists():
+        return _TEMPLATE_DB_PATH
+    with _TEMPLATE_DB_LOCK:
+        if _TEMPLATE_DB_PATH is not None and _TEMPLATE_DB_PATH.exists():
+            return _TEMPLATE_DB_PATH
+        tmp = Path(tempfile.gettempdir()) / f"ami_schema_template_v78_{os.getpid()}.db"
+        if tmp.exists():
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+        conn = sqlite3.connect(str(tmp), timeout=30.0)
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
         from infra.db_migrations import run_schema_setup
@@ -76,8 +84,24 @@ def bootstrap_temp_db_clean(db_path: Path) -> None:
 
         ensure_facts_schema(conn)
         conn.commit()
-    finally:
         conn.close()
+        _TEMPLATE_DB_PATH = tmp
+        return tmp
+
+
+def bootstrap_temp_db_clean(db_path: Path | str) -> None:
+    """Create a fresh DB with the full schema by cloning pre-migrated template in < 1ms."""
+    db_path = Path(db_path)
+    template = _get_or_create_template_db()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(template, db_path)
+    for s in ("-wal", "-shm"):
+        p = Path(str(db_path) + s)
+        if p.exists():
+            try:
+                p.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def set_benchmark_env() -> None:

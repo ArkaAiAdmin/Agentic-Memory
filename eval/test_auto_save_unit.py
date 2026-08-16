@@ -18,19 +18,16 @@ import sys
 
 sys.path.insert(0, os.getcwd())
 
-from infra.db_migrations import run_schema_setup
+from eval._fixtures import bootstrap_temp_db_clean
 
 
 class TestUpsertMemory(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="autosave_"))
         self.db_path = self.tmpdir / "memory.db"
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        run_schema_setup(conn)
-        conn.commit()
-        conn.close()
+        bootstrap_temp_db_clean(self.db_path)
+        for cat in ("lessons", "decisions", "sessions", "projects", "architecture"):
+            (self.tmpdir / "memory" / cat).mkdir(parents=True, exist_ok=True)
 
         self._orig_db = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
@@ -134,12 +131,7 @@ class TestDailyDigestToolBreakdown(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="autosave_digest_"))
         self.db_path = self.tmpdir / "memory.db"
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        run_schema_setup(conn)
-        conn.commit()
-        conn.close()
+        bootstrap_temp_db_clean(self.db_path)
 
         self._orig_db = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
@@ -334,12 +326,7 @@ class TestInboxSizeCap(unittest.TestCase):
 
         self.tmpdir = Path(tempfile.mkdtemp())
         self.db_path = self.tmpdir / "memory.db"
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        run_schema_setup(conn)
-        conn.commit()
-        conn.close()
+        bootstrap_temp_db_clean(self.db_path)
 
         self._orig_db = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
@@ -417,12 +404,7 @@ class TestDrainInboxRenamePattern(unittest.TestCase):
 
         self.tmpdir = Path(tempfile.mkdtemp())
         self.db_path = self.tmpdir / "memory.db"
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        run_schema_setup(conn)
-        conn.commit()
-        conn.close()
+        bootstrap_temp_db_clean(self.db_path)
 
         self._orig_db = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
@@ -641,12 +623,7 @@ class TestProcessInboxBatch(unittest.TestCase):
 
         self.tmpdir = Path(tempfile.mkdtemp())
         self.db_path = self.tmpdir / "memory.db"
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        run_schema_setup(conn)
-        conn.commit()
-        conn.close()
+        bootstrap_temp_db_clean(self.db_path)
 
         self._orig_db = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
@@ -712,12 +689,7 @@ class TestEnqueueDrainProcessRoundTrip(unittest.TestCase):
 
         self.tmpdir = Path(tempfile.mkdtemp())
         self.db_path = self.tmpdir / "memory.db"
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        run_schema_setup(conn)
-        conn.commit()
-        conn.close()
+        bootstrap_temp_db_clean(self.db_path)
 
         self._orig_db = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)

@@ -2318,6 +2318,9 @@ def _save_memory_core(
                 principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
         except (ImportError, AttributeError):
             pass
+        if not principal_id:
+            import os
+            principal_id = os.environ.get("MEMORY_AGENT_ID", "default")
         # Normalize to lowercase — RBAC principals are stored lowercase
         # but agent_context preserves the original case from MEMORY_AGENT_ID.
         if principal_id:

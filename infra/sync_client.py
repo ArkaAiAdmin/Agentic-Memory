@@ -501,8 +501,8 @@ def sync_with_peer(
     db_path: str | Path,
     peer_url: str,
     peer_name: str,
-    peer_agent_id: str,
-    local_agent_id: str,
+    peer_agent_id: str = "",
+    local_agent_id: str = "",
     limit: int = 200,
 ) -> dict:
     """Run a full two-way sync with a peer (push local, then pull remote).

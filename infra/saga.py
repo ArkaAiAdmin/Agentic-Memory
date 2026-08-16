@@ -1092,8 +1092,10 @@ def _capture_pre_existing(conn, note_id: str, tenant_id: str | None = None) -> t
             ).fetchone()
         if row is not None:
             return (row[0], row[1])
+        return None
     except Exception as _capture_exc:
         logger.debug("_capture_pre_existing failed for %s: %s", note_id, _capture_exc)
+        return None
 
 
 def _capture_full_row(conn, note_id: str, tenant_id: str | None = None) -> dict | None:

@@ -125,7 +125,7 @@ def _open_server_db(db_path: str, write: bool = True, tenant_id: str = "default"
         # between read-only sync requests (pull endpoints) and
         # MCP tool calls for the SQLiteWriteQueue thread.
         from infra.db import connection_pool
-        conn = connection_pool.get(str(db_path), timeout=10.0)
+        conn: _AnyConnection = connection_pool.get(str(db_path), timeout=10.0)
         install_tenant_context(conn, tenant_id)
         return conn
 

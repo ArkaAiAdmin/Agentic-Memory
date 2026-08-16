@@ -1023,6 +1023,8 @@ def _semantic_expand(query: str, db_path: Any = None, top_k: int = 3) -> list[st
         from pathlib import Path
 
         _es = get_embedding_search()
+        if not getattr(_es, "is_transformer", False):
+            return []
         # Search for similar memories
         results = _es.search(query, Path(str(db_path)), limit=top_k)
         if not results:
@@ -1261,7 +1263,7 @@ def _graph_rag_expand(query: str, db_path: Path, conn=None) -> list[str]:
             _min_occ_q = 2
     except ImportError:
         return []
-    query_entities = extract_entities(query, min_occurrences=_min_occ_q)
+    query_entities = extract_entities(query, min_occurrences=1)
     if not query_entities:
         return []
     _pooled_conn = None

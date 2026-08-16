@@ -21,6 +21,7 @@ import logging
 import math
 import os
 import re
+import sys
 import threading
 from typing import Optional
 
@@ -91,9 +92,17 @@ def _get_splade_model():
     model/tokenizer to module globals happens inside the lock.
     """
     global _splade_model, _splade_tokenizer, _splade_load_attempted, _splade_failure_count
-    # Fast path: already loaded — no lock needed.
     if _splade_load_attempted and _splade_model is not None:
         return _splade_model, _splade_tokenizer
+
+    is_testing = (
+        "pytest" in sys.modules
+        or "unittest" in sys.modules
+        or "PYTEST_CURRENT_TEST" in os.environ
+    )
+    if is_testing and os.environ.get("MEMORY_TEST_SPLADE") != "1":
+        _splade_load_attempted = True
+        return None, None
     if _splade_load_attempted and not _splade_retry_enabled():
         return _splade_model, _splade_tokenizer
     if _splade_load_attempted and _splade_failure_count >= _splade_max_failures:

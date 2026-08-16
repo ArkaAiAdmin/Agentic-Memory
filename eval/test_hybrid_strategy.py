@@ -48,32 +48,10 @@ class TestShouldUseLlmForMemory(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = Path(self.tmpdir) / "test.db"
+        from eval._fixtures import bootstrap_temp_db_clean
+
+        bootstrap_temp_db_clean(self.db_path)
         self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.executescript(
-            """
-            CREATE TABLE memories (
-                id TEXT PRIMARY KEY,
-                content TEXT,
-                pinned INTEGER DEFAULT 0,
-                importance_score REAL,
-                deleted_at TEXT
-            );
-            CREATE TABLE kg_facts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                subject TEXT,
-                predicate TEXT,
-                object TEXT,
-                confidence REAL,
-                source_memory TEXT,
-                mention_count INTEGER DEFAULT 1,
-                first_seen REAL,
-                last_seen REAL,
-                belief_status TEXT DEFAULT 'active',
-                epistemic_source TEXT DEFAULT 'agent',
-                fact_type TEXT DEFAULT 'observation'
-            );
-            """
-        )
         self.conn.execute(
             "INSERT INTO memories (id, content, pinned, importance_score) "
             "VALUES (?, ?, ?, ?)",

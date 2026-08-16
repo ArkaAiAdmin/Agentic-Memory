@@ -174,7 +174,8 @@ def _check_semantic_search() -> dict:
     t.join(timeout=10.0)
     if t.is_alive():
         return {"status": "critical", "error": "Timed out after 10s"}
-    return res_container.get("val", {"status": "error", "message": "no result"})
+    val = res_container.get("val", {"status": "error", "message": "no result"})
+    return val if isinstance(val, dict) else {"status": "error", "message": str(val)}
 
 
 def _check_disk_space(mem_dir: Path) -> dict:

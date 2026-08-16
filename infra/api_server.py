@@ -1509,7 +1509,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             target_id = body.get("target_id")
             relation = body.get("relation") or "related"
             weight = float(body.get("weight", 1.0))
-            properties = body.get("properties") or {}
             if not isinstance(source_id, int) or not isinstance(target_id, int):
                 self._error("source_id and target_id (int) required", 400)
                 return
@@ -2230,15 +2229,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 if cust:
                     customer_email = cust.get("email", "")
 
-            session = stripe.checkout.Session.create(
-                mode="subscription",
-                line_items=[{"price": price_id, "quantity": 1}],
-                client_reference_id=dep_id,
-                metadata={"plan_id": plan_id, "deployment_id": dep_id},
-                **({"customer_email": customer_email} if customer_email else {}),
-                success_url=body.get("success_url", "https://app.agentic-memory.dev/billing?success=1"),
-                cancel_url=body.get("cancel_url", "https://app.agentic-memory.dev/billing?canceled=1"),
-            )
+            checkout_kwargs: dict[str, Any] = {
+                "mode": "subscription",
+                "line_items": [{"price": price_id, "quantity": 1}],
+                "client_reference_id": dep_id,
+                "metadata": {"plan_id": plan_id, "deployment_id": dep_id},
+                "success_url": body.get("success_url", "https://app.agentic-memory.dev/billing?success=1"),
+                "cancel_url": body.get("cancel_url", "https://app.agentic-memory.dev/billing?canceled=1"),
+            }
+            if customer_email:
+                checkout_kwargs["customer_email"] = customer_email
+
+            session = stripe.checkout.Session.create(**checkout_kwargs)
 
             self._write_json({
                 "checkout_url": session.url,
@@ -2808,26 +2810,31 @@ class APIServer(ThreadingHTTPServer):
         """Polls SQLite memory_events outbox and broadcasts them."""
         last_seen_id = 0
         try:
-            from infra._lazy_imports import connection_pool, safe_close_db
+            import sqlite3
 
-            conn = connection_pool.get(str(self.db_path), timeout=5.0)
-            try:
-                row = conn.execute("SELECT MAX(id) FROM memory_events").fetchone()
-                if row and row[0] is not None:
-                    last_seen_id = row[0]
-            finally:
-                safe_close_db(conn)
+            if self.db_path.exists():
+                conn = sqlite3.connect(str(self.db_path), timeout=2.0)
+                try:
+                    conn.execute("PRAGMA query_only = ON")
+                    row = conn.execute("SELECT MAX(id) FROM memory_events").fetchone()
+                    if row and row[0] is not None:
+                        last_seen_id = row[0]
+                finally:
+                    conn.close()
         except Exception as e:
             logger.warning(f"Failed to query max event id: {e}")
 
         while not self._stop_event.is_set():
             try:
                 time.sleep(0.2)
+                if not self.db_path.exists():
+                    continue
 
-                from infra._lazy_imports import connection_pool, safe_close_db
+                import sqlite3
 
-                conn = connection_pool.get(str(self.db_path), timeout=5.0)
+                conn = sqlite3.connect(str(self.db_path), timeout=2.0)
                 try:
+                    conn.execute("PRAGMA query_only = ON")
                     rows = conn.execute(
                         "SELECT id, event_type, note_id, payload, created_at "
                         "FROM memory_events WHERE id > ? ORDER BY id ASC",
@@ -2856,9 +2863,80 @@ class APIServer(ThreadingHTTPServer):
                         })
                         self.broadcast(msg)
                 finally:
-                    safe_close_db(conn)
+                    conn.close()
             except Exception as e:
                 logger.debug(f"Outbox polling error: {e}")
+
+    def handle_request_direct(
+        self,
+        method: str,
+        path: str,
+        body: dict | list | None = None,
+        headers: dict | None = None,
+    ) -> tuple[int, Any]:
+        """In-memory direct HTTP execution without TCP sockets or network delays."""
+        import io
+
+        body_bytes = json.dumps(body).encode("utf-8") if body is not None else b""
+        rfile = io.BytesIO()
+        wfile = io.BytesIO()
+
+        class _MockSocket:
+            def makefile(self, mode, *a, **kw):
+                if "r" in mode:
+                    return rfile
+                return wfile
+
+            def getsockname(self):
+                return ("127.0.0.1", 0)
+
+            def getpeername(self):
+                return ("127.0.0.1", 50000)
+
+            def sendall(self, data):
+                wfile.write(data)
+
+            def close(self):
+                pass
+
+            def settimeout(self, t):
+                pass
+
+            def shutdown(self, how):
+                pass
+
+        req_headers = dict(headers or {})
+        if self.token and "Authorization" not in req_headers:
+            req_headers["Authorization"] = f"Bearer {self.token}"
+        if body is not None:
+            req_headers["Content-Type"] = "application/json"
+            req_headers["Content-Length"] = str(len(body_bytes))
+
+        header_lines = "".join(f"{k}: {v}\r\n" for k, v in req_headers.items())
+        raw_request = f"{method.upper()} {path} HTTP/1.1\r\n{header_lines}\r\n".encode("utf-8") + body_bytes
+        rfile.write(raw_request)
+        rfile.seek(0)
+
+        try:
+            APIRequestHandler(_MockSocket(), ("127.0.0.1", 50000), self)  # type: ignore[arg-type]
+        except Exception as e:
+            logger.warning("handle_request_direct exception: %s", e)
+
+        output_bytes = wfile.getvalue()
+        if not output_bytes:
+            return 500, {"error": "empty response"}
+
+        lines = output_bytes.split(b"\r\n\r\n", 1)
+        header_part = lines[0].decode("utf-8", errors="replace")
+        body_part = lines[1] if len(lines) > 1 else b""
+
+        status_line = header_part.split("\r\n")[0]
+        status_code = int(status_line.split(" ")[1]) if " " in status_line else 200
+        try:
+            res_data = json.loads(body_part.decode("utf-8"))
+        except Exception:
+            res_data = body_part.decode("utf-8", errors="replace")
+        return status_code, res_data
 
 
 def start_server_from_config(db_path: str | Path) -> Optional[APIServer]:

@@ -4,13 +4,14 @@
   "private": true,
   "description": "Memory-First Agent IDE — agentic-memory is the kernel",
   "scripts": {
-    "dev": "pnpm --filter @ami/desktop dev",
-    "build": "pnpm --filter @ami/desktop build",
-    "preview": "pnpm --filter @ami/desktop preview",
-    "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test && cargo test --workspace",
-    "clean": "pnpm -r clean"
+    "verify": "node scripts/verify.mjs",
+    "verify:fast": "node scripts/verify.mjs --fast",
+    "typecheck": "pnpm --dir ide typecheck && ./venv/bin/mypy --config-file pyproject.toml",
+    "lint": "./venv/bin/ruff check . --config pyproject.toml && pnpm --dir ide lint",
+    "test": "make test-quick && pnpm --dir ide test",
+    "test:coverage": "node scripts/test-coverage-unified.mjs",
+    "update-docs": "make update-docs",
+    "clean": "pnpm --dir ide clean"
   },
   "engines": {
     "node": ">=22.0.0",

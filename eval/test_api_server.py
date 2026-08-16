@@ -55,16 +55,18 @@ class TestAPIServer(unittest.TestCase):
         cls.db_path = Path(cls.tmp_dir) / "memory.db"
         cls.old_db_path = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(cls.db_path)
+        os.environ["MEMORY_RERANKER_DISABLED"] = "true"
+
+        cls.old_journal = os.environ.get("MEMORY_WRITE_JOURNAL_ENABLED")
+        os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = "0"
 
         # Initialize database schema including migration 031 outbox events
         connection_pool.clear()
-        import sqlite3 as _sqlite3
-        conn = _sqlite3.connect(str(cls.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=10000")
-        conn.execute("PRAGMA foreign_keys=ON")
-        run_schema_setup(conn)
-        conn.close()
+        from eval._fixtures import bootstrap_temp_db_clean
+
+        bootstrap_temp_db_clean(cls.db_path)
+        for cat in ("lessons", "decisions", "sessions", "projects", "architecture"):
+            (Path(cls.tmp_dir) / "memory" / cat).mkdir(parents=True, exist_ok=True)
 
         cls.port = _get_free_port()
         cls.host = "127.0.0.1"
@@ -87,6 +89,11 @@ class TestAPIServer(unittest.TestCase):
             os.environ["MEMORY_DB_PATH"] = cls.old_db_path
         else:
             os.environ.pop("MEMORY_DB_PATH", None)
+        os.environ.pop("MEMORY_RERANKER_DISABLED", None)
+        if cls.old_journal is not None:
+            os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = cls.old_journal
+        else:
+            os.environ.pop("MEMORY_WRITE_JOURNAL_ENABLED", None)
         import shutil
         shutil.rmtree(cls.tmp_dir, ignore_errors=True)
 
@@ -94,7 +101,11 @@ class TestAPIServer(unittest.TestCase):
         # Clear SDK memories before each test
         client = MemoryClient(db_path=self.db_path)
         client.clear()
-        
+
+        from infra.cache import _search_cache
+
+        _search_cache.clear()
+
         # Clear event outbox table to isolate tests
         conn = sqlite3.connect(str(self.db_path))
         conn.execute("DELETE FROM memory_events")
@@ -102,20 +113,8 @@ class TestAPIServer(unittest.TestCase):
         conn.close()
 
     def _http_request(self, path: str, method: str = "GET", body: dict | None = None, timeout: float = 30.0) -> Tuple[int, dict]:
-        url = f"http://{self.host}:{self.port}{path}"
-        data = json.dumps(body).encode("utf-8") if body else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Content-Type", "application/json")
-        req.add_header("Authorization", f"Bearer {self.token}")
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as res:
-                return res.status, json.loads(res.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                err_data = json.loads(e.read().decode("utf-8"))
-            except Exception:
-                err_data = {"error": e.reason}
-            return e.code, err_data
+        status, data = self.server.handle_request_direct(method=method, path=path, body=body)
+        return status, data
 
     def test_health_check(self):
         status, data = self._http_request("/health")

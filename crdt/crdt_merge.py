@@ -329,6 +329,7 @@ def crdt_save(
 
         def _do_resolve() -> dict:
             conn.execute("BEGIN IMMEDIATE")
+            mem_tenant_id = _tid
 
             # Read existing version vector
             row = conn.execute(

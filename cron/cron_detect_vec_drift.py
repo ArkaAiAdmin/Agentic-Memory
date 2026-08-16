@@ -8,10 +8,11 @@ logger = logging.getLogger(__name__)
 from _flock import acquire_lock_or_exit
 import argparse
 import os
+from typing import Any
 try:
     from infra.tenant_query import install_tenant_context
 except Exception:  # pragma: no cover
-    def install_tenant_context(conn, tenant_id=None):
+    def install_tenant_context(conn: Any, tenant_id: str | None = None) -> str:
         import os
         tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
         conn.create_function("tenant_id", 0, lambda: tid)

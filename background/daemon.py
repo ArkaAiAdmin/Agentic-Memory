@@ -15,7 +15,7 @@ from typing import Optional
 
 from background.config import (
     _batch_interval as _batch_interval_s,
-    _DEFAULT_BATCH_SIZE as _batch_size,
+    _batch_size,
     _daemon_idle_seconds as _daemon_idle_s,
 )
 from background.circuit_breaker import (

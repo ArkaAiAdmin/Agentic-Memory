@@ -289,9 +289,9 @@ def _restore_edges_for_note(conn: AnyConnection, note_id: str) -> None:
 def _resolve_tenant() -> str:
     """Resolve the effective tenant ID for the current context/principal."""
     try:
-        from agent_context import get_agent_context
-        ctx = get_agent_context()
-        principal_id = ctx.get("principal_id") if ctx else None
+        from agent_context import get_agent
+        ctx = get_agent()
+        principal_id = ctx.principal_id if ctx else None
         from infra.authorizer import resolve_tenant_for_principal
         return resolve_tenant_for_principal(principal_id)
     except Exception:

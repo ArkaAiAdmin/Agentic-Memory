@@ -309,6 +309,12 @@ _TEST_ENV_VARS = {
     # env-var overrides (like MEMORY_WRITE_JOURNAL_ENABLED=0 above) don't
     # block startup. Tests intentionally override TOML flags.
     "MEMORY_FAIL_ON_INTEGRITY_DRIFT": "0",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
 }
 
 @pytest.fixture(scope="session", autouse=False)
@@ -778,20 +784,7 @@ def reset_auto_save_state():
 
 @pytest.fixture(autouse=True)
 def reset_lazy_config_cache():
-    """Autouse fixture: clear lazy-getattr cache and unset test-only env vars.
-
-    Clears only modules that carry the ``_lazy_config_attr_names`` marker
-    (set by make_lazy_getattr or manually for hand-rolled __getattr__
-    sites). Test modules that import lazy modules as local names are
-    intentionally left untouched.
-
-    Also unsets MEMORY_RERANKER_DISABLED which some test files set at
-    module top level (a session-wide leak — each test that needs it
-    should use patch.dict for per-test scope).
-    """
-    import os
-
-    saved_reranker_disabled = os.environ.pop("MEMORY_RERANKER_DISABLED", None)
+    """Autouse fixture: clear lazy-getattr cache across test boundaries."""
     try:
         from infra.memory_common import reset_all_lazy_config_attrs
 
@@ -805,5 +798,3 @@ def reset_lazy_config_cache():
         reset_all_lazy_config_attrs()
     except Exception:
         pass
-    if saved_reranker_disabled is not None:
-        os.environ["MEMORY_RERANKER_DISABLED"] = saved_reranker_disabled

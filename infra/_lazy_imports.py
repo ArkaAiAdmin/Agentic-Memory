@@ -33,8 +33,8 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # read path
     "search_memories": ("search.orchestrator", "search_memories"),
     # config
-    "get_config": ("config", "get_config"),
-    "MemoryConfig": ("config", "MemoryConfig"),
+    "get_config": ("infra.config", "get_config"),
+    "MemoryConfig": ("infra.config", "MemoryConfig"),
     # database
     "open_db": ("infra.memory_common", "open_db"),
     "safe_close_db": ("infra.memory_common", "safe_close_db"),

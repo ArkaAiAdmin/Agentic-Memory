@@ -60,9 +60,14 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
             return None
 
         # Search for skills matching any of the terms
+        _skip = {"or", "and", "not", "the", "a", "an", "in", "to", "for", "of", "with", "at", "by", "from"}
+        valid_terms = [t for t in terms if len(t) >= 3 and t.lower() not in _skip]
+        if not valid_terms:
+            return None
+
         like_clauses = []
         params = []
-        for term in terms:
+        for term in valid_terms:
             like_clauses.append(
                 "(name LIKE ? OR topic LIKE ? OR description LIKE ? OR triggers LIKE ?)"
             )

@@ -117,7 +117,7 @@ def _resolve_denylist() -> frozenset:
         if "AUTO_SAVE_TOOL_DENYLIST" in os.environ:
             return frozenset()
         try:
-            from infra._lazy_imports import get_config
+            from infra.config import get_config
             cfg = get_config()
             toml_denylist = getattr(cfg, "auto_save_denylist", "")
             if toml_denylist:
@@ -141,7 +141,7 @@ def _resolve_allowlist() -> frozenset | None:
     if override:
         return frozenset(t.strip() for t in override.split(",") if t.strip())
     try:
-        from infra._lazy_imports import get_config
+        from infra.config import get_config
         cfg = get_config()
         toml_allowlist = getattr(cfg, "auto_save_allowlist", "")
         if toml_allowlist:
@@ -152,27 +152,32 @@ def _resolve_allowlist() -> frozenset | None:
 
 
 def _batch_interval() -> float:
-    from infra._lazy_imports import get_config
+    from infra.config import get_config
     return getattr(get_config(), "auto_save_batch_interval_seconds", _DEFAULT_BATCH_INTERVAL_S)
 
 
+def _batch_size() -> int:
+    from infra.config import get_config
+    return getattr(get_config(), "auto_save_batch_size", _DEFAULT_BATCH_SIZE)
+
+
 def _daemon_idle_seconds() -> int:
-    from infra._lazy_imports import get_config
+    from infra.config import get_config
     return getattr(get_config(), "auto_save_daemon_idle_seconds", _DEFAULT_DAEMON_IDLE_S)
 
 
 def _preview_max() -> int:
-    from infra._lazy_imports import get_config
+    from infra.config import get_config
     return getattr(get_config(), "auto_save_preview_max", _DEFAULT_PREVIEW_MAX)
 
 
 def _params_max() -> int:
-    from infra._lazy_imports import get_config
+    from infra.config import get_config
     return getattr(get_config(), "auto_save_params_max", _DEFAULT_PARAMS_MAX)
 
 
 def _health_check_minutes() -> int:
-    from infra._lazy_imports import get_config
+    from infra.config import get_config
     return getattr(
         get_config(), "auto_save_health_check_minutes", _DEFAULT_HEALTH_CHECK_MINUTES
     )

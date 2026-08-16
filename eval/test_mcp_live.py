@@ -62,7 +62,8 @@ def _setup_test_env(tmpdir: str):
     orig_resolve = save_pipeline.resolve_active_memory_dir
     save_pipeline.resolve_active_memory_dir = lambda **_: tmp
 
-    rebuild_index(tmp, db_path)
+    from eval._fixtures import bootstrap_temp_db_clean
+    bootstrap_temp_db_clean(db_path)
     try:
         from infra.db import connection_pool
         connection_pool.close_all()
@@ -242,15 +243,14 @@ class TestLiveMCPRateLimit(unittest.TestCase):
 
     @pytest.mark.timeout(900)
     def test_burst_returns_rate_limited(self):
-        # Set burst=60 with near-zero refill so the 61st call is rate-limited
-        # even when the loop takes >60s (tokens won't replenish meaningfully).
-        os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "0.001,60"
+        # Set burst=3 with near-zero refill so the 4th call is rate-limited.
+        os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "0.001,3"
         reset_config()
         from infra.rate_limiter import configure_rate_limits
         configure_rate_limits()
         reset_rate_limiter()
         try:
-            for _ in range(60):
+            for _ in range(3):
                 memory_mcp.memory_search(query="rate limit test", limit=1)
 
             result = memory_mcp.memory_search(query="rate limit test", limit=1)

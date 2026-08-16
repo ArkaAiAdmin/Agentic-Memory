@@ -445,7 +445,7 @@ class TestPostSaveHooksOrchestrator(unittest.TestCase):
         from save.post_save_hooks import _hook_run_contradiction_check
 
         result = _hook_run_contradiction_check(
-            db_path_obj=Path("/nonexistent/memory.db"),
+            db_path_obj=Path(tempfile.gettempdir()) / "agentic_test_nonexistent.db",
             content="hello world",
             note_id="lessons/foo",
         )
@@ -457,7 +457,7 @@ class TestPostSaveHooksOrchestrator(unittest.TestCase):
 
         # No exception even with no DB and empty list
         _hook_audit_contradictions(
-            db_path_obj=Path("/nonexistent/memory.db"),
+            db_path_obj=Path(tempfile.gettempdir()) / "agentic_test_nonexistent.db",
             content="hello",
             note_id="lessons/foo",
             contradictions=[],
@@ -482,7 +482,7 @@ class TestPostSaveHooksOrchestrator(unittest.TestCase):
 
         # No real DB, but the helper must swallow everything
         _hook_record_recent_save(
-            db_path_obj=Path("/nonexistent/memory.db"),
+            db_path_obj=Path(tempfile.gettempdir()) / "agentic_test_nonexistent.db",
             note_id="lessons/foo",
         )
 
@@ -492,7 +492,7 @@ class TestPostSaveHooksOrchestrator(unittest.TestCase):
 
         # No real DB, audit will fail, but helper must swallow it
         _hook_audit_save_success(
-            db_path_obj=Path("/nonexistent/memory.db"),
+            db_path_obj=Path(tempfile.gettempdir()) / "agentic_test_nonexistent.db",
             note_id="lessons/foo",
             category="lessons",
             title_slug="foo",
@@ -1020,21 +1020,32 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         import background.auto_save as auto_save
         auto_save._cleanup_stale_daemon_lock()
 
-        script = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "background", "auto_save.py"
-        )
-        root = os.path.dirname(os.path.abspath(__file__)) + "/.."
-        cron = root + "/cron"
-        # Ensure the project root is on sys.path so the _lazy_imports shim
-        # (and other bare-name imports like from _lazy_imports import get_config)
-        # resolve correctly inside the subprocess.  "cron:" was the previous
-        # value but that alone is insufficient — bare-name imports need "." too.
-        env = {**os.environ, "PYTHONPATH": cron + ":" + root + ":" + root}
+        root = Path(__file__).resolve().parent.parent
+        script = str(root / "background" / "auto_save.py")
+        cron = str(root / "cron")
+        venv_py = root / "venv" / "bin" / "python"
+        if not venv_py.exists():
+            venv_py = root / ".venv" / "bin" / "python"
+        python_bin = str(venv_py) if venv_py.exists() else sys.executable
+
+        temp_dir = tempfile.mkdtemp(prefix="daemon_test_")
+        template = Path(tempfile.gettempdir()) / "agentic_memory_template_v78.db"
+        if template.exists():
+            import shutil
+            shutil.copy2(str(template), os.path.join(temp_dir, "memory.db"))
+
+        env = {
+            **os.environ,
+            "PYTHONPATH": f"{cron}:{root}:{root}",
+            "AGENTIC_MEMORY_DIR": temp_dir,
+            "MEMORY_CONFIG_DIR": temp_dir,
+            "MEMORY_DB_PATH": os.path.join(temp_dir, "memory.db"),
+        }
         proc = subprocess.Popen(
-            [sys.executable, script, "daemon"],
+            [python_bin, script, "daemon"],
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             start_new_session=True,
             env=env,
         )
@@ -1042,26 +1053,47 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
             # Wait for the daemon to write its PID file.
             import background.auto_save as auto_save
 
-            # Increased from 2.0 s to 5.0 s: Python cold-start (importing
-            # background.auto_save pulls in circuit_breaker, config, daemon,
-            # inbox, tool_complete, daily_digest, purge) regularly exceeds
-            # 2 s on a loaded CI machine.
             deadline = time.time() + 15.0
             ready = False
+            pid_file = Path(temp_dir) / ".auto_save_daemon.pid"
             while time.time() < deadline:
-                if auto_save._is_daemon_running():
-                    ready = True
-                    break
+                if pid_file.exists():
+                    try:
+                        pid = int(pid_file.read_text().strip())
+                        if pid > 0:
+                            os.kill(pid, 0)
+                            ready = True
+                            break
+                    except (OSError, ValueError):
+                        pass
                 time.sleep(0.05)
-            self.assertTrue(ready, "daemon did not become ready in 15s")
+            child_poll = proc.poll()
+            child_err = ""
+            if child_poll is not None:
+                try:
+                    _out, _err = proc.communicate(timeout=1)
+                    child_err = _err.decode() if _err else ""
+                except Exception:
+                    pass
+            self.assertTrue(ready, f"daemon did not become ready in 15s (child_poll={child_poll}, child_err={child_err})")
 
-            # Now send SIGTERM and verify it exits within 2s.
-            proc.terminate()
-            proc.wait(timeout=2)
+            # Now send SIGTERM and verify it exits cleanly.
+            import signal
+
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                proc.terminate()
+            proc.wait(timeout=5)
         finally:
             if proc.poll() is None:
-                proc.kill()
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    proc.kill()
                 proc.wait(timeout=2)
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

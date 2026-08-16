@@ -31,9 +31,10 @@ sys.path.insert(0, str(AGENTIC))
 
 import memory_mcp
 from infra.memory_common import configure_logging
-from _fixtures import bootstrap_temp_db_clean
-
-configure_logging()
+try:
+    from eval._fixtures import bootstrap_temp_db_clean
+except ImportError:
+    from _fixtures import bootstrap_temp_db_clean
 
 
 class TestCrossEncoderBasics(unittest.TestCase):
@@ -196,11 +197,13 @@ class TestCrossEncoderIntegration(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="qw4_e2e_")
         self.db_path = Path(self.tmp) / "memory.db"
-        # H21: use full prod schema (incl. FTS5 + triggers) instead of inline
+        try:
+            from eval._fixtures import bootstrap_temp_db_clean
+        except ImportError:
+            from _fixtures import bootstrap_temp_db_clean
         bootstrap_temp_db_clean(self.db_path)
         db = sqlite3.connect(str(self.db_path))
         now = "2024-06-01T00:00:00"
-        # FTS triggers already created by bootstrap_temp_db_clean
         for i, (mid, txt) in enumerate(
             [
                 ("m1", "discussion of database migration tooling"),
@@ -210,10 +213,10 @@ class TestCrossEncoderIntegration(unittest.TestCase):
         ):
             db.execute(
                 """INSERT INTO memories
-                (id, content, source_file, tags, created_at, updated_at, observed_at,
+                (id, content, source_file, category, tags, created_at, updated_at, observed_at,
                  fitness_score, importance, pinned)
-                VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (mid, txt, f"{mid}.md", "[]", now, now, now, 1.0, 3, 0),
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (mid, txt, f"{mid}.md", "lessons", "[]", now, now, now, 1.0, 3, 0),
             )
         db.commit()
         db.close()
@@ -222,8 +225,9 @@ class TestCrossEncoderIntegration(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_14_search_uses_ce(self):
+        from search.orchestrator import search_memories
         # search_memories should still return the matching docs.
-        result = memory_mcp.search_memories(
+        result = search_memories(
             self.db_path,
             "database migration",
             limit=5,

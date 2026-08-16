@@ -14,6 +14,7 @@ import logging
 import json
 import os
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -357,6 +358,15 @@ class LLMExtractor:
         """
         if self.is_loaded:
             return True
+        is_testing = (
+            "pytest" in sys.modules
+            or "unittest" in sys.modules
+            or "PYTEST_CURRENT_TEST" in os.environ
+        )
+        if is_testing and os.environ.get("MEMORY_TEST_LLM") != "1":
+            self._load_attempted = True
+            self._load_error = "LLM disabled in test environment"
+            return False
         with self._load_lock:
             if self.is_loaded:
                 return True

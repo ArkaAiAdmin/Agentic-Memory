@@ -26,7 +26,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from _fixtures import bootstrap_temp_db_clean
+try:
+    from eval._fixtures import bootstrap_temp_db_clean
+except ImportError:
+    from _fixtures import bootstrap_temp_db_clean
 
 
 

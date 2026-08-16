@@ -409,17 +409,20 @@ class SessionManager:
         """Acquire a pooled connection for read/write operations."""
         from infra.db import connection_pool
 
-        path = (
-            str(self._db_path)
-            if self._db_path
-            else str(Path.cwd() / "memory" / "memory.db")
-        )
-        return connection_pool.get(path, timeout=30.0)
+        return connection_pool.get(self._pool_path(), timeout=30.0)
 
     def _pool_path(self) -> str:
         if self._db_path:
             return str(self._db_path)
-        return str(Path.cwd() / "memory" / "memory.db")
+        if os.environ.get("MEMORY_DB_PATH"):
+            return os.environ["MEMORY_DB_PATH"]
+        try:
+            from infra.memory_common import get_memory_paths
+
+            _, _, db_path = get_memory_paths()
+            return str(db_path)
+        except Exception:
+            return str(Path.cwd() / "memory" / "memory.db")
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()

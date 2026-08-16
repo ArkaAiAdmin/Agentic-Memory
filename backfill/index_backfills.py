@@ -56,17 +56,19 @@ def _backfill_memories_from_markdown(conn, source_dir: Path, db_path: Path):
         logger.error("Could not rebuild memories from markdown: %s", e)
 
 
+def _has_table(conn, name: str) -> bool:
+    try:
+        cur = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type in ('table', 'view') AND name = ?",
+            (name,),
+        )
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
 def _backfill_fts(conn, tenant_id: str | None = None):
     """Populate memories_fts from memories for rows missing from FTS5."""
-    try:
-        from infra.fts import fts5_available
-
-        if not fts5_available(conn):
-            return
-    except Exception as e:
-        logger.warning("FTS5 check failed — skipping FTS backfill: %s", e)
-        return
-
     if not _has_table(conn, "memories_fts"):
         try:
             conn.execute(

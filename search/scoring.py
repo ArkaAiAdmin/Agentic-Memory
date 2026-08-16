@@ -223,7 +223,7 @@ def _sp_lazy(name: str, default: object = None) -> object:
         if attr is not None:
             val = getattr(cfg, attr, default)
             if name in ("_TEMPORAL_DECAY_HALF_LIFE", "_FORGETTING_CURVE_HALF_LIFE"):
-                return float(val) if val is not None else default
+                return float(cast(Any, val)) if val is not None else default
             return val
         return default
     except Exception:

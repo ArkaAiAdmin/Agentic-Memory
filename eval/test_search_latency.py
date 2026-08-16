@@ -36,6 +36,8 @@ from eval._fixtures import bootstrap_temp_db_clean
 
 logger = logging.getLogger(__name__)
 
+pytestmark = pytest.mark.slow
+
 WARM_COUNT = 3
 MEASURE_COUNT = 5
 

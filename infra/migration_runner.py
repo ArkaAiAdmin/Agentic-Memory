@@ -66,7 +66,7 @@ def _migration_lock(conn: "AnyConnection" | None = None):
     if db_path and str(db_path) != ":memory:":
         try:
             from infra.db_path_flock import db_path_flock
-            with db_path_flock(db_path):
+            with db_path_flock(Path(db_path)):
                 yield
             return
         except Exception as e:

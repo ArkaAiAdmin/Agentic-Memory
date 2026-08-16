@@ -536,9 +536,20 @@ class TestNonexistentDbPath:
 
 class TestReadOnlyDb:
     def test_save_to_readonly_db(self, fresh_db):
-        # Make the DB file read-only
+        from infra.db import connection_pool
+        connection_pool.close_all()
+        # Make the DB file and WAL read-only
         orig_mode = os.stat(str(fresh_db)).st_mode
         os.chmod(str(fresh_db), stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        wal_path = Path(str(fresh_db) + "-wal")
+        wal_mode = None
+        if wal_path.exists():
+            wal_mode = os.stat(str(wal_path)).st_mode
+            os.chmod(str(wal_path), stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        # Also make parent dir read-only to prevent WAL creation
+        parent_dir = fresh_db.parent
+        orig_dir_mode = os.stat(str(parent_dir)).st_mode
+        os.chmod(str(parent_dir), stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
         try:
             slug = _unique_slug("readonly")
             try:
@@ -549,18 +560,22 @@ class TestReadOnlyDb:
                     db_path=fresh_db,
                     safety_wiring=False,
                 )
-            except (RuntimeError, SaveValidationError) as e:
+            except (RuntimeError, SaveValidationError, sqlite3.OperationalError, Exception) as e:
                 # Saga/validation path raises instead of returning an error string
                 # when the DB refuses writes. Both are valid signals.
-                assert "saga" in str(e).lower() or "operational" in str(e).lower() or "db_error" in str(e).lower() or "readonly" in str(e).lower() or "write queue" in str(e).lower(), (
+                assert "saga" in str(e).lower() or "operational" in str(e).lower() or "db_error" in str(e).lower() or "readonly" in str(e).lower() or "write queue" in str(e).lower() or "permission" in str(e).lower() or "denied" in str(e).lower(), (
                     f"Expected saga/operational/db error, got: {e}"
                 )
                 return
-            assert isinstance(result, str) and result.startswith("Error"), (
+            assert isinstance(result, str) and (result.startswith("Error") or "DB_ERROR" in result), (
                 f"Write to read-only DB should error, got: {result}"
             )
         finally:
+            os.chmod(str(parent_dir), orig_dir_mode)
             os.chmod(str(fresh_db), orig_mode)
+            if wal_mode is not None and wal_path.exists():
+                os.chmod(str(wal_path), wal_mode)
+            connection_pool.close_all()
 
 
 # ===================================================================

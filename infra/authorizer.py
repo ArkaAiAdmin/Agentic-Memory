@@ -327,20 +327,28 @@ def mcp_authorize(
     """
     open_mode = _auth_mode() == "open"
     action = _normalize_action(action)
-    resource = _normalize_resource(resource)
-
-    # No principal (None): deny in closed mode, allow in open mode for
-    # backward compat with legacy single-token deployments.
     if principal_id is None:
         if open_mode:
             return True
         logger.warning("AUTH DENIED: no principal resolved (mode=closed)")
         return False
 
-    # Empty-string principal_id is never valid — deny unconditionally.
     if not principal_id:
         logger.warning("AUTH DENIED: empty principal_id")
         return False
+
+    principal_id = str(principal_id).lower()
+
+    if not db_path:
+        if os.environ.get("MEMORY_DB_PATH"):
+            db_path = os.environ.get("MEMORY_DB_PATH")
+        else:
+            try:
+                from infra.memory_config import get_memory_paths
+                _, local_mem, _ = get_memory_paths()
+                db_path = str(local_mem / "memory.db")
+            except Exception:
+                pass
 
     # No DB: cannot enforce RBAC -> deny in closed mode.
     if not db_path:

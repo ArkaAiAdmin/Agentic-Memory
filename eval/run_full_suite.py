@@ -77,10 +77,14 @@ env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 # Downgrade config drift enforcement so env-var overrides don't block
 # memory_mcp import in test subprocesses.
 env["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
-# RUN_RERANKER_SMOKE stays unset by default — the real-model smoke
-# test (TestRealModelSmoke) is opt-in and tends to fail under
-# test pollution from the full suite. Keep it skipped to honor the
-# "0 failures" goal; the smoke can be run manually for verification.
+env["MEMORY_RERANKER_DISABLED"] = "1"
+env["MEMORY_EMBEDDING_DISABLED"] = "1"
+env["OMP_NUM_THREADS"] = "1"
+env["OPENBLAS_NUM_THREADS"] = "1"
+env["MKL_NUM_THREADS"] = "1"
+env["VECLIB_MAXIMUM_THREADS"] = "1"
+env["NUMEXPR_NUM_THREADS"] = "1"
+env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 
 test_files = sorted(HERE.glob("test_*.py"))
 test_files = [f for f in test_files if not f.name.startswith("test_all_")]
@@ -90,17 +94,7 @@ failed_names = []
 
 
 def _parse_junit(junit_path: Path) -> dict:
-    """Parse a pytest junit XML report into a counts dict.
-
-    Pytest junit format:
-      <testsuite tests=N failures=N errors=N skipped=N>
-        <testcase name="..." classname="...">
-          <skipped message="..." />  (regular skip OR xfail)
-          <failure ...>               (regular fail OR xpass with strict xfail)
-          <error ...>
-        </testcase>
-      </testsuite>
-    """
+    """Parse a pytest junit XML report into a counts dict."""
     counts = {
         "passed": 0,
         "failed": 0,
@@ -115,11 +109,8 @@ def _parse_junit(junit_path: Path) -> dict:
         tree = ET.parse(junit_path)
     except ET.ParseError:
         return counts
-    # H8 fix: use only the root <testsuite> to avoid double-counting
-    # nested testsuites (pytest emits an outer aggregate + inner per-file).
     suite = tree.getroot()
     if suite.tag != "testsuite":
-        # Root is <testsuites> wrapper — find the first child testsuite
         suite = suite.find("testsuite")
     if suite is None:
         return counts
@@ -155,23 +146,25 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 lock = threading.Lock()
 
+
 def run_one_test(f):
     start = time.time()
-    with tempfile.NamedTemporaryFile(
-        suffix=".xml", prefix="junit_", delete=False
-    ) as jf:
-        junit_path = Path(jf.name)
+    import shutil
+
+    worker_dir = Path(tempfile.mkdtemp(prefix="runner_worker_"))
+    junit_path = worker_dir / "junit.xml"
+    temp_db_path = worker_dir / "memory.db"
 
     # Copy template DB instead of running all migrations per test
     template = _get_template_db()
-    temp_db_path = Path(tempfile.mktemp(suffix=".db", prefix="test_db_"))
-    import shutil
     shutil.copy2(str(template), str(temp_db_path))
 
-    # Copy base env and set MEMORY_DB_PATH
+    # Copy base env and set hermetic per-worker environment
     test_env = env.copy()
+    test_env["TMPDIR"] = str(worker_dir)
+    test_env["AGENTIC_MEMORY_DIR"] = str(worker_dir)
+    test_env["MEMORY_CONFIG_DIR"] = str(worker_dir)
     test_env["MEMORY_DB_PATH"] = str(temp_db_path)
-    test_env["AGENTIC_MEMORY_DIR"] = str(temp_db_path.parent)
     test_env["PYTHONPATH"] = str(HERE.parent)
 
     include_slow = (
@@ -181,30 +174,10 @@ def run_one_test(f):
     )
     marker_args = [] if include_slow else ["-m", "not slow"]
 
-    # Pre-flight: check if any tests match the marker filter.
-    # If 0 match but the file has tests, they are all slow-marked.
-    _collect_result = subprocess.run(
-        [
-            str(VENV_PYTHON),
-            "-m",
-            "pytest",
-            str(f),
-            "-p",
-            "no:xdist",
-            *marker_args,
-            "--collect-only",
-            "-q",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        env=test_env,
-    )
-    _collect_output = _collect_result.stdout + _collect_result.stderr
-    _all_slow = (
-        _collect_result.returncode == 5
-        and ("deselected" in _collect_output or "0 tests" in _collect_output)
-    )
+    _all_slow = False
+    output = ""
+    pp, ff, ss, xxf, xxp, ee = 0, 0, 0, 0, 0, 0
+    result = None
 
     try:
         result = subprocess.run(
@@ -222,10 +195,14 @@ def run_one_test(f):
             ],
             capture_output=True,
             text=True,
-            timeout=900,
+            timeout=180,
             env=test_env,
         )
         output = result.stdout + result.stderr
+        _all_slow = (
+            result.returncode == 5
+            and ("deselected" in output or "0 tests" in output or "collected 0 items" in output)
+        )
 
         counts = _parse_junit(junit_path)
         pp = counts["passed"]
@@ -235,7 +212,7 @@ def run_one_test(f):
         xxp = counts["xpassed"]
         ee = counts["errors"]
     except subprocess.TimeoutExpired as exc:
-        output = (exc.stdout.decode() if exc.stdout else "") + (exc.stderr.decode() if exc.stderr else "") + "\n[TIMEOUT after 900s]"
+        output = (exc.stdout.decode() if exc.stdout else "") + (exc.stderr.decode() if exc.stderr else "") + "\n[TIMEOUT after 180s]"
         pp, ff, ss, xxf, xxp, ee = 0, 1, 0, 0, 0, 0
         result = type("", (), {})()
         result.returncode = -1  # type: ignore[attr-defined]
@@ -245,9 +222,7 @@ def run_one_test(f):
         result = type("", (), {})()
         result.returncode = -1  # type: ignore[attr-defined]
     finally:
-        junit_path.unlink(missing_ok=True)
-        temp_db_path.unlink(missing_ok=True)
-        Path(str(temp_db_path) + ".flock").unlink(missing_ok=True)
+        shutil.rmtree(str(worker_dir), ignore_errors=True)
 
     dur = time.time() - start
 
@@ -259,14 +234,15 @@ def run_one_test(f):
         or "Fatal Python error" in output
     )
 
+    rc = getattr(result, "returncode", -1)
     if is_segfault:
         status = "SEGFAULT"
         ff = (ff or 0) + 1
     elif _all_slow:
         status = f"SKIP (all slow) ({dur:.1f}s)"
-    elif result.returncode == 5 and pp == 0 and ff == 0:  # type: ignore[attr-defined]
+    elif rc == 5 and pp == 0 and ff == 0:
         status = f"EMPTY ({dur:.1f}s)"
-    elif ff == 0 and result.returncode == 0:  # type: ignore[attr-defined]
+    elif ff == 0 and rc == 0:
         status = f"OK ({dur:.1f}s)"
     else:
         status = f"FAIL ({ff}f {ee}e) {dur:.1f}s"
@@ -305,7 +281,8 @@ def _suite_watchdog():
 _watchdog_thread = _threading.Thread(target=_suite_watchdog, daemon=True, name="suite-watchdog")
 _watchdog_thread.start()
 
-with ThreadPoolExecutor(max_workers=6) as executor:
+max_workers = int(os.environ.get("SUITE_WORKERS") or min(os.cpu_count() or 8, 12))
+with ThreadPoolExecutor(max_workers=max_workers) as executor:
     future_to_file = {executor.submit(run_one_test, f): f for f in test_files}
     for future in as_completed(future_to_file, timeout=_SUITE_DEADLINE_S):
         f = future_to_file[future]

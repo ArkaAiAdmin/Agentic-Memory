@@ -487,6 +487,10 @@ def _get_ce_chunk_model():
     if _CE_CHUNK_MODEL is not None:
         return _CE_CHUNK_MODEL
     with _ce_model_load_lock:
+        if os.environ.get("MEMORY_RERANKER_DISABLED") == "1" or (
+            "PYTEST_CURRENT_TEST" in os.environ and os.environ.get("MEMORY_TEST_RERANKER") != "1"
+        ):
+            return None
         if _CE_CHUNK_MODEL is not None:
             return _CE_CHUNK_MODEL
         # If previous load failed, check cooldown before retrying

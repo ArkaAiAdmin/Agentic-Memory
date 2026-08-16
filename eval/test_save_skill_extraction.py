@@ -43,7 +43,10 @@ def _skill_count(db_path: Path) -> int:
 class TestSavePipelineSkillExtraction(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="save_skill_"))
-        os.environ["MEMORY_DB_PATH"] = str(self.tmpdir / "memory.db")
+        self.db_path = self.tmpdir / "memory.db"
+        os.environ["MEMORY_DB_PATH"] = str(self.db_path)
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
         # Create the category dir so save_memory can write the file
         (self.tmpdir / "memory" / "lessons").mkdir(parents=True, exist_ok=True)
 
@@ -103,7 +106,10 @@ class TestSavePipelineSkillExtraction(unittest.TestCase):
 class TestAutoSaveSkillExtraction(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="autosave_skill_"))
-        os.environ["MEMORY_DB_PATH"] = str(self.tmpdir / "memory.db")
+        self.db_path = self.tmpdir / "memory.db"
+        os.environ["MEMORY_DB_PATH"] = str(self.db_path)
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(self.db_path)
         (self.tmpdir / "memory" / "sessions").mkdir(parents=True, exist_ok=True)
 
     def tearDown(self):

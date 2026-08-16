@@ -340,14 +340,14 @@ class MemoryClient:
             conn.execute("PRAGMA foreign_keys=ON")
             if hard:
                 n = conn.execute(
-                    "DELETE FROM memories WHERE source_file LIKE 'sdk-%' AND tenant_id=?",
+                    "DELETE FROM memories WHERE (source_file LIKE 'sdk-%' OR source_file LIKE 'sdk/%') AND tenant_id=?",
                     (tenant_id,),
                 ).rowcount
             else:
                 from datetime import datetime, timezone
                 now = datetime.now(timezone.utc).isoformat()
                 n = conn.execute(
-                    "UPDATE memories SET deleted_at=?, updated_at=? WHERE source_file LIKE 'sdk-%' AND tenant_id=? AND deleted_at IS NULL",
+                    "UPDATE memories SET deleted_at=?, updated_at=? WHERE (source_file LIKE 'sdk-%' OR source_file LIKE 'sdk/%') AND tenant_id=? AND deleted_at IS NULL",
                     (now, now, tenant_id),
                 ).rowcount
             conn.commit()

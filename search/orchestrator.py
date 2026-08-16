@@ -931,6 +931,7 @@ def search_memories(
           - phase_errors: (optional) per-phase error counters
           - phase_latencies: (optional) per-phase latency in ms
     """
+    db_path = Path(db_path)
     if not db_path.exists():
         return {
             "results": [],
@@ -1075,7 +1076,8 @@ def search_memories(
 
     # Phase 2: Skill-first lookup (conditional early return)
     if skill_first:
-        skill_result = _skill_first_lookup(db_path, terms, limit, tenant_id=tenant_id)
+        _raw_terms = re.findall(r"\b[a-zA-Z0-9_\-]{3,}\b", query.lower())
+        skill_result = _skill_first_lookup(db_path, _raw_terms, limit, tenant_id=tenant_id)
         if skill_result is not None:
             return skill_result
 
@@ -1343,9 +1345,8 @@ def search_memories(
             hybrid = False
 
         else:  # mode == "hybrid" (or fallback)
-            # Respect caller's hybrid=False — they may want FTS-only
-            # within the hybrid mode path (e.g. to isolate query expansion).
-            pass
+            if not hybrid:
+                mode = "fts"
             # P0 fix #7: prefilter is disabled — ANN-shortlisted IDs are
             # almost all auto-save sessions that don't match the keyword
             # FTS query, causing empty results every time. The prefilter

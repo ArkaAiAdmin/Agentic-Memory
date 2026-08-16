@@ -33,46 +33,19 @@ distance" by Einstein.
 
 
 def _bootstrap_db(db_path: Path, memories: list[tuple[str, str]]) -> None:
-    """Create a minimal DB with the memories table + skill schema."""
+    """Create a DB with full migrated schema + test memories."""
+    from eval._fixtures import bootstrap_temp_db_clean
+
+    bootstrap_temp_db_clean(db_path)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS memories (
-            id TEXT PRIMARY KEY,
-            content TEXT NOT NULL,
-            source_file TEXT NOT NULL,
-            category TEXT DEFAULT '',
-            tags TEXT DEFAULT '[]',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            observed_at TEXT NOT NULL,
-            deleted_at TEXT,
-            fitness_score REAL,
-            importance REAL,
-            pinned INTEGER DEFAULT 0,
-            last_accessed TEXT,
-            metadata TEXT,
-            access_count INTEGER DEFAULT 1
-        );
-        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-            content, tags, source_file,
-            content_rowid=rowid,
-            tokenize='porter unicode61'
-        );
-    """)
     for i, (mid, content) in enumerate(memories):
-        cur = conn.execute(
-            "INSERT INTO memories (id, content, source_file, tags, created_at, updated_at, observed_at) "
-            "VALUES (?, ?, ?, '[]', datetime('now'), datetime('now'), datetime('now'))",
-            (mid, content, f"lessons/{mid}.md"),
-        )
-        rowid = cur.lastrowid
         conn.execute(
-            "INSERT INTO memories_fts (rowid, content, tags, source_file) VALUES (?, ?, '[]', ?)",
-            (rowid, content, f"lessons/{mid}.md")
+            "INSERT INTO memories (id, content, source_file, tags, created_at, updated_at, observed_at, tenant_id) "
+            "VALUES (?, ?, ?, '[]', datetime('now'), datetime('now'), datetime('now'), 'default')",
+            (mid, content, f"{mid}.md"),
         )
     conn.commit()
-    ensure_skill_schema(conn)
     conn.close()
 
 

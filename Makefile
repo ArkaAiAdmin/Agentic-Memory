@@ -38,14 +38,22 @@ CONFIG_DRIFT_TYPECHECK_SURFACE := \
 	infra/policy_hash_diff.py \
 	mcp_surface/mcp_maintenance_policy_hash.py
 
-lint: ## Ruff over the config-drift surface (scoped, not repo-wide)
-	$(PYTHON) -m ruff check $(CONFIG_DRIFT_SURFACE)
+.PHONY: verify verify-fast lint typecheck
+
+verify: ## Run full unified verification gate (Python, TS, Rust, Docs, Tests)
+	node scripts/verify.mjs
+
+verify-fast: ## Run fast unified verification gate for developer workflow
+	node scripts/verify.mjs --fast
+
+lint: ## Ruff lint check over entire codebase
+	$(PYTHON) -m ruff check . --config pyproject.toml
 
 lint-dashboard: ## Phase 1.6 gate: dashboard tabs must route DB via API
 	$(PYTHON) eval/lint_dashboard_db_access.py
 
-typecheck: ## Mypy over the config-drift surface (scoped, not repo-wide)
-	$(PYTHON) -m mypy --follow-imports=silent $(CONFIG_DRIFT_TYPECHECK_SURFACE)
+typecheck: ## Mypy type check over configured codebase
+	$(PYTHON) -m mypy --config-file pyproject.toml
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, "$$2"}'

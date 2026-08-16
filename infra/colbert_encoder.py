@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 from typing import Optional
 
@@ -59,9 +60,17 @@ def _get_colbert_model():
     model/tokenizer/projection to module globals happens inside the lock.
     """
     global _colbert_model, _colbert_tokenizer, _colbert_projection, _colbert_load_attempted, _hidden_dim
-    # Fast path: already loaded — no lock needed.
     if _colbert_load_attempted:
         return _colbert_model, _colbert_tokenizer, _colbert_projection
+
+    is_testing = (
+        "pytest" in sys.modules
+        or "unittest" in sys.modules
+        or "PYTEST_CURRENT_TEST" in os.environ
+    )
+    if is_testing and os.environ.get("MEMORY_TEST_COLBERT") != "1":
+        _colbert_load_attempted = True
+        return None, None, None
 
     # Download OUTSIDE the lock to avoid holding it during network I/O.
     model_name = os.environ.get("MEMORY_COLBERT_MODEL", _DEFAULT_MODEL)

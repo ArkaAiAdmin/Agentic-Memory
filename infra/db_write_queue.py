@@ -635,7 +635,10 @@ class SQLiteWriteQueue:
                     if not future.done():
                         future.set_exception(e)
             except Exception as e:
-                logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
+                if not Path(db_path).exists() and not Path(db_path).parent.exists():
+                    logger.debug("SQLiteWriteQueue discarded write for deleted DB %s: %s", db_path, e)
+                else:
+                    logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
                 if not future.done():
                     future.set_exception(e)
             finally:

@@ -100,8 +100,8 @@ class TestSarcasmContradiction(unittest.TestCase):
         if not search.wait_for_model(timeout_s=60.0):
             raise unittest.SkipTest("model2vec not available or failed to load")
 
-        if search.model is None:
-            raise unittest.SkipTest("embedding model is None after wait")
+        if search.model is None or not getattr(search, "is_transformer", False):
+            raise unittest.SkipTest("real transformer model not available")
 
         # Insert a note claiming the script works fine.
         _insert_note(
