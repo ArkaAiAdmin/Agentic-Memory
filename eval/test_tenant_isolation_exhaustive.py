@@ -38,6 +38,7 @@ sys.path.insert(0, str(install_root()))
 from agent_context import clear_agent, init_agent
 from save_pipeline import save_memory
 from search.orchestrator import search_memories
+from eval._fixtures import bootstrap_temp_db_clean
 
 
 # ---------------------------------------------------------------------------
@@ -45,103 +46,28 @@ from search.orchestrator import search_memories
 # ---------------------------------------------------------------------------
 
 def _bootstrap_db(p: Path) -> None:
-    """Create a fully-bootstrapped temp DB for testing.
-
-    Uses the same approach as eval/_fixtures.py — copies the live prod
-    schema into a temp file, then truncates all data so tests start clean.
-    This avoids migration checksum drift issues.
-    """
-    import shutil
-    from infra.memory_common import get_memory_paths
-
-    _, _, global_mem = get_memory_paths()
-    prod_db = global_mem / "memory.db"
-    if prod_db.exists():
-        shutil.copy2(prod_db, p)
-    # Truncate all data but keep schema
+    bootstrap_temp_db_clean(p)
     conn = sqlite3.connect(str(p))
     try:
-        # Get all table names (non-FTS5, non-sqlite internal)
-        tables = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'schema_%' "
-            "AND name NOT LIKE '%_fts%'"
-        ).fetchall()]
-        for tbl in tables:
-            try:
-                conn.execute(f"DELETE FROM [{tbl}]")
-            except Exception:
-                pass
-        # Drop and recreate FTS5 to avoid corruption, plus sync triggers
-        try:
-            conn.execute("DROP TABLE IF EXISTS memories_fts")
+        from infra.rbac import seed_default_roles, grant_role
+
+        seed_default_roles(conn, tenant_id="default")
+        for agent_id in ("agent-a", "agent-b", "agent-c", "default"):
             conn.execute(
-                "CREATE VIRTUAL TABLE memories_fts USING fts5("
-                "id, content, tags, category, "
-                "tokenize='porter unicode61'"
-                ")"
+                "INSERT OR IGNORE INTO principals (id, kind, tenant_id, display_name) "
+                "VALUES (?, 'agent', ?, ?)",
+                (agent_id, agent_id, agent_id),
             )
-            conn.execute("DROP TRIGGER IF EXISTS memories_ai")
-            conn.execute("DROP TRIGGER IF EXISTS memories_ad")
-            conn.execute("DROP TRIGGER IF EXISTS memories_au")
-            conn.execute(
-                "CREATE TRIGGER memories_ai AFTER INSERT ON memories "
-                "WHEN new.deleted_at IS NULL BEGIN "
-                "INSERT INTO memories_fts(rowid, id, content, tags, category) "
-                "VALUES (new.rowid, new.id, new.content, new.tags, new.category); END"
-            )
-            conn.execute(
-                "CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN "
-                "DELETE FROM memories_fts WHERE rowid = old.rowid; END"
-            )
-            conn.execute(
-                "CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN "
-                "DELETE FROM memories_fts WHERE rowid = old.rowid; "
-                "INSERT INTO memories_fts(rowid, id, content, tags, category) "
-                "SELECT new.rowid, new.id, new.content, new.tags, new.category WHERE new.deleted_at IS NULL; END"
-            )
-        except Exception:
-            pass
-        # Ensure audit log has tenant_id
-        try:
-            cols = {row[1] for row in conn.execute(
-                "PRAGMA table_info(memory_audit_log)"
-            ).fetchall()}
-            if "tenant_id" not in cols:
-                conn.execute(
-                    "ALTER TABLE memory_audit_log ADD COLUMN tenant_id TEXT DEFAULT 'default'"
-                )
-            if "principal_id" not in cols:
-                conn.execute(
-                    "ALTER TABLE memory_audit_log ADD COLUMN principal_id TEXT"
-                )
-        except Exception:
-            pass
+            for role_name in ("memory:read", "memory:write", "memory:delete"):
+                row = conn.execute(
+                    "SELECT id FROM roles WHERE name=? AND tenant_id='default'",
+                    (role_name,),
+                ).fetchone()
+                if row is not None:
+                    grant_role(conn, agent_id, row[0])
         conn.commit()
-        # Seed RBAC so agent contexts are authorized for read/write/delete.
-        try:
-            from infra.rbac import seed_default_roles, grant_role
-
-            seed_default_roles(conn, tenant_id="default")
-            for agent_id in ("agent-a", "agent-b", "agent-c", "default"):
-                conn.execute(
-                    "INSERT OR IGNORE INTO principals (id, kind, tenant_id, display_name) "
-                    "VALUES (?, 'agent', ?, ?)",
-                    (agent_id, agent_id, agent_id),
-                )
-                for role_name in ("memory:read", "memory:write", "memory:delete"):
-                    row = conn.execute(
-                        "SELECT id FROM roles WHERE name=? AND tenant_id='default'",
-                        (role_name,),
-                    ).fetchone()
-                    if row is not None:
-                        grant_role(conn, agent_id, row[0])
-            conn.commit()
-        except Exception:
-            pass
-        from infra.db_migrations import run_schema_setup
-
-        run_schema_setup(conn)
+    except Exception:
+        pass
     finally:
         conn.close()
 

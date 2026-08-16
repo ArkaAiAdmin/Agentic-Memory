@@ -73,16 +73,17 @@ results_file.parent.mkdir(parents=True, exist_ok=True)
 env = os.environ.copy()
 env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 env["OMP_NUM_THREADS"] = "1"
-env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
-# Downgrade config drift enforcement so env-var overrides don't block
-# memory_mcp import in test subprocesses.
-env["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
-env["OMP_NUM_THREADS"] = "1"
 env["OPENBLAS_NUM_THREADS"] = "1"
 env["MKL_NUM_THREADS"] = "1"
 env["VECLIB_MAXIMUM_THREADS"] = "1"
 env["NUMEXPR_NUM_THREADS"] = "1"
+env["TORCH_NUM_THREADS"] = "1"
+env["TOKENIZERS_PARALLELISM"] = "false"
+env["RAYON_NUM_THREADS"] = "1"
 env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+# Downgrade config drift enforcement so env-var overrides don't block
+# memory_mcp import in test subprocesses.
+env["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
 
 test_files = sorted(HERE.glob("test_*.py"))
 test_files = [f for f in test_files if not f.name.startswith("test_all_")]
@@ -194,7 +195,7 @@ def run_one_test(f):
             ],
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=300,
             env=test_env,
         )
         output = result.stdout + result.stderr
@@ -211,8 +212,14 @@ def run_one_test(f):
         xxp = counts["xpassed"]
         ee = counts["errors"]
     except subprocess.TimeoutExpired as exc:
-        output = (exc.stdout.decode() if exc.stdout else "") + (exc.stderr.decode() if exc.stderr else "") + "\n[TIMEOUT after 180s]"
-        pp, ff, ss, xxf, xxp, ee = 0, 1, 0, 0, 0, 0
+        output = (exc.stdout.decode() if exc.stdout else "") + (exc.stderr.decode() if exc.stderr else "") + "\n[TIMEOUT after 300s]"
+        counts = _parse_junit(junit_path)
+        pp = counts["passed"]
+        ff = max(counts["failed"], 1)
+        ss = counts["skipped"]
+        xxf = counts["xfailed"]
+        xxp = counts["xpassed"]
+        ee = counts["errors"]
         result = type("", (), {})()
         result.returncode = -1  # type: ignore[attr-defined]
     except Exception as exc:

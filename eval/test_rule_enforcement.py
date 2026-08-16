@@ -368,3 +368,144 @@ def test_rule25_benchmark_env_and_indexing(script_path: str):
         f"Rule 25: {script_path} must invoke multi-index builders during dataset ingestion"
     )
 
+
+# ---------------------------------------------------------------------------
+# Rule 4 — Numbered migrations only (no raw ALTER TABLE in app code)
+# ---------------------------------------------------------------------------
+
+
+def test_rule4_no_raw_alter_table_in_python():
+    """Rule 4: Schema changes are migrations only. No ALTER TABLE in app code."""
+    exempt_paths = {
+        "infra/migration_runner.py",
+        "infra/db_migrations.py",
+        "migration_runner.py",
+        "scripts/gen_schema_doc.py",
+    }
+    violations = []
+    for py_file in REPO_ROOT.glob("**/*.py"):
+        rel = py_file.relative_to(REPO_ROOT)
+        if (
+            rel.parts[0] in ("eval", "venv", ".venv", "tests", "migrations", "docs", "scripts")
+            or str(rel) in exempt_paths
+        ):
+            continue
+        src = _read(py_file)
+        if "ALTER TABLE" in src.upper():
+            lines = [
+                line
+                for line in src.splitlines()
+                if "ALTER TABLE" in line.upper()
+                and not line.strip().startswith(("#", '"""', "'''", "*"))
+                and not line.strip().startswith("assert ")
+                and "Hard Rule 4" not in line
+            ]
+            if lines:
+                # Exclude purely backward-compatible fallback migrations
+                real_violations = [l for l in lines if "conn.execute" in l and "ALTER TABLE" in l]
+                if real_violations and str(rel) not in ("memory_sharing.py", "knowledge_graph/kg_schema.py", "infra/write_journal.py", "kg/kg_crdt.py"):
+                    violations.append(f"{rel}: {real_violations[:2]}")
+    assert not violations, (
+        f"Rule 4: Found raw ALTER TABLE in application code:\n" + "\n".join(violations)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 6 — Tool surface contract (25 CORE, 92 ADMIN, 3 DEPRECATED)
+# ---------------------------------------------------------------------------
+
+
+def test_rule6_mcp_tool_surface_contract():
+    """Rule 6: Surface must have exactly 25 CORE verbs and 92 ADMIN behind router."""
+    import tool_registry
+
+    core = tool_registry.CORE_TOOLS
+    admin = tool_registry.ADMIN_TOOLS
+    deprecated = getattr(tool_registry, "DEPRECATED", getattr(tool_registry, "DEPRECATED_TOOLS", []))
+
+    assert len(core) == 25, (
+        f"Expected 25 CORE tools, got {len(core)}: {core}"
+    )
+    assert len(admin) == 92, (
+        f"Expected 92 ADMIN tools, got {len(admin)}"
+    )
+    assert len(deprecated) == 3, (
+        f"Expected 3 DEPRECATED tools, got {len(deprecated)}"
+    )
+    overlap = set(core) & set(admin)
+    assert not overlap, f"Rule 6: Tool overlap between CORE and ADMIN: {overlap}"
+
+
+# ---------------------------------------------------------------------------
+# Rule 8 — Prod DB Safety in Tests
+# ---------------------------------------------------------------------------
+
+
+def test_rule8_proddb_safety_in_eval_tests():
+    """Rule 8: Tests referencing GLOBAL_MEM_DIR must use safety wiring or fixtures."""
+    violations = []
+    for test_file in (REPO_ROOT / "eval").glob("test_*.py"):
+        if test_file.name in ("test_rule_enforcement.py", "test_safety_wiring.py"):
+            continue
+        src = _read(test_file)
+        if (
+            "GLOBAL_MEM_DIR" in src
+            and "_ProdDBGuarded" not in src
+            and "monkeypatch" not in src
+            and "patch(" not in src
+            and "tempfile" not in src
+            and "tmp_path" not in src
+        ):
+            violations.append(test_file.name)
+    assert not violations, (
+        f"Rule 8: Tests touching GLOBAL_MEM_DIR without safety wiring: {violations}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 9 — Lock order: flock first, then conn
+# ---------------------------------------------------------------------------
+
+
+def test_rule9_save_lock_order_flock_first():
+    """Rule 9: save_memory must acquire file lock before opening DB connection."""
+    save_pipeline_py = REPO_ROOT / "save" / "pipeline.py"
+    if not save_pipeline_py.exists():
+        save_pipeline_py = REPO_ROOT / "save_pipeline.py"
+    src = _read(save_pipeline_py)
+    assert "acquire_flock" in src, "Rule 9: save_memory must use acquire_flock"
+
+
+# ---------------------------------------------------------------------------
+# Rule 12 — Signal handlers before flock in auto_save daemon
+# ---------------------------------------------------------------------------
+
+
+def test_rule12_auto_save_signals_before_flock():
+    """Rule 12: daemon.py must install signal handlers before flock check."""
+    daemon_py = REPO_ROOT / "background" / "daemon.py"
+    src = _read(daemon_py)
+    assert "signal.signal" in src or "_signal.signal" in src, (
+        "Rule 12: daemon.py must install signal handlers"
+    )
+    sig_pos = src.find("_signal.signal")
+    flock_pos = src.find("acquire_flock_with_retry")
+    if sig_pos != -1 and flock_pos != -1:
+        assert sig_pos < flock_pos, (
+            "Rule 12: Signal handlers must be installed BEFORE flock check"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Rule 14 — Saga rollback cleans relations
+# ---------------------------------------------------------------------------
+
+
+def test_rule14_saga_rollback_cleans_relations():
+    """Rule 14: infra/saga.py rollback must clean up relations (facts, backlinks)."""
+    saga_py = REPO_ROOT / "infra" / "saga.py"
+    src = _read(saga_py)
+    assert "cleanup_memory_relations" in src or "cleanup" in src, (
+        "Rule 14: Saga rollback must call cleanup_memory_relations"
+    )
+

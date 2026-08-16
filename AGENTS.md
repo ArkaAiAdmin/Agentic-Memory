@@ -50,9 +50,16 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 > | Rule | Enforcement | Test / Guard |
 > |------|-------------|--------------|
 > | 1  | 🔍 | `test_rule1_core_writes_route_through_saga` (CORE verb modules) + `test_rule1_operational_kg_uses_saga_cleanup` (`infra/api_server.py`) |
+> | 4  | 🔍 | `test_rule4_no_raw_alter_table_in_python` in `eval/test_rule_enforcement.py` |
 > | 5  | 🔍 | `test_rule5_search_default_includes_global` |
+> | 6  | 🔍 | `test_rule6_mcp_tool_surface_contract` in `eval/test_rule_enforcement.py` |
 > | 7  | 🔧 | bare-arg guard in `backfill/orchestrator.py::main` (rc=2) |
+> | 8  | 🔍 | `test_rule8_proddb_safety_in_eval_tests` in `eval/test_rule_enforcement.py` |
+> | 9  | 🔍 | `test_rule9_save_lock_order_flock_first` in `eval/test_rule_enforcement.py` |
 > | 11 | 🔍 | `test_rule11_no_crdt_md_drift` + `test_rule11_detects_drift` |
+> | 12 | 🔍 | `test_rule12_auto_save_signals_before_flock` in `eval/test_rule_enforcement.py` |
+> | 14 | 🔍 | `test_rule14_saga_rollback_cleans_relations` in `eval/test_rule_enforcement.py` |
+> | 20 | 🔧 | thread clamping & watchdog in `eval/run_full_suite.py` |
 > | 24 | ⚙️ | pre-commit `update-docs-fresh` (fails on doc drift) |
 > | 25 | 🔍 | `test_rule25_benchmark_env_and_indexing` in `eval/test_rule_enforcement.py` |
 
@@ -119,7 +126,7 @@ agentic-memory/
 ├── mcp_surface/         ← 32 MCP modules
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md
-└── eval/             ← 369 test files, 5564+ test functions
+└── eval/             ← 369 test files, 5570+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** CORE tools return user-facing JSON. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback. `defer_expensive=True` by default — returns <200ms.
@@ -204,7 +211,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
-- **Testing**: 369 test files, 5564+ test functions, ~146k+ test LOC. Subprocess-per-file runner.
+- **Testing**: 369 test files, 5570+ test functions, ~146k+ test LOC. Subprocess-per-file runner.
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 

@@ -231,7 +231,6 @@ class TestParameterizedSavePaths:
         assert "Error" not in res
         assert _table_exists(self.db_path, "memories")
 
-    @pytest.mark.slow
     def test_save_very_long_content(self):
         payload = "x" * 40_000
         res = memory_mcp.memory_save(
@@ -299,7 +298,6 @@ class TestFTS5Adversarial:
         except Exception as exc:
             assert "null" in str(exc).lower() or "byte" in str(exc).lower()
 
-    @pytest.mark.slow
     def test_search_query_very_long(self):
         self._save("ftslong")
         long_query = "a " * 50
@@ -404,7 +402,6 @@ class TestCrossCuttingSafety:
             title_slug=title_slug or f"xcut-{abs(hash(content)) % 10000}",
         )
 
-    @pytest.mark.slow
     def test_sql_injection_does_not_corrupt_db(self):
         self._save("pre-seed", title_slug="pre-seed")
         memory_mcp.memory_search(query="lessons' OR 1=1 --", limit=5)

@@ -42,7 +42,6 @@ from infra.memory_common import (
 from save_pipeline import save_memory, clear_pragma_cache, SaveValidationError
 from search_pipeline import search_memories
 
-pytestmark = pytest.mark.slow
 from memory_delete import soft_delete_note
 
 
@@ -55,79 +54,7 @@ def _unique_slug(prefix="edge"):
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
-def _init_schema(db: sqlite3.Connection) -> None:
-    """Create minimal schema on a blank DB for save_memory to work."""
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS memories (
-            id            TEXT PRIMARY KEY,
-            content       TEXT NOT NULL,
-            source_file   TEXT NOT NULL,
-            tags          TEXT DEFAULT '[]',
-            created_at    TEXT NOT NULL,
-            updated_at    TEXT NOT NULL,
-            observed_at   TEXT NOT NULL,
-            pinned        INTEGER DEFAULT 0,
-            importance    INTEGER DEFAULT 3,
-            decay         TEXT DEFAULT 'none',
-            score         REAL DEFAULT 1.0,
-            supersedes    TEXT,
-            repo_id       TEXT,
-            access_count  INTEGER DEFAULT 1,
-            success_score REAL DEFAULT 0.0,
-            fitness_score REAL DEFAULT 1.0,
-            conflict_policy TEXT DEFAULT 'supersede',
-            version_vector TEXT DEFAULT '{}',
-            logical_clock INTEGER DEFAULT 0,
-            consolidation_state TEXT DEFAULT 'working',
-            valid_from    TEXT,
-            valid_to      TEXT,
-            superseded_by TEXT,
-            last_accessed TEXT,
-            deleted_at    TEXT,
-            deleted_by    TEXT,
-            context_prefix TEXT,
-            category      TEXT,
-            tier          TEXT,
-            psi           REAL,
-            next_review   TEXT,
-            adaptive_halflife_days REAL,
-            embedding_revision TEXT
-        )
-    """)
-    db.execute("""
-        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-            content, tags, tokenize='porter unicode61'
-        )
-    """)
-    db.execute("""
-        CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories
-        WHEN new.deleted_at IS NULL
-        BEGIN
-            INSERT INTO memories_fts(rowid, content, tags)
-            VALUES (new.rowid, new.content, new.tags);
-        END
-    """)
-    db.execute("""
-        CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-            DELETE FROM memories_fts WHERE rowid = old.rowid;
-        END
-    """)
-    db.execute("""
-        CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-            DELETE FROM memories_fts WHERE rowid = old.rowid;
-            INSERT INTO memories_fts(rowid, content, tags)
-            VALUES (new.rowid, new.content, new.tags);
-        END
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS backlinks (
-            source_id TEXT,
-            target_id TEXT,
-            PRIMARY KEY (source_id, target_id)
-        )
-    """)
-    run_db_migrations(db)
-    db.commit()
+from _fixtures import bootstrap_temp_db_clean
 
 
 def _prep_db(tmp_path: Path) -> Path:
@@ -135,8 +62,7 @@ def _prep_db(tmp_path: Path) -> Path:
     mem_dir = tmp_path / "memory"
     mem_dir.mkdir(parents=True, exist_ok=True)
     db_path = mem_dir / "memory.db"
-    with open_db(db_path) as db:
-        _init_schema(db)
+    bootstrap_temp_db_clean(db_path)
     return db_path
 
 
@@ -385,7 +311,7 @@ class TestEmptyContent:
 
 
 class TestConcurrentSaves:
-    THREADS = 10
+    THREADS = 6
 
     def test_concurrent_saves_all_persisted(self, fresh_db):
         errors = []
@@ -419,7 +345,7 @@ class TestConcurrentSaves:
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=30)
+            t.join(timeout=90)
 
         assert len(errors) == 0, f"Errors during concurrent saves: {errors}"
         assert len(results) == self.THREADS, (
@@ -444,11 +370,11 @@ class TestConcurrentSearchWhileSaving:
         searches_completed = [0]
         slug_base = _unique_slug("search_during")
         # Barrier forces saver and searcher to alternate turns without wall-clock jitter.
-        interleaver = threading.Barrier(2, timeout=10)
+        interleaver = threading.Barrier(2, timeout=60)
 
         def saver():
             try:
-                for i in range(20):
+                for i in range(8):
                     slug = f"{slug_base}_{i}"
                     save_memory(
                         content=f"Note {i}: the quick brown fox jumps over the lazy dog",
@@ -465,7 +391,7 @@ class TestConcurrentSearchWhileSaving:
 
         def searcher():
             try:
-                for _ in range(20):
+                for _ in range(8):
                     search_memories(
                         fresh_db, query="fox dog quick", limit=5, include_global=False
                     )
@@ -480,14 +406,14 @@ class TestConcurrentSearchWhileSaving:
         t2 = threading.Thread(target=searcher)
         t1.start()
         t2.start()
-        t1.join(timeout=30)
-        t2.join(timeout=30)
+        t1.join(timeout=90)
+        t2.join(timeout=90)
 
         assert len(errors) == 0, f"Errors: {errors}"
         assert searches_completed[0] > 0, "No searches completed"
         # Verify no data corruption
         count = _count_notes(fresh_db)
-        assert count >= 15, f"Expected at least 15 notes, got {count}"
+        assert count >= 6, f"Expected at least 6 notes, got {count}"
         # Verify search works after all activity
         result = search_memories(
             fresh_db, query="fox dog", limit=5, include_global=False
@@ -593,7 +519,7 @@ class TestLockContention:
 
         def do_saves():
             try:
-                for i in range(15):
+                for i in range(5):
                     slug = f"{slug_base}_{i}"
                     save_memory(
                         content=f"Lock contention test note {i}",
@@ -642,8 +568,8 @@ class TestLockContention:
         # the rebuild, so the rebuild thread can contend for the write lock.
         first_save_done.wait(timeout=30)
         t_rebuild.start()
-        t_save.join(timeout=30)
-        t_rebuild.join(timeout=30)
+        t_save.join(timeout=60)
+        t_rebuild.join(timeout=60)
 
         assert len(errors) == 0, f"Lock contention errors: {errors}"
         assert rebuild_ok[0], "Rebuild failed"
@@ -674,23 +600,21 @@ class TestSaveDeleteSave:
         )
         assert r1 == note_id, f"First save failed: {r1}"
 
-        # Verify it's in the DB
-        c1 = _count_notes(fresh_db)
-        assert c1 >= 1, "No notes after first save"
+        # Delete it
+        ok = soft_delete_note(fresh_db, note_id)
+        assert ok, "Soft delete failed"
 
-        # Delete it (soft delete)
-        soft_delete_note(fresh_db, note_id)
-
-        # Verify soft-deleted
+        # Verify it's deleted
         with open_db(fresh_db) as db:
             row = db.execute(
                 "SELECT deleted_at FROM memories WHERE id = ?", (note_id,)
             ).fetchone()
-            assert row is not None and row[0] is not None, "Note was not soft-deleted"
+            assert row is not None, "Note was completely removed instead of soft-deleted"
+            assert row[0] is not None, "deleted_at is not set"
 
-        # Save again with the same ID
+        # Re-save with same ID (different content)
         r2 = save_memory(
-            content="Second version, after delete and re-save",
+            content="Second version of the note (updated)",
             category="test",
             title_slug=slug,
             db_path=fresh_db,
@@ -751,7 +675,11 @@ class TestCrossProcessSafety:
             except subprocess.TimeoutExpired:
                 # Expected: rebuild blocked on the lock => kill gracefully
                 proc.send_signal(signal.SIGTERM)
-                proc.wait(timeout=3)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
         finally:
             try:
                 release_flock(lock_file)

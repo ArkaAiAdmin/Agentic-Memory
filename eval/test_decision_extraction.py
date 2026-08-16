@@ -206,13 +206,6 @@ class TestDecisionCategories:
 
 import os as _os
 
-_SKIP_LLM = _os.environ.get("MEMORY_SESSION_DECISION_LLM") != "1"
-
-
-@pytest.mark.skipif(
-    _SKIP_LLM,
-    reason="LLM extraction disabled (MEMORY_SESSION_DECISION_LLM=1 to enable)",
-)
 class TestLLMEnrichment:
     def test_enrich_returns_candidates(self):
         from save.decision_extraction import _enrich_candidates_with_llm, DecisionCandidate

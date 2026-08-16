@@ -21,7 +21,6 @@ import tempfile
 
 import pytest
 
-pytestmark = pytest.mark.slow
 import unittest
 from pathlib import Path
 
@@ -46,16 +45,24 @@ def _extract_ids(result: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# T1 — Baseline metrics for hybrid mode
-# ---------------------------------------------------------------------------
+_SHARED_BENCH: RetrievalBenchmark | None = None
+_SHARED_REPORT: dict | None = None
+
+
+def _get_shared_report() -> tuple[RetrievalBenchmark, dict]:
+    global _SHARED_BENCH, _SHARED_REPORT
+    if _SHARED_REPORT is None:
+        _SHARED_BENCH = RetrievalBenchmark()
+        _SHARED_REPORT = _SHARED_BENCH.run()
+    return _SHARED_BENCH, _SHARED_REPORT
 
 
 class TestHybridBaselineMetrics(unittest.TestCase):
     """T1: hybrid mode must meet minimum precision/recall/MRR thresholds."""
 
-    def setUp(self):
-        self._bench = RetrievalBenchmark()
-        self._report = self._bench.run()
+    @classmethod
+    def setUpClass(cls):
+        cls._bench, cls._report = _get_shared_report()
 
     def test_hybrid_precision_at_5(self):
         """precision@5 across all hybrid cases >= 0.35.
@@ -328,9 +335,12 @@ class TestSharedWithMeParameter(unittest.TestCase):
 class TestFullBenchmarkReport(unittest.TestCase):
     """T5: full benchmark completes without error and produces a valid report."""
 
+    @classmethod
+    def setUpClass(cls):
+        cls.bench, cls.report = _get_shared_report()
+
     def test_run_produces_valid_report(self):
-        bench = RetrievalBenchmark()
-        report = bench.run()
+        report = self.report
         self.assertIn("phases", report)
         self.assertIn("per_case", report)
         self.assertIn("dataset_info", report)
@@ -349,8 +359,7 @@ class TestFullBenchmarkReport(unittest.TestCase):
             self.assertLessEqual(metrics["precision_at_5"], 1.0)
 
     def test_all_25_cases_present_in_report(self):
-        bench = RetrievalBenchmark()
-        report = bench.run()
+        report = self.report
         self.assertEqual(len(report["per_case"]), 25)
         self.assertEqual(report["dataset_info"]["total_test_cases"], 25)
         self.assertEqual(report["dataset_info"]["total_memories"], 20)

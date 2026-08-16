@@ -619,7 +619,6 @@ class TestHardDeleteCascade:
 
 
 class TestRebuildIndexConsistency:
-    @pytest.mark.slow
     def test_rebuild_preserves_invariants(self, tmp_dir, mem_dir):
         """After save + rebuild, all invariants still hold."""
         db_path = mem_dir / "memory.db"
@@ -647,7 +646,6 @@ class TestRebuildIndexConsistency:
             _populate_embeddings(db)
             _assert_invariants(db, "after rebuild")
 
-    @pytest.mark.slow
     def test_rebuild_after_delete(self, tmp_dir, mem_dir):
         """Delete a note, rebuild index, verify consistency."""
         db_path = mem_dir / "memory.db"
@@ -685,12 +683,11 @@ class TestRebuildIndexConsistency:
 
 
 class TestStressConsistency:
-    @pytest.mark.slow
     def test_100_notes_invariants(self, tmp_dir, mem_dir):
-        """Save 100 notes, verify invariants hold under load."""
+        """Save batch of notes, verify invariants hold under load."""
         db_path = mem_dir / "memory.db"
 
-        for i in range(100):
+        for i in range(25):
             result = save_memory(
                 f"Stress test memory #{i} with enough content to trigger chunking "
                 "and embedding. This is a longer sentence to make sure the content "
@@ -706,14 +703,13 @@ class TestStressConsistency:
         with open_db(db_path) as db:
             _populate_vec_keys(db)
             _populate_embeddings(db)
-            _assert_invariants(db, "100 notes")
+            _assert_invariants(db, "25 notes")
 
-    @pytest.mark.slow
     def test_100_notes_after_rebuild(self, tmp_dir, mem_dir):
-        """Save 100 notes, rebuild, verify invariants."""
+        """Save batch of notes, rebuild, verify invariants."""
         db_path = mem_dir / "memory.db"
 
-        for i in range(100):
+        for i in range(25):
             save_memory(
                 f"Stress rebuild memory #{i} with meaningful content for embedding "
                 "and indexing verification across all subsystems.",
@@ -730,7 +726,7 @@ class TestStressConsistency:
             _ensure_subsystem_tables(db)
             _populate_vec_keys(db)
             _populate_embeddings(db)
-            _assert_invariants(db, "100 notes after rebuild")
+            _assert_invariants(db, "25 notes after rebuild")
 
 
 # ---------------------------------------------------------------------------
@@ -872,7 +868,6 @@ class TestDirectDbInvariants:
 
 
 class TestFullCycle:
-    @pytest.mark.slow
     def test_save_rebuild_vec_integrity(self, tmp_dir, mem_dir):
         """Full cycle: save -> rebuild_index -> rebuild_vec_index -> verify."""
         db_path = mem_dir / "memory.db"

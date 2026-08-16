@@ -19,7 +19,6 @@ from pathlib import Path
 
 from memory_mcp import search_memories
 
-pytestmark = pytest.mark.slow
 
 
 # Snapshot of high-traffic queries that MUST always work, derived from the

@@ -100,7 +100,6 @@ class TestConcurrentSearch(unittest.TestCase):
         from search.orchestrator import search_memories
         return search_memories(self.db_path, query, limit=limit, light=True)
 
-    @pytest.mark.slow
     def test_all_concurrent_searches_complete(self):
         """Launch 5 concurrent searches, verify all complete within 60s."""
         start = time.time()
@@ -109,7 +108,7 @@ class TestConcurrentSearch(unittest.TestCase):
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
             results_map = {}
-            for future in as_completed(futures, timeout=60):
+            for future in as_completed(futures, timeout=180):
                 q = futures[future]
                 try:
                     results_map[q] = future.result()
@@ -124,14 +123,13 @@ class TestConcurrentSearch(unittest.TestCase):
         )
         self.assertEqual(len(results_map), len(QUERIES))
 
-    @pytest.mark.slow
     def test_all_results_have_valid_envelope(self):
         """Each result envelope must have standard keys."""
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
-            for future in as_completed(futures, timeout=60):
+            for future in as_completed(futures, timeout=180):
                 result = future.result()
                 self.assertIsInstance(result, dict)
                 self.assertIn("results", result)
@@ -140,14 +138,13 @@ class TestConcurrentSearch(unittest.TestCase):
                 self.assertIsInstance(result["results"], list)
                 self.assertIsInstance(result["count"], int)
 
-    @pytest.mark.slow
     def test_no_search_returns_none(self):
         """No result should be None or malformed."""
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
-            for future in as_completed(futures, timeout=60):
+            for future in as_completed(futures, timeout=180):
                 result = future.result()
                 self.assertIsNotNone(result)
                 if result["results"]:
@@ -155,7 +152,6 @@ class TestConcurrentSearch(unittest.TestCase):
                         self.assertIn("id", r)
                         self.assertIn("final_score", r)
 
-    @pytest.mark.slow
     def test_different_queries_different_results(self):
         """Different queries should return different result sets."""
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -163,7 +159,7 @@ class TestConcurrentSearch(unittest.TestCase):
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
             result_ids = {}
-            for future in as_completed(futures, timeout=60):
+            for future in as_completed(futures, timeout=180):
                 q = futures[future]
                 result = future.result()
                 result_ids[q] = {r["id"] for r in result.get("results", [])}
@@ -177,7 +173,6 @@ class TestConcurrentSearch(unittest.TestCase):
             "Different queries should produce measurably different result sets",
         )
 
-    @pytest.mark.slow
     def test_query_limit_respected_under_concurrency(self):
         """Each search must respect its own limit under concurrent load."""
         limits = [3, 5, 10, 3, 5]
@@ -186,7 +181,7 @@ class TestConcurrentSearch(unittest.TestCase):
                 executor.submit(self._search_worker, q, lim): (q, lim)
                 for q, lim in zip(QUERIES, limits)
             }
-            for future in as_completed(futures, timeout=60):
+            for future in as_completed(futures, timeout=180):
                 q, lim = futures[future]
                 result = future.result()
                 self.assertLessEqual(
