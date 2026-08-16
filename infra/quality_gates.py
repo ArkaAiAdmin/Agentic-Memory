@@ -183,7 +183,7 @@ def validate_result(result: dict) -> tuple[bool, list[str]]:
         )
 
     # Gate 2: Has source/category
-    if not result.get("source") and not result.get("category"):
+    if not result.get("source") and not result.get("source_file") and not result.get("category"):
         reasons.append("missing_source")
 
     # Gate 3: Relevance score (if available). H18 fix: distinguish "score is

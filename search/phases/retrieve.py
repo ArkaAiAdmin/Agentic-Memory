@@ -103,8 +103,8 @@ def _fallback_embedding_search(
         if not _es_results:
             return []
         hit_ids = [hit.get("id") for hit in _es_results if hit.get("id")]
-        _base_filter = repo_filter + tag_filter_sql
-        _params = ((category,) if category else ()) + tag_filter_params
+        _cat_params = (category,) if (category and "m.category = ?" in _base_filter) else ()
+        _params = _cat_params + tag_filter_params
         rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=_base_filter, extra_params=_params)
 
         fb_rows = []

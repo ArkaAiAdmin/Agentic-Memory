@@ -50,20 +50,70 @@ set_benchmark_env()
 # ---------------------------------------------------------------------------
 
 _env_beam_dir = os.environ.get("BEAM_DATA_DIR")
-BEAM_DATA_DIR = Path(_env_beam_dir) if _env_beam_dir else Path.home() / "Downloads"
+DATASET_BEAM_DIR = EVAL_ROOT.parent / "datasets" / "beam"
+CACHE_DIR = EVAL_ROOT.parent / ".cache" / "dbs"
+
+POSSIBLE_DIRS = [
+    Path(_env_beam_dir) if _env_beam_dir else None,
+    DATASET_BEAM_DIR,
+    Path.home() / "Downloads",
+]
+
 PART_FILES = [
     "10M-00000-of-00002.parquet",
     "10M-00001-of-00002.parquet",
 ]
+
+HF_BASE_URL = "https://huggingface.co/datasets/Mohammadta/BEAM-10M/resolve/main"
+
+
+def ensure_beam_dataset() -> Path | None:
+    """Find or download BEAM parquet files."""
+    for d in POSSIBLE_DIRS:
+        if d and d.exists():
+            if all((d / pf).exists() for pf in PART_FILES):
+                return d
+
+    # If not found, try downloading into DATASET_BEAM_DIR
+    DATASET_BEAM_DIR.mkdir(parents=True, exist_ok=True)
+    import urllib.request
+
+    all_downloaded = True
+    for pf in PART_FILES:
+        target = DATASET_BEAM_DIR / pf
+        if not target.exists():
+            url = f"{HF_BASE_URL}/{pf}"
+            print(f"Downloading BEAM parquet part {pf} from HuggingFace ...")
+            try:
+                urllib.request.urlretrieve(url, str(target))
+                print(f"  saved to {target}")
+            except Exception as e:
+                print(f"  failed to download {url}: {e}")
+                all_downloaded = False
+                break
+    if all_downloaded and all((DATASET_BEAM_DIR / pf).exists() for pf in PART_FILES):
+        return DATASET_BEAM_DIR
+
+    # Fallback to any directory that has at least one part
+    for d in POSSIBLE_DIRS:
+        if d and d.exists() and any((d / pf).exists() for pf in PART_FILES):
+            return d
+
+    return None
 
 
 def load_beam_dataset() -> list[dict]:
     """Load BEAM conversations and probing questions from parquet files."""
     import pyarrow.parquet as pq
 
+    beam_dir = ensure_beam_dataset()
+    if not beam_dir:
+        print("WARNING: BEAM dataset parquet files not found and could not be downloaded.")
+        return []
+
     conversations = []
     for part_file in PART_FILES:
-        path = BEAM_DATA_DIR / part_file
+        path = beam_dir / part_file
         if not path.exists():
             print(f"WARNING: {path} not found, skipping")
             continue
@@ -138,229 +188,89 @@ def _get_db_connection(db_path: Path, tenant_id: str = "beam") -> sqlite3.Connec
     return conn
 
 
-def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
-    """Ingest a BEAM conversation as memory notes.
-
-    Splits into chunks of ~2000 chars to fit within search context windows.
-    Returns mapping: chunk_id → memory_id.
-    """
-    turns = extract_conversation_content(conv["chat"])
-    if not turns:
-        return {}
-
-    # Join all turns into a single conversation text
-    full_text = "\n".join(
-        f"[{t['role'].upper()}] {t['content']}" for t in turns
-    )
-
-    # Split into chunks of ~2000 chars (respecting turn boundaries)
-    CHUNK_SIZE = 2000
-    chunks = []
-    current_chunk = []
-    current_len = 0
-
-    for turn in turns:
-        turn_text = f"[{turn['role'].upper()}] {turn['content']}\n"
-        if current_len + len(turn_text) > CHUNK_SIZE and current_chunk:
-            chunks.append("\n".join(current_chunk))
-            current_chunk = []
-            current_len = 0
-        current_chunk.append(turn_text)
-        current_len += len(turn_text)
-    if current_chunk:
-        chunks.append("\n".join(current_chunk))
-
-    # Ingest chunks as memory notes
+def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> dict[str, str]:
+    """Ingest all BEAM conversations into DB with batched multi-indexing."""
     conn = _get_db_connection(db_path)
     session_map = {}
+    CHUNK_SIZE = 2000
+    batch_items = []
+
     try:
-        batch_items = []
-        for idx, chunk in enumerate(chunks):
-            memory_id = f"beam/conv{conv['conversation_id']}/chunk_{idx:04d}"
-            timestamp = (datetime(2024, 1, 1) + timedelta(days=idx)).isoformat()
-            chunk_with_meta = f"[Session Date: {timestamp[:10]}]\n{chunk}"
-            tags_list = [f"conv_{conv['conversation_id']}", conv["category"]]
-            conn.execute(
-                """INSERT OR REPLACE INTO memories
-                   (id, content, source_file, tags, created_at, updated_at,
-                    observed_at, pinned, importance, category, tenant_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, 'sessions', 'beam')""",
-                (memory_id, chunk_with_meta, f"beam/conv{conv['conversation_id']}",
-                 json.dumps(tags_list),
-                 timestamp, timestamp, timestamp),
-            )
-            # FTS index
-            try:
+        for conv in conversations:
+            turns = extract_conversation_content(conv["chat"])
+            if not turns:
+                continue
+
+            chunks = []
+            current_chunk = []
+            current_len = 0
+
+            for turn in turns:
+                turn_text = f"[{turn['role'].upper()}] {turn['content']}\n"
+                if current_len + len(turn_text) > CHUNK_SIZE and current_chunk:
+                    chunks.append("\n".join(current_chunk))
+                    current_chunk = []
+                    current_len = 0
+                current_chunk.append(turn_text)
+                current_len += len(turn_text)
+            if current_chunk:
+                chunks.append("\n".join(current_chunk))
+
+            for idx, chunk in enumerate(chunks):
+                memory_id = f"beam/conv{conv['conversation_id']}/chunk_{idx:04d}"
+                timestamp = (datetime(2024, 1, 1) + timedelta(days=idx)).isoformat()
+                chunk_with_meta = f"[Session Date: {timestamp[:10]}]\n{chunk}"
+                tags_list = [f"conv_{conv['conversation_id']}", conv["category"]]
                 conn.execute(
-                    "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
-                    (memory_id, chunk_with_meta),
+                    """INSERT OR REPLACE INTO memories
+                       (id, content, source_file, tags, created_at, updated_at,
+                        observed_at, pinned, importance, category, tenant_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, 'sessions', 'beam')""",
+                    (memory_id, chunk_with_meta, f"beam/conv{conv['conversation_id']}",
+                     json.dumps(tags_list),
+                     timestamp, timestamp, timestamp),
                 )
-            except Exception as exc:
-                logger.debug("FTS index insert failed for %s (non-fatal): %s", memory_id, exc)
-            batch_items.append((memory_id, chunk_with_meta, "sessions", tags_list))
-            session_map[f"chunk_{idx:04d}"] = memory_id
+                try:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
+                        (memory_id, chunk_with_meta),
+                    )
+                except Exception as exc:
+                    logger.debug("FTS index insert failed for %s (non-fatal): %s", memory_id, exc)
+                batch_items.append((memory_id, chunk_with_meta, "sessions", tags_list))
+                session_map[f"conv{conv['conversation_id']}_chunk_{idx:04d}"] = memory_id
 
         populate_eval_memory_indexes_batch(conn, batch_items)
         conn.commit()
-
     finally:
         conn.close()
 
     return session_map
 
 
-# ---------------------------------------------------------------------------
-# Search and scoring
-# ---------------------------------------------------------------------------
-
-def run_search(db_path: Path, query: str, limit: int = 30) -> list[str]:
-    """Run hybrid search and return list of memory IDs in rank order."""
-    from search.orchestrator import search_memories
-
-    result = search_memories(
-        db_path,
-        query,
-        limit=max(limit, 30),
-        include_global=True,
-        rerank=True,
-        deep_rerank=True,
-        include_facts=False,
-        safety_wiring=False,
-        tenant_id="beam",
-        category="sessions",
-    )
-    return [r["id"] for r in result.get("results", [])]
-
-
-
-def _check_indicator(answer_lower: str, indicator: str) -> bool:
-    """Check if a compliance indicator is present in the answer.
-
-    Extracts key phrases from the indicator and checks if they appear.
-    Handles indicators like "uses or references AWS EC2 cost of $0.11/hour"
-    by checking for the key content phrases.
-    """
-    ind_lower = indicator.lower().strip()
-
-    # Direct substring check first
-    if ind_lower in answer_lower:
-        return True
-
-    # Extract key numeric values and check they appear
-    nums = re.findall(r'[\d,]+\.?\d*', ind_lower)
-    if nums:
-        nums_found = all(n.replace(',', '') in answer_lower.replace(',', '') for n in nums)
-        # Also need at least some content words
-        words = [w for w in ind_lower.split() if len(w) > 3 and w not in ('should', 'contains', 'include', 'refer', 'using', 'their', 'that', 'with', 'from', 'have', 'this')]
-        words_found = sum(1 for w in words if w in answer_lower)
-        return nums_found and words_found >= max(1, len(words) // 2)
-
-    # For non-numeric indicators, check content words
-    words = [w for w in ind_lower.split() if len(w) > 3 and w not in ('should', 'contains', 'include', 'refer', 'using', 'their', 'that', 'with', 'from', 'have', 'this')]
-    if not words:
-        return False
-    words_found = sum(1 for w in words if w in answer_lower)
-    return words_found >= max(1, len(words) * 2 // 3)
-
-
-def score_answer(
-    answer_text: str,
-    expected: str,
-    rubric: list[str] = None,
-    compliance_indicators: list[str] = None,
-    non_compliance_signs: list[str] = None,
-    ability_type: str = None,
-) -> float:
-    """Score an answer using token overlap, rubric matching, and compliance indicators."""
-    if not expected and not compliance_indicators and not rubric:
-        return 0.0
-
-    answer_lower = answer_text.lower().strip()
-    expected_lower = (expected or "").lower().strip()
-
-    # Exact match
-    if expected_lower and answer_lower == expected_lower:
-        return 1.0
-
-    # Substring match
-    if expected_lower and expected_lower in answer_lower:
-        return 1.0
-
-    # Compliance indicators scoring (preference_following, instruction_following)
-    if compliance_indicators and len(compliance_indicators) > 0:
-        hits = sum(1 for ind in compliance_indicators if _check_indicator(answer_lower, ind))
-        ratio = hits / len(compliance_indicators)
-        # Need at least 50% of indicators present
-        if ratio >= 0.5:
-            return 1.0
-        if ratio >= 0.25:
-            return 0.5 + 0.5 * (ratio - 0.25) / 0.25
-        return ratio * 2  # 0-0.5 based on how many indicators hit
-
-    # Rubric-based scoring — use _check_indicator for "should contain" items
-    # but fall back to token overlap for full-sentence rubrics (abstention, etc.)
-    if rubric and len(rubric) > 0:
-        # Determine if rubrics are short factual claims or full sentences
-        avg_len = sum(len(r) for r in rubric) / len(rubric)
-        if avg_len < 80:
-            # Short rubrics — use indicator matching
-            cleaned = []
-            for r in rubric:
-                if "should contain:" in r.lower() or "should state:" in r.lower():
-                    r = r.split(":", 1)[1].strip() if ":" in r else r
-                cleaned.append(r)
-            hits = sum(1 for r in cleaned if _check_indicator(answer_lower, r))
-            ratio = hits / len(cleaned)
-            if ratio >= 0.5:
-                return 1.0
-            if ratio >= 0.25:
-                return 0.5 + 0.5 * (ratio - 0.25) / 0.25
-            return ratio * 2
-        else:
-            # Long rubrics (full sentences) — use token overlap
-            all_tokens = set()
-            for r in rubric:
-                all_tokens.update(r.lower().split())
-            answer_tokens = set(answer_lower.split())
-            overlap = answer_tokens & all_tokens
-            if all_tokens:
-                ratio = len(overlap) / len(all_tokens)
-                if ratio >= 0.6:
-                    return 1.0
-                return ratio
-            return 0.0
-
-    # Token overlap against expected answer
-    if expected_lower:
-        answer_tokens = set(answer_lower.split())
-        expected_tokens = set(expected_lower.split())
-        overlap = answer_tokens & expected_tokens
-        if expected_tokens:
-            ratio = len(overlap) / len(expected_tokens)
-            # Check for exact key numeric / quantity matches (e.g. 45 days, 800,000, 1.7.0)
-            import re as _re
-            target_nums = set(_re.findall(r"\b(?:\d[\d,]*|\d+\.\d+)(?:\s*(?:days|weeks|months|years|minutes|hours|documents|MB|GB|v\d+))?\b", expected_lower))
-            if target_nums:
-                num_hits = sum(1 for tn in target_nums if tn in answer_lower)
-                if num_hits == len(target_nums) and ratio >= 0.35:
-                    return 1.0
-            if ratio >= 0.6:
-                return 1.0
-            return ratio
-
-    return 0.0
+def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
+    """Single conversation ingest compatibility wrapper."""
+    return ingest_all_conversations(db_path, [conv])
 
 
 # ---------------------------------------------------------------------------
 # Main evaluation
 # ---------------------------------------------------------------------------
 
-def run_beam_real_eval(max_conversations: int = None) -> dict:
+def run_beam_real_eval(
+    max_conversations: int = None,
+    output_path: Path = None,
+    use_cache_db: bool = True,
+    rebuild: bool = False,
+) -> dict:
     """Run BEAM evaluation on real data."""
     from eval._fixtures import bootstrap_temp_db_clean
 
     print("Loading BEAM dataset...")
     conversations = load_beam_dataset()
+    if not conversations:
+        return {"error": "BEAM dataset not available"}
+
     if max_conversations:
         conversations = conversations[:max_conversations]
     print(f"Loaded {len(conversations)} conversations")
@@ -373,139 +283,150 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
     )
     print(f"Total questions: {total_q}")
 
-    # Set up DB
-    db_path = RESULTS_DIR / "beam_real.db"
-    if db_path.exists():
-        db_path.unlink()
-    os.environ["MEMORY_DB_PATH"] = str(db_path)
-    bootstrap_temp_db_clean(db_path)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_db_path = CACHE_DIR / "beam_real.db"
+    cleanup_tmp = False
 
-    # Ingest all conversations
-    print("\nIngesting conversations...")
-    total_chunks = 0
-    for conv in conversations:
-        session_map = ingest_conversation(db_path, conv)
-        total_chunks += len(session_map)
-    print(f"Ingested {total_chunks} chunks")
+    if use_cache_db and not max_conversations and cache_db_path.exists() and not rebuild:
+        db_path = cache_db_path
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        print(f"Using cached BEAM database: {db_path}")
+        total_chunks = 0
+    else:
+        if use_cache_db and not max_conversations:
+            db_path = cache_db_path
+            if db_path.exists():
+                try:
+                    db_path.unlink()
+                except OSError:
+                    pass
+        else:
+            db_path = RESULTS_DIR / f"beam_real_{os.getpid()}.db"
+            cleanup_tmp = True
+
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        bootstrap_temp_db_clean(db_path)
+
+        print("\nIngesting conversations...")
+        session_map = ingest_all_conversations(db_path, conversations)
+        total_chunks = len(session_map)
+        print(f"Ingested {total_chunks} chunks")
+
+    # Open persistent read connection for fetching note contents
+    read_conn = sqlite3.connect(str(db_path), timeout=30.0)
 
     # Run evaluation
     print("\nRunning evaluation...")
     results = []
     per_type = {}
-    _q_num = 0  # L8 fix: track question count for progress
+    _q_num = 0
 
-    for conv in conversations:
-        cid = conv["conversation_id"]
-        category = conv["category"]
-        probing = conv["probing_questions"]
+    try:
+        for conv in conversations:
+            cid = conv["conversation_id"]
+            category = conv["category"]
+            probing = conv["probing_questions"]
 
-        for ability_type, questions in probing.items():
-            if not isinstance(questions, list):
-                continue
-
-            for q in questions:
-                question_text = q.get("question", "")
-                if not question_text:
+            for ability_type, questions in probing.items():
+                if not isinstance(questions, list):
                     continue
 
-                _q_num += 1
-                if _q_num % 25 == 0:
-                    print(f"  [{_q_num} questions processed]", flush=True)
+                for q in questions:
+                    question_text = q.get("question", "")
+                    if not question_text:
+                        continue
 
-                # H6 fix: clear search cache between questions
-                if hasattr(memory_mcp, "_search_cache"):
-                    memory_mcp._search_cache.clear()
+                    _q_num += 1
+                    if _q_num % 25 == 0 or _q_num == 1:
+                        print(f"  [{_q_num}/{total_q} questions processed]", flush=True)
 
-                # Get expected answer (varies by type)
-                expected = (
-                    q.get("ideal_response")
-                    or q.get("ideal_answer")
-                    or q.get("ideal_summary")
-                    or q.get("answer")
-                    or q.get("expected_compliance")
-                    or ""
-                )
-                rubric = q.get("rubric", [])
-                compliance_indicators = q.get("compliance_indicators", [])
-                non_compliance_signs = q.get("non_compliance_signs", [])
-                difficulty = q.get("difficulty", "unknown")
+                    if hasattr(memory_mcp, "_search_cache"):
+                        memory_mcp._search_cache.clear()
 
-                # Search
-                t0 = time.time()
-                retrieved = run_search(db_path, question_text, limit=20)
-                elapsed = (time.time() - t0) * 1000
+                    expected = (
+                        q.get("ideal_response")
+                        or q.get("ideal_answer")
+                        or q.get("ideal_summary")
+                        or q.get("answer")
+                        or q.get("expected_compliance")
+                        or ""
+                    )
+                    rubric = q.get("rubric", [])
+                    compliance_indicators = q.get("compliance_indicators", [])
+                    non_compliance_signs = q.get("non_compliance_signs", [])
+                    difficulty = q.get("difficulty", "unknown")
 
-                # Get content of retrieved sessions
-                retrieved_content = []
-                if retrieved:
-                    conn = sqlite3.connect(str(db_path), timeout=30.0)
-                    for mid in retrieved[:10]:
-                        row = conn.execute(
-                            "SELECT content FROM memories WHERE id = ?", (mid,)
-                        ).fetchone()
-                        if row:
-                            retrieved_content.append(row[0])
-                    conn.close()
+                    t0 = time.time()
+                    retrieved = run_search(db_path, question_text, limit=20)
+                    elapsed = (time.time() - t0) * 1000
 
-                # Score against expected answer
-                candidates_tuple = [(mid, content, "", "", "") for mid, content in zip(retrieved[:10], retrieved_content)]
-                combined_content = " ".join(retrieved_content)
+                    retrieved_content = []
+                    if retrieved:
+                        for mid in retrieved[:10]:
+                            row = read_conn.execute(
+                                "SELECT content FROM memories WHERE id = ?", (mid,)
+                            ).fetchone()
+                            if row:
+                                retrieved_content.append(row[0])
 
-                try:
-                    from search.phases.math_aggregator import extract_and_aggregate_quantities
-                    math_sum = extract_and_aggregate_quantities(question_text, candidates_tuple)
-                    if math_sum:
-                        combined_content = f"{math_sum} " + combined_content
-                except Exception as exc:
-                    logger.debug("Math aggregator phase failed (non-fatal): %s", exc)
+                    candidates_tuple = [(mid, content, "", "", "") for mid, content in zip(retrieved[:10], retrieved_content)]
+                    combined_content = " ".join(retrieved_content)
 
-                try:
-                    from search.phases.temporal_delta_solver import calculate_temporal_delta
-                    temp_delta = calculate_temporal_delta(question_text, candidates_tuple)
-                    if temp_delta:
-                        combined_content = f"{temp_delta} " + combined_content
-                except Exception as exc:
-                    logger.debug("Temporal delta solver phase failed (non-fatal): %s", exc)
+                    try:
+                        from search.phases.math_aggregator import extract_and_aggregate_quantities
+                        math_sum = extract_and_aggregate_quantities(question_text, candidates_tuple)
+                        if math_sum:
+                            combined_content = f"{math_sum} " + combined_content
+                    except Exception as exc:
+                        logger.debug("Math aggregator phase failed (non-fatal): %s", exc)
 
-                try:
-                    from search.phases.attribute_extractor import extract_entity_attribute
-                    attr_val = extract_entity_attribute(question_text, candidates_tuple)
-                    if attr_val:
-                        combined_content = f"{attr_val} " + combined_content
-                except Exception as exc:
-                    logger.debug("Attribute extractor phase failed (non-fatal): %s", exc)
+                    try:
+                        from search.phases.temporal_delta_solver import calculate_temporal_delta
+                        temp_delta = calculate_temporal_delta(question_text, candidates_tuple)
+                        if temp_delta:
+                            combined_content = f"{temp_delta} " + combined_content
+                    except Exception as exc:
+                        logger.debug("Temporal delta solver phase failed (non-fatal): %s", exc)
 
-                score = score_answer(
-                    combined_content,
-                    expected,
-                    rubric=rubric,
-                    compliance_indicators=compliance_indicators,
-                    non_compliance_signs=non_compliance_signs,
-                    ability_type=ability_type,
-                )
+                    try:
+                        from search.phases.attribute_extractor import extract_entity_attribute
+                        attr_val = extract_entity_attribute(question_text, candidates_tuple)
+                        if attr_val:
+                            combined_content = f"{attr_val} " + combined_content
+                    except Exception as exc:
+                        logger.debug("Attribute extractor phase failed (non-fatal): %s", exc)
 
-                results.append({
-                    "conversation_id": cid,
-                    "category": category,
-                    "ability_type": ability_type,
-                    "question": question_text,
-                    "expected": expected[:200],
-                    "difficulty": difficulty,
-                    "score": score,
-                    "latency_ms": round(elapsed, 1),
-                    "num_retrieved": len(retrieved),
-                })
+                    score = score_answer(
+                        combined_content,
+                        expected,
+                        rubric=rubric,
+                        compliance_indicators=compliance_indicators,
+                        non_compliance_signs=non_compliance_signs,
+                        ability_type=ability_type,
+                    )
 
-                per_type.setdefault(ability_type, []).append(score)
+                    results.append({
+                        "conversation_id": cid,
+                        "category": category,
+                        "ability_type": ability_type,
+                        "question": question_text,
+                        "expected": expected[:200],
+                        "difficulty": difficulty,
+                        "score": score,
+                        "latency_ms": round(elapsed, 1),
+                        "num_retrieved": len(retrieved),
+                    })
 
-    # Calculate metrics
+                    per_type.setdefault(ability_type, []).append(score)
+    finally:
+        read_conn.close()
+
     overall_accuracy = sum(r["score"] for r in results) / len(results) if results else 0
     type_accuracy = {
         t: sum(scores) / len(scores) if scores else 0
         for t, scores in per_type.items()
     }
 
-    # Report
     print(f"\n{'='*60}")
     print(f"BEAM Real Data Results ({len(results)} questions)")
     print(f"{'='*60}")
@@ -515,7 +436,8 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
         n = len(per_type[t])
         print(f"  {t}: {acc:.4f} ({n} questions)")
 
-    # Save
+    out_file = output_path or RESULTS_PATH
+    out_file.parent.mkdir(parents=True, exist_ok=True)
     report = {
         "benchmark": "BEAM-Real",
         "version": "1.0",
@@ -527,9 +449,15 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
         "results": results,
     }
 
-    with open(RESULTS_PATH, "w") as f:
+    with open(out_file, "w") as f:
         json.dump(report, f, indent=2)
-    print(f"\nResults saved to {RESULTS_PATH}")
+    print(f"\nResults saved to {out_file}")
+
+    if cleanup_tmp and db_path.exists():
+        try:
+            db_path.unlink()
+        except OSError:
+            pass
 
     return report
 
@@ -539,5 +467,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BEAM Real Data Benchmark")
     parser.add_argument("--max-conversations", type=int, default=None,
                         help="Max conversations to evaluate (default: all)")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output JSON path")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="Force rebuild DB")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="Do not use cached DB")
     args = parser.parse_args()
-    run_beam_real_eval(max_conversations=args.max_conversations)
+
+    out_p = Path(args.output) if args.output else None
+    run_beam_real_eval(
+        max_conversations=args.max_conversations,
+        output_path=out_p,
+        use_cache_db=not args.no_cache,
+        rebuild=args.rebuild,
+    )

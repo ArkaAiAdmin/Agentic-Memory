@@ -133,7 +133,7 @@ def _fetch_rows_by_ids(
         try:
             rows = db.execute(query, [*chunk, *extra_params]).fetchall()
             result.update({row[0]: row for row in rows})
-        except sqlite3.Error:
-            logger.warning("_fetch_rows_by_ids: chunk of %d ids failed", len(chunk))
+        except sqlite3.Error as _sql_err:
+            logger.warning("_fetch_rows_by_ids: chunk of %d ids failed: %s (query=%s, params=%s)", len(chunk), _sql_err, query, [*chunk, *extra_params][:5])
             continue
     return result

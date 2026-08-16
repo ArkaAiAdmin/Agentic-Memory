@@ -28,6 +28,7 @@ import shutil
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -37,6 +38,7 @@ EVAL_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = EVAL_ROOT.parent
 RESULTS_DIR = EVAL_ROOT / "results"
 DATASET_DIR = EVAL_ROOT / "datasets"
+CACHE_DIR = EVAL_ROOT / ".cache" / "dbs"
 LOCOMO_JSON = DATASET_DIR / "locomo10.json"
 DOWNLOAD_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json"
 
@@ -44,12 +46,17 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import memory_mcp  # noqa: E402
 from infra.memory_common import open_db  # noqa: E402
-from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
+from _fixtures import (  # noqa: E402
+    bootstrap_temp_db_clean,
+    populate_eval_memory_indexes,
+    populate_eval_memory_indexes_batch,
+    set_benchmark_env,
+)
 
 set_benchmark_env()
 os.environ["MEMORY_WRITE_QUEUE_TIMEOUT"] = "120.0"
 os.environ["MEMORY_LLM_EXTRACTION"] = "false"
-# The eval deliberately points MEMORY_DB_PATH at a throwaway temp DB.
+# The eval deliberately points MEMORY_DB_PATH at a dedicated eval DB.
 # Arm the config-drift escape hatch (audited, time-bounded) so the
 # stability-tier drift this creates is downgraded to a warning.
 os.environ["MEMORY_ESCAPE_HATCH"] = (
@@ -114,53 +121,77 @@ def session_to_content(sample_id: str, session_key: str, turns: list[dict]) -> s
     return "\n".join(lines)
 
 
+def ingest_all_conversations(
+    db_path: Path, data: list[dict]
+) -> dict[str, dict[str, str]]:
+    """Ingest all conversations using fast batched multi-indexing.
+
+    Returns mapping: sample_id -> {session_key -> memory_id}.
+    """
+    all_session_maps: dict[str, dict[str, str]] = {}
+    batch_items = []
+
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    with open_db(db_path, pooled=False) as db:
+        for conv_idx, sample in enumerate(data):
+            sample_id = sample["sample_id"]
+            conv = sample["conversation"]
+            session_keys = sorted(
+                [k for k in conv.keys()
+                 if k.startswith("session_")
+                 and not k.endswith("_date_time")
+                 and not k.endswith("_observation")
+                 and not k.endswith("_summary")],
+                key=lambda k: int(k.split("_")[1]),
+            )
+            session_map: dict[str, str] = {}
+
+            for sess_idx, sk in enumerate(session_keys):
+                turns = conv[sk]
+                if not isinstance(turns, list):
+                    continue
+                mem_id = session_to_memory_id(sample_id, sk)
+                content = session_to_content(sample_id, sk, turns)
+                source_file = f"locomo/{sample_id}/{sk}"
+                # Valid ISO timestamp for chronological ordering & temporal reasoning
+                sess_time = (base_time + timedelta(days=conv_idx * 30 + sess_idx)).isoformat()
+
+                db.execute(
+                    """INSERT OR REPLACE INTO memories
+                       (id, content, source_file, tags, created_at, updated_at,
+                        observed_at, pinned, importance, category, repo_id,
+                        access_count, success_score, fitness_score, tenant_id)
+                       VALUES (?, ?, ?, '[]', ?, ?, ?, 0, 3, 'sessions', ?, 1, 0.0, 1.0, 'locomo')""",
+                    (mem_id, content, source_file,
+                     sess_time, sess_time, sess_time, sample_id),
+                )
+                try:
+                    db.execute(
+                        "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
+                        (mem_id, content),
+                    )
+                except Exception as exc:
+                    logger.debug("FTS index insert failed for %s (non-fatal): %s", mem_id, exc)
+
+                batch_items.append((mem_id, content, "sessions", [sample_id]))
+                session_map[sk] = mem_id
+
+            all_session_maps[sample_id] = session_map
+
+        # Fast batched multi-indexing (ColBERT, SPLADE, Vector, Chunks, KG)
+        populate_eval_memory_indexes_batch(db, batch_items)
+        db.commit()
+
+    return all_session_maps
+
+
 def ingest_conversation(
     db_path: Path, sample: dict
 ) -> dict[str, str]:
-    """Write all sessions of one conversation as memory notes.
-
-    Returns mapping: session_key -> memory_id.
-    """
-    sample_id = sample["sample_id"]
-    conv = sample["conversation"]
-    session_keys = sorted(
-        [k for k in conv.keys()
-         if k.startswith("session_")
-         and not k.endswith("_date_time")
-         and not k.endswith("_observation")
-         and not k.endswith("_summary")],
-        key=lambda k: int(k.split("_")[1]),
-    )
-    session_map: dict[str, str] = {}
-    with open_db(db_path, pooled=False) as db:
-        for sk in session_keys:
-            turns = conv[sk]
-            if not isinstance(turns, list):
-                continue
-            mem_id = session_to_memory_id(sample_id, sk)
-            content = session_to_content(sample_id, sk, turns)
-            source_file = f"locomo/{sample_id}/{sk}"
-            db.execute(
-                """INSERT OR REPLACE INTO memories
-                   (id, content, source_file, tags, created_at, updated_at,
-                    observed_at, pinned, importance, category, repo_id,
-                    access_count, success_score, fitness_score, tenant_id)
-                   VALUES (?, ?, ?, '[]', ?, ?, ?, 0, 3, 'sessions', ?, 1, 0.0, 1.0, 'locomo')""",
-                (mem_id, content, source_file,
-                 sample_id, sample_id, sample_id, sample_id),
-            )
-            try:
-                db.execute(
-                    "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
-                    (mem_id, content),
-                )
-            except Exception as exc:
-                logger.debug("FTS index insert failed for %s (non-fatal): %s", mem_id, exc)
-            populate_eval_memory_indexes(db, mem_id, content, category="sessions")
-            session_map[sk] = mem_id
-
-        db.commit()
-    return session_map
+    """Compatibility wrapper for single conversation ingestion."""
+    maps = ingest_all_conversations(db_path, [sample])
+    return maps.get(sample["sample_id"], {})
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +238,8 @@ def evaluate(
     conversation_filter: str | None = None,
     k_values: list[int] | None = None,
     output_path: Path | None = None,
+    use_cache_db: bool = True,
+    rebuild: bool = False,
 ) -> dict:
     """Run the full LoCoMo evaluation.
 
@@ -215,6 +248,8 @@ def evaluate(
         conversation_filter: Only evaluate one conversation (by sample_id).
         k_values: Which k values to measure recall@k at.
         output_path: Where to write results JSON.
+        use_cache_db: If True and full dataset, reuse cached prebuilt DB.
+        rebuild: Force rebuild DB even if cached.
 
     Returns:
         Results dict with per-category and overall metrics.
@@ -227,22 +262,44 @@ def evaluate(
         if not data:
             raise ValueError(f"Conversation '{conversation_filter}' not found")
 
-    # Set up fresh DB
-    tmpdir = Path(tempfile.mkdtemp(prefix="locomo_eval_"))
-    db_path = tmpdir / "memory.db"
-    os.environ["MEMORY_DB_PATH"] = str(db_path)
-    bootstrap_temp_db_clean(db_path)
-
-    # Ingest all conversations
-    all_session_maps: dict[str, dict[str, str]] = {}
     wall_start = time.time()
-    for sample in data:
-        sid = sample["sample_id"]
-        all_session_maps[sid] = ingest_conversation(db_path, sample)
-    ingest_time = time.time() - wall_start
-    total_sessions = sum(len(m) for m in all_session_maps.values())
-    print(f"Ingested {total_sessions} sessions from {len(data)} conversations "
-          f"in {ingest_time:.1f}s")
+    cleanup_tmp = False
+
+    # Check for cached full DB
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_db_path = CACHE_DIR / "locomo_full.db"
+
+    if use_cache_db and not conversation_filter and cache_db_path.exists() and not rebuild:
+        db_path = cache_db_path
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        print(f"Using cached LoCoMo database: {db_path}")
+        ingest_time = 0.0
+        total_sessions = sum(
+            len([k for k in s["conversation"].keys() if k.startswith("session_") and "_" not in k[8:]])
+            for s in data
+        )
+    else:
+        if use_cache_db and not conversation_filter:
+            db_path = cache_db_path
+            if db_path.exists():
+                try:
+                    db_path.unlink()
+                except OSError:
+                    pass
+        else:
+            tmpdir = Path(tempfile.mkdtemp(prefix="locomo_eval_"))
+            db_path = tmpdir / "memory.db"
+            cleanup_tmp = True
+
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        bootstrap_temp_db_clean(db_path)
+
+        ingest_start = time.time()
+        all_session_maps = ingest_all_conversations(db_path, data)
+        ingest_time = time.time() - ingest_start
+        total_sessions = sum(len(m) for m in all_session_maps.values())
+        print(f"Ingested {total_sessions} sessions from {len(data)} conversations "
+              f"in {ingest_time:.1f}s")
 
     # Collect all questions
     questions = []
@@ -287,12 +344,12 @@ def evaluate(
     per_question: list[dict] = []
 
     for i, q in enumerate(questions):
-        if (i + 1) % 100 == 0:
+        if (i + 1) % 25 == 0 or i == 0 or i == len(questions) - 1:
             _elapsed = time.time() - wall_start
             _rate = (i + 1) / _elapsed if _elapsed > 0 else 0
             print(f"  [{i+1}/{len(questions)}] {_elapsed:.0f}s elapsed, {_rate:.1f} q/s")
 
-        # H6 fix: clear search cache between questions
+        # Clear search cache between questions to prevent leakage
         if hasattr(memory_mcp, "_search_cache"):
             memory_mcp._search_cache.clear()
 
@@ -301,28 +358,13 @@ def evaluate(
         latency_ms = (time.time() - q_start) * 1000
         latencies.append(latency_ms)
 
-        # Map retrieved memory IDs back to session numbers
-        retrieved_session_nums = set()
-        for mid in retrieved:
-            # ID format: locomo/{sample_id}/session_{n}
-            parts = mid.split("/")
-            if len(parts) == 3 and parts[0] == "locomo":
-                sess_key = parts[2]  # e.g. "session_3"
-                sess_num = sess_key.split("_")[1]
-                retrieved_session_nums.add(sess_num)
+        # Exact gold memory IDs for this specific conversation
+        gold_mem_ids = {session_to_memory_id(q["sample_id"], f"session_{n}") for n in q["gold_sessions"]}
 
-        # Check hits at each k
+        # Check hits at each k against exact gold memory IDs
         for k in k_vals:
-            top_k = retrieved[:k]
-            top_k_sessions = set()
-            for mid in top_k:
-                parts = mid.split("/")
-                if len(parts) == 3 and parts[0] == "locomo":
-                    sess_key = parts[2]
-                    sess_num = sess_key.split("_")[1]
-                    top_k_sessions.add(sess_num)
-
-            hit = bool(top_k_sessions & q["gold_sessions"])
+            top_k_ids = set(retrieved[:k])
+            hit = bool(top_k_ids & gold_mem_ids)
             cat = q["category"]
 
             metrics[k][cat]["total"] += 1
@@ -334,8 +376,9 @@ def evaluate(
         per_question.append({
             "question": q["question"][:100],
             "category": q["category"],
-            "gold_sessions": sorted(q["gold_sessions"]),
-            "retrieved_sessions_top5": sorted(retrieved_session_nums)[:10],
+            "sample_id": q["sample_id"],
+            "gold_mem_ids": sorted(gold_mem_ids),
+            "retrieved_top5": retrieved[:5],
         })
 
     # Compute recall@k
@@ -357,8 +400,6 @@ def evaluate(
         "max": round(latencies[-1], 2),
     }
 
-    wall_time = time.time() - wall_start
-
     results = {
         "n_questions_total": len(questions),
         "n_conversations": len(data),
@@ -373,6 +414,7 @@ def evaluate(
             "k_values": k_vals,
             "max_questions": max_questions,
             "conversation_filter": conversation_filter,
+            "cached_db": not cleanup_tmp,
         },
     }
 
@@ -405,7 +447,8 @@ def evaluate(
                       f"({d['session_hits']}/{d['total']})")
 
     # Cleanup
-    shutil.rmtree(tmpdir, ignore_errors=True)
+    if cleanup_tmp:
+        shutil.rmtree(db_path.parent, ignore_errors=True)
 
     return results
 
@@ -426,6 +469,10 @@ if __name__ == "__main__":
                         help="k values for recall@k (default: 1 5 10 20)")
     parser.add_argument("--output", type=str, default=None,
                         help="Output JSON path")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="Rebuild DB index from scratch")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="Do not use cached prebuilt DB")
     args = parser.parse_args()
 
     out = Path(args.output) if args.output else None
@@ -434,4 +481,6 @@ if __name__ == "__main__":
         conversation_filter=args.conversation,
         k_values=args.k,
         output_path=out,
+        use_cache_db=not args.no_cache,
+        rebuild=args.rebuild,
     )

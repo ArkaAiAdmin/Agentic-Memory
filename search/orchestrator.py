@@ -1211,8 +1211,10 @@ def search_memories(
 
         # category filter — appended to repo_filter so FTS and embedding
         # paths both inherit it. The value must go into _tag_filter_params
-        # to match the ? placeholder in repo_filter.
-        if category:
+        if category and category.lower() == "all":
+            # Explicitly search across all categories including sessions
+            pass
+        elif category:
             if not re.match(r'^[A-Za-z0-9_-]+$', category):
                 category = "lessons"
             repo_filter = f"{repo_filter} AND m.category = ?"

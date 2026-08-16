@@ -341,11 +341,12 @@ def _text_multi_hop_traversal(
                     pass
 
         if extra_mids:
+            cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
             new_rows = _fetch_rows_by_ids(
                 db, extra_mids[:limit],
                 table="memories",
                 extra_filter=repo_filter,
-                extra_params=(category,) if category else (),
+                extra_params=cat_params,
             )
             # P0: _fetch_rows_by_ids returns the raw 12-column layout
             # (id, content, source_file, tags, created_at, fitness_score,
@@ -520,10 +521,11 @@ def _phase_ten_kg_boost(
         # *below* the genuine result set (supplementary) and ordered by edge
         # weight, so a weak direct match is never displaced by an arbitrary
         # synthetic rank.  base_rank is the best (smallest) genuine rank.
+        cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
         new_rows = _fetch_rows_by_ids(
             db, new_memory_ids,
             extra_filter=repo_filter,
-            extra_params=(category,) if category else (),
+            extra_params=cat_params,
         )
         base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         added = 0
@@ -772,10 +774,11 @@ def _phase_ten_multi_hop_kg(
         # below the genuine result set (and below phase-9 KG boosts),
         # ordered by their hop/edge score — never via an arbitrary synthetic
         # rank, so a weak direct match is never displaced.
+        cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
         new_rows = _fetch_rows_by_ids(
             db, [m[0] for m in new_memory_scores],
             extra_filter=repo_filter,
-            extra_params=(category,) if category else (),
+            extra_params=cat_params,
         )
         base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         for mid, score in new_memory_scores:

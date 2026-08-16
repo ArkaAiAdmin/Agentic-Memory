@@ -235,7 +235,8 @@ def _hybrid_fusion(
         for hit_id in sem_ranked + chunk_fts_ranked + splade_ranked:
             if hit_id and hit_id not in existing_ids and hit_id not in new_hit_ids:
                 new_hit_ids.append(hit_id)
-        new_hit_rows = _fetch_rows_by_ids(db, new_hit_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
+        cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
+        new_hit_rows = _fetch_rows_by_ids(db, new_hit_ids, extra_filter=repo_filter, extra_params=cat_params)
         semantic_only = []
         for hit_id in new_hit_ids:
             row = new_hit_rows.get(hit_id)
@@ -331,8 +332,8 @@ def _enhance_with_chunks(
         if not merged_chunks:
             return results
         seen_ids = {r[0] for r in results}
-        chunk_parent_ids = [p_id for p_id, _, _, _, _ in merged_chunks if p_id not in seen_ids]
-        chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
+        chunk_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
+        chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter, extra_params=chunk_params)
         # P0-6 fix (2026-06-23): batch the valid_to check instead of
         # one query per chunk hit. Previously we ran a separate
         # ``SELECT valid_to FROM memories WHERE id = ?`` inside the
