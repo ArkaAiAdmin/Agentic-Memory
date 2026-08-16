@@ -396,6 +396,7 @@ def mem_dir(tmp_dir):
     """Create a memory dir that looks like a project memory directory."""
     d = tmp_dir / "memory"
     d.mkdir(parents=True, exist_ok=True)
+    bootstrap_temp_db_clean(d / "memory.db")
     return d
 
 

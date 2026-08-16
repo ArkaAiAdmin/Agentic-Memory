@@ -159,6 +159,12 @@ def _has_table(db: AnyConnection, name: str) -> bool:
 # ===========================================================================
 
 
+try:
+    from eval._fixtures import bootstrap_temp_db_clean
+except ImportError:
+    from _fixtures import bootstrap_temp_db_clean
+
+
 class SavePipelineFixture:
     """Sets up a temp directory with a working schema and patches
     save_memory to write there instead of production.
@@ -169,9 +175,7 @@ class SavePipelineFixture:
         self.mem_dir = self.tmpdir / "memory"
         self.mem_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.mem_dir / "memory.db"
-        db = _make_db(self.db_path)
-        _init_schema(db)
-        db.close()
+        bootstrap_temp_db_clean(self.db_path)
         self._patches = []
         self._apply_patches()
         self._cleanup_ids = []
@@ -605,11 +609,13 @@ class TestSaveSubsystemFTS5(SavePipelineFixture, unittest.TestCase):
 
 def _embedding_model_available():
     """Check if an embedding model is available (best-effort)."""
+    if os.environ.get("MEMORY_EMBEDDING_DISABLED") == "1":
+        return False
     try:
         from infra.embedding_search import get_embedding_search
 
         es = get_embedding_search()
-        return es.model is not None
+        return es.model is not None and not getattr(es, "_model_load_failed", False) and not isinstance(es.model, unittest.mock.MagicMock)
     except Exception:
         return False
 
@@ -861,22 +867,35 @@ class TestSaveSubsystemSemanticBacklinks(SavePipelineFixture, unittest.TestCase)
     """Auto-semantic backlinks via KG edges."""
 
     def test_semantic_backlinks_created_when_multiple_notes(self):
-        if not _embedding_model_available():
-            self.skipTest("Semantic backlinks require embedding model")
-        r1, s1 = self.save(content="Python for machine learning and AI")
-        r2, s2 = self.save(content="Deep learning with Python and TensorFlow")
-        with open_db(self.db_path) as db:
-            edges = db.execute(
-                "SELECT relation, weight FROM kg_edges WHERE relation='semantically_related'"
-            ).fetchall()
+        r1, s1 = self.save(content="Python for machine learning and AI", defer_expensive=False)
+        from infra._lazy_imports import get_embedding_search
+        es = get_embedding_search()
+        with patch.object(es, "search_by_vector", return_value=[{"id": f"lessons/{s1}", "score": 0.85}]), \
+             patch.object(es, "model", object()), \
+             patch.object(es, "_model_load_failed", False):
+            # Insert fake embedding row so _auto_semantic_backlinks proceeds
+            import numpy as np
+            vec = np.ones(384, dtype=np.float32).tobytes()
+            with open_db(self.db_path) as db:
+                db.execute("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, updated_at, content_hash, model_revision, dim) VALUES (?, ?, ?, ?, ?, ?)",
+                           (f"lessons/{s1}", vec, "2026-08-16T19:00:00Z", "hash1", "v1", 384))
+            r2, s2 = self.save(content="Deep learning with Python and TensorFlow", defer_expensive=False)
+            with open_db(self.db_path) as db:
+                db.execute("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, updated_at, content_hash, model_revision, dim) VALUES (?, ?, ?, ?, ?, ?)",
+                           (f"lessons/{s2}", vec, "2026-08-16T19:00:00Z", "hash2", "v1", 384))
+                from save.backlinks import _auto_semantic_backlinks
+                _auto_semantic_backlinks(db, f"lessons/{s2}", "Deep learning", db_path=str(self.db_path))
+                db.commit()
+            with open_db(self.db_path) as db:
+                edges = db.execute(
+                    "SELECT relation, weight FROM kg_edges WHERE relation='semantically_related'"
+                ).fetchall()
         self.assertGreaterEqual(
             len(edges), 1, f"Expected semantically_related edges, got {len(edges)}"
         )
 
     def test_semantic_backlinks_not_created_for_single_note(self):
-        if not _embedding_model_available():
-            self.skipTest("Semantic backlinks require embedding model")
-        result, slug = self.save(content="Just one note.")
+        result, slug = self.save(content="Just one note.", defer_expensive=False)
         with open_db(self.db_path) as db:
             edges = db.execute(
                 "SELECT 1 FROM kg_edges WHERE relation='semantically_related'"

@@ -31,13 +31,10 @@ from fact import (
 
 
 class KGTestBase(unittest.TestCase):
-    """Base class: creates a temp SQLite DB with KG schema for each test."""
+    """Base class: creates an in-memory SQLite DB with KG schema for each test."""
 
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
-        self.db_path = Path(self.tmpdir) / "test_kg.db"
-        self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn = sqlite3.connect(":memory:")
         ensure_kg_schema(self.conn)
         ensure_kg_crdt_schema(self.conn)
         ensure_facts_schema(self.conn)
@@ -45,9 +42,6 @@ class KGTestBase(unittest.TestCase):
 
     def tearDown(self):
         self.conn.close()
-        import shutil
-
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
 # ─────────────────────────────────────────────────────────────────────

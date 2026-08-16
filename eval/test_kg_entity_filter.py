@@ -20,24 +20,17 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 
-def _load_backfill():
-    """Load backfill_all module fresh."""
-    import importlib.util as _importlib_util
+_cached_bf = None
 
-    spec = _importlib_util.spec_from_file_location(
-        "backfill_all", str(REPO / "backfill_all.py")
-    )
-    if spec is None:
-        raise RuntimeError(
-            f"Could not load backfill_all.py from {REPO / 'backfill_all.py'}"
-        )
-    mod = _importlib_util.module_from_spec(spec)
-    sys.modules["backfill_all_test"] = mod
-    loader = spec.loader
-    if loader is None:
-        raise RuntimeError("spec.loader is None — cannot exec_module")
-    loader.exec_module(mod)
-    return mod
+
+def _load_backfill():
+    """Load backfill_all module once and cache."""
+    global _cached_bf
+    if _cached_bf is not None:
+        return _cached_bf
+    import backfill_all
+    _cached_bf = backfill_all
+    return _cached_bf
 
 
 class TestIsStopword(unittest.TestCase):

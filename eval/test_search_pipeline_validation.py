@@ -59,54 +59,7 @@ def _make_tmp_db():
     """Create a temp dir with a fresh memory.db and return (tmpdir, db_path)."""
     tmpdir = tempfile.mkdtemp(prefix="memtest_")
     db_path = Path(tmpdir) / "memory.db"
-    # Bootstrap full schema via rebuild_index
-    rebuild_index(Path(tmpdir), db_path)
-    # Add tables that rebuild_index doesn't create
-    conn = sqlite3.connect(str(db_path))
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS kg_entities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            entity_type TEXT,
-            mentions INTEGER DEFAULT 1,
-            created_at TEXT,
-            updated_at TEXT,
-            UNIQUE(name, entity_type)
-        );
-        CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name);
-        CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(entity_type);
-        CREATE TABLE IF NOT EXISTS kg_edges (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_id INTEGER NOT NULL,
-            target_id INTEGER NOT NULL,
-            relation TEXT NOT NULL DEFAULT 'related_to',
-            weight REAL DEFAULT 1.0,
-            valid INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY (source_id) REFERENCES kg_entities(id) ON DELETE CASCADE,
-            FOREIGN KEY (target_id) REFERENCES kg_entities(id) ON DELETE CASCADE
-        );
-        CREATE TABLE IF NOT EXISTS kg_facts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_memory TEXT NOT NULL,
-            subject TEXT NOT NULL,
-            predicate TEXT NOT NULL,
-            object TEXT NOT NULL,
-            confidence REAL DEFAULT 0.5,
-            extracted_at TEXT DEFAULT (datetime('now')),
-            valid INTEGER DEFAULT 1
-        );
-        CREATE TABLE IF NOT EXISTS user_access_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            note_id TEXT NOT NULL,
-            access_ts REAL NOT NULL,
-            source TEXT NOT NULL DEFAULT 'search'
-        );
-        CREATE INDEX IF NOT EXISTS idx_user_access_log_note_id ON user_access_log(note_id);
-    """)
-    conn.commit()
-    conn.close()
+    bootstrap_temp_db_clean(db_path)
     return tmpdir, db_path
 
 

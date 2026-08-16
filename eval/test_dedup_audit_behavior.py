@@ -209,10 +209,8 @@ class TestDedupCacheBehavior(TestCase):
 
         params1 = json.dumps({"content": "dedup-f-1", "category": "lessons"})
         params2 = json.dumps({"content": "dedup-f-2", "category": "lessons"})
-        _call_tool_complete("memory_save", params1, "p1", self.env)
-        with patch("background.auto_save.time") as mock_time:
-            mock_time.time.side_effect = [1000.0, 1001.0]
-            mock_time.sleep = lambda s: None
+        with patch("background.auto_save._now_iso", side_effect=["2026-08-16T19:00:00+00:00", "2026-08-16T19:00:01+00:00"]):
+            _call_tool_complete("memory_save", params1, "p1", self.env)
             _call_tool_complete("memory_save", params2, "p2", self.env)
         files = list(self._sessions_dir().glob("auto-*-memory_save.md"))
         assert len(files) == 2, (
@@ -224,10 +222,8 @@ class TestDedupCacheBehavior(TestCase):
 
         params1 = json.dumps({"content": "dedup-g-1", "category": "lessons"})
         params2 = json.dumps({"content": "dedup-g-2", "category": "lessons"})
-        _call_tool_complete("memory_save", params1, "p1", self.env)
-        with patch("background.auto_save.time") as mock_time:
-            mock_time.time.side_effect = [1000.0, 1001.0]
-            mock_time.sleep = lambda s: None
+        with patch("background.auto_save._now_iso", side_effect=["2026-08-16T19:00:02+00:00", "2026-08-16T19:00:03+00:00"]):
+            _call_tool_complete("memory_save", params1, "p1", self.env)
             _call_tool_complete("memory_save", params2, "p2", self.env)
         c1 = _count_db_rows(self.db_path, "dedup-g-1")
         c2 = _count_db_rows(self.db_path, "dedup-g-2")

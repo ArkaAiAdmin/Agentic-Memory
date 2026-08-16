@@ -26,29 +26,45 @@ from search.orchestrator import search_memories
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _setup_test_env(tmpdir: str):
+def _setup_test_env(tmpdir: str) -> dict:
     """Redirect all DB paths to tmpdir and bootstrap all required tables."""
     tmp = Path(tmpdir)
     db_path = tmp / "memory.db"
-    _orig_memory_db_path = os.environ.get("MEMORY_DB_PATH")
+    state = {
+        "MEMORY_DB_PATH": os.environ.get("MEMORY_DB_PATH"),
+        "AGENTIC_MEMORY_DIR": os.environ.get("AGENTIC_MEMORY_DIR"),
+        "orig_resolve": save_pipeline.resolve_active_memory_dir,
+    }
     os.environ["MEMORY_DB_PATH"] = str(db_path)
+    os.environ["AGENTIC_MEMORY_DIR"] = str(tmp)
 
-    orig_resolve = save_pipeline.resolve_active_memory_dir
+    from eval._fixtures import bootstrap_temp_db_clean
+    bootstrap_temp_db_clean(db_path)
+
     save_pipeline.resolve_active_memory_dir = lambda **_: tmp
 
-    rebuild_index(tmp, db_path)
+    import infra.infrastructure as infra_mod
+    state["orig_global"] = getattr(infra_mod, "GLOBAL_MEM_DIR", None)
+    infra_mod.GLOBAL_MEM_DIR = tmp
 
-    return _orig_memory_db_path, orig_resolve
+    return state
 
 
-def _restore_test_env(orig_memory_db_path=None, orig_resolve=None) -> None:
-    """Restore original env var and module attribute."""
-    if orig_memory_db_path is not None:
-        os.environ["MEMORY_DB_PATH"] = orig_memory_db_path
-    else:
-        os.environ.pop("MEMORY_DB_PATH", None)
-    if orig_resolve is not None:
-        save_pipeline.resolve_active_memory_dir = orig_resolve
+def _restore_test_env(state: dict) -> None:
+    """Restore original env vars and module attributes."""
+    if not isinstance(state, dict):
+        return
+    for k in ("MEMORY_DB_PATH", "AGENTIC_MEMORY_DIR"):
+        v = state.get(k)
+        if v is not None:
+            os.environ[k] = v
+        else:
+            os.environ.pop(k, None)
+    if "orig_resolve" in state and state["orig_resolve"] is not None:
+        save_pipeline.resolve_active_memory_dir = state["orig_resolve"]
+    if "orig_global" in state and state["orig_global"] is not None:
+        import infra.infrastructure as infra_mod
+        infra_mod.GLOBAL_MEM_DIR = state["orig_global"]
 
 
 def _count_memories(db_path: Path) -> int:
@@ -59,14 +75,13 @@ def _count_memories(db_path: Path) -> int:
 def _table_exists(db_path: Path, name: str) -> bool:
     with open_db(db_path) as conn:
         row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-            (name,),
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
         ).fetchone()
-    return row[0] > 0
+        return row is not None
 
 
 # ---------------------------------------------------------------------------
-# Section 1: Category SQL Injection (the exploitable path)
+# Section 1: Orchestrator Category Filter — known vulnerability regression
 # ---------------------------------------------------------------------------
 
 class TestCategorySQLInjection:
@@ -74,11 +89,11 @@ class TestCategorySQLInjection:
 
     def setup_method(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
-        self._orig_db, self._orig_resolve = _setup_test_env(self.tmpdir)
+        self._env_state = _setup_test_env(self.tmpdir)
         self.db_path = Path(self.tmpdir) / "memory.db"
 
     def teardown_method(self) -> None:
-        _restore_test_env(self._orig_db, self._orig_resolve)
+        _restore_test_env(self._env_state)
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -156,11 +171,11 @@ class TestParameterizedSavePaths:
 
     def setup_method(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
-        self._orig_db, self._orig_resolve = _setup_test_env(self.tmpdir)
+        self._env_state = _setup_test_env(self.tmpdir)
         self.db_path = Path(self.tmpdir) / "memory.db"
 
     def teardown_method(self) -> None:
-        _restore_test_env(self._orig_db, self._orig_resolve)
+        _restore_test_env(self._env_state)
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -236,11 +251,11 @@ class TestFTS5Adversarial:
 
     def setup_method(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
-        self._orig_db, self._orig_resolve = _setup_test_env(self.tmpdir)
+        self._env_state = _setup_test_env(self.tmpdir)
         self.db_path = Path(self.tmpdir) / "memory.db"
 
     def teardown_method(self) -> None:
-        _restore_test_env(self._orig_db, self._orig_resolve)
+        _restore_test_env(self._env_state)
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -301,11 +316,11 @@ class TestDeleteNoteIdGate:
 
     def setup_method(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
-        self._orig_db, self._orig_resolve = _setup_test_env(self.tmpdir)
+        self._env_state = _setup_test_env(self.tmpdir)
         self.db_path = Path(self.tmpdir) / "memory.db"
 
     def teardown_method(self) -> None:
-        _restore_test_env(self._orig_db, self._orig_resolve)
+        _restore_test_env(self._env_state)
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -338,11 +353,11 @@ class TestBacklinkSafety:
 
     def setup_method(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
-        self._orig_db, self._orig_resolve = _setup_test_env(self.tmpdir)
+        self._env_state = _setup_test_env(self.tmpdir)
         self.db_path = Path(self.tmpdir) / "memory.db"
 
     def teardown_method(self) -> None:
-        _restore_test_env(self._orig_db, self._orig_resolve)
+        _restore_test_env(self._env_state)
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -374,11 +389,11 @@ class TestCrossCuttingSafety:
 
     def setup_method(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
-        self._orig_db, self._orig_resolve = _setup_test_env(self.tmpdir)
+        self._env_state = _setup_test_env(self.tmpdir)
         self.db_path = Path(self.tmpdir) / "memory.db"
 
     def teardown_method(self) -> None:
-        _restore_test_env(self._orig_db, self._orig_resolve)
+        _restore_test_env(self._env_state)
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 

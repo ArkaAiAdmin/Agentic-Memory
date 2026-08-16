@@ -30,12 +30,18 @@ class TestPipelineCoverageSurface:
         handler = MAINTENANCE_HANDLERS[MaintenanceOp.PIPELINE_COVERAGE]
         assert callable(handler)
 
-    def test_handler_runs_and_returns_output(self):
+    def test_handler_runs_and_returns_output(self, monkeypatch):
+        import subprocess
+        fake = subprocess.CompletedProcess(args=["dummy"], returncode=0, stdout="cron_pipeline_health ok\n", stderr="")
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake)
         out = _run_pipeline_health(json_output=False)
         assert isinstance(out, str)
-        assert "exit_code=" in out
+        assert "exit_code=0" in out
 
-    def test_handler_ignores_unknown_kwargs(self):
+    def test_handler_ignores_unknown_kwargs(self, monkeypatch):
+        import subprocess
+        fake = subprocess.CompletedProcess(args=["dummy"], returncode=0, stdout="cron_pipeline_health ok\n", stderr="")
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake)
         handler = MAINTENANCE_HANDLERS[MaintenanceOp.PIPELINE_COVERAGE]
         # unknown kwargs must not raise
         result = handler(not_a_real_kwarg="ignored")

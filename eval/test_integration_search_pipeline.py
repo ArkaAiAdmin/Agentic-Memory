@@ -145,7 +145,10 @@ def _ensure_fts5(conn):
             VALUES (new.rowid, new.content, new.tags);
         END
     """)
-    conn.commit()
+try:
+    from eval._fixtures import bootstrap_temp_db_clean
+except ImportError:
+    from _fixtures import bootstrap_temp_db_clean
 
 
 @pytest.fixture
@@ -155,13 +158,7 @@ def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr("memory_common.GLOBAL_MEM_DIR", mem_dir)
     monkeypatch.setattr("infrastructure.GLOBAL_MEM_DIR", mem_dir)
     db_path = mem_dir / "memory.db"
-    conn = connection_pool.get(str(db_path), timeout=30.0)
-    run_db_migrations(conn)
-    # FTS5 table + triggers already created by run_db_migrations -> run_schema_setup.
-    # Do NOT call _ensure_fts5() here — it replaces production triggers with
-    # broken ones that omit the 'id' column, causing the JOIN in _fts_search
-    # (m.id = fts.id) to always return 0 rows.
-    safe_close_db(conn)
+    bootstrap_temp_db_clean(db_path)
     return db_path
 
 

@@ -56,6 +56,7 @@ def setUpModule():
     _MODULE_DB = _MODULE_TMPDIR / "test.db"
     _fixtures.bootstrap_temp_db_clean(_MODULE_DB)
     os.environ["MEMORY_DB_PATH"] = str(_MODULE_DB)
+    os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = "0"
     (_MODULE_TMPDIR / "memory").mkdir()
     shutil.copy2(str(_MODULE_DB), str(_MODULE_TMPDIR / "memory" / "memory.db"))
     import sys as _sys
@@ -69,6 +70,8 @@ def tearDownModule():
     global _MODULE_TMPDIR, _MODULE_DB, _SAVED_CWD
     if "MEMORY_DB_PATH" in os.environ:
         del os.environ["MEMORY_DB_PATH"]
+    if "MEMORY_WRITE_JOURNAL_ENABLED" in os.environ:
+        del os.environ["MEMORY_WRITE_JOURNAL_ENABLED"]
     import sys as _sys
 
     setattr(_sys.modules[__name__], "PROD_DB", _ORIGINAL_PROD_DB)

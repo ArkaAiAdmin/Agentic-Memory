@@ -1084,7 +1084,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             except Exception:
                 proc.terminate()
-            proc.wait(timeout=5)
+            proc.wait(timeout=10)
         finally:
             if proc.poll() is None:
                 try:

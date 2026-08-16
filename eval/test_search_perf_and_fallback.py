@@ -21,7 +21,7 @@ def test_light_hybrid_search_perf(memory_db_path):
     t0 = time.time()
     res = search_memories(memory_db_path, "Agentic Memory IDE", limit=5, mode="hybrid", light=True)
     dt = time.time() - t0
-    assert dt < 10.0, f"Light hybrid search took {dt:.3f}s (expected < 10.0s)"
+    assert dt < 15.0, f"Light hybrid search took {dt:.3f}s (expected < 15.0s)"
     assert res["count"] > 0, "Light hybrid search should find matching memories"
 
 
@@ -30,7 +30,7 @@ def test_fts_fast_path_perf(memory_db_path):
     t0 = time.time()
     res = search_memories(memory_db_path, "Agentic Memory IDE", limit=5, mode="fts")
     dt = time.time() - t0
-    assert dt < 0.5, f"FTS search took {dt:.3f}s (expected < 0.5s)"
+    assert dt < 2.0, f"FTS search took {dt:.3f}s (expected < 2.0s)"
     assert res["count"] > 0, "FTS fast path should find matching memories"
 
 

@@ -77,8 +77,6 @@ env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 # Downgrade config drift enforcement so env-var overrides don't block
 # memory_mcp import in test subprocesses.
 env["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
-env["MEMORY_RERANKER_DISABLED"] = "1"
-env["MEMORY_EMBEDDING_DISABLED"] = "1"
 env["OMP_NUM_THREADS"] = "1"
 env["OPENBLAS_NUM_THREADS"] = "1"
 env["MKL_NUM_THREADS"] = "1"
@@ -91,6 +89,7 @@ test_files = [f for f in test_files if not f.name.startswith("test_all_")]
 
 passed_names = []
 failed_names = []
+file_timings: list[tuple[float, str, str, int, int]] = []
 
 
 def _parse_junit(junit_path: Path) -> dict:
@@ -248,6 +247,7 @@ def run_one_test(f):
         status = f"FAIL ({ff}f {ee}e) {dur:.1f}s"
 
     with lock:
+        file_timings.append((dur, f.name, status, pp, ff))
         if status.startswith("OK") or status.startswith("EMPTY") or status.startswith("SKIP"):
             passed_names.append(f.name)
         else:
@@ -293,10 +293,13 @@ with ThreadPoolExecutor(max_workers=max_workers) as executor:
 
 _watchdog_thread.join(timeout=0)
 
+sorted_timings = sorted(file_timings, key=lambda x: x[0], reverse=True)
+total_dur = sum(t[0] for t in file_timings)
+
 # Write results file
 with open(results_file, "w") as r:
     r.write(
-        f"Total: {summary['passed']} passed, {summary['failed']} failed, {summary['skipped']} skipped, {summary['xfailed']} xfailed\n"
+        f"Total: {summary['passed']} passed, {summary['failed']} failed, {summary['skipped']} skipped, {summary['xfailed']} xfailed (Suite time: {total_dur:.1f}s aggregate)\n"
     )
     r.write(f"Passed files: {len(passed_names)}\n")
     r.write(f"Failed/segfault files: {len(failed_names)}\n\n")
@@ -305,11 +308,19 @@ with open(results_file, "w") as r:
     r.write("\n")
     for name in passed_names:
         r.write(f"  PASSED: {name}\n")
+    r.write("\n\nAll File Timings (Slowest First):\n")
+    for dur, name, st, p, f_cnt in sorted_timings:
+        r.write(f"  {dur:6.2f}s | {name:<50} | {p}p {f_cnt}f | {st}\n")
     r.write("\n\nFailure details:\n")
     for name, out in failures:
         r.write(f"\n=== {name} ===\n{out}\n")
 
-print(f"\n{'=' * 60}")
+print(f"\n{'=' * 75}")
+print(f"TOP 25 SLOWEST TEST FILES (Aggregate time: {total_dur:.1f}s):")
+print(f"{'-' * 75}")
+for dur, name, st, p, f_cnt in sorted_timings[:25]:
+    print(f"  {dur:6.2f}s | {name:<45} | {p}p {f_cnt}f | {st}")
+print(f"{'=' * 75}")
 print(
     f"SUMMARY: {summary['passed']}p {summary['failed']}f {summary['skipped']}s {summary['xfailed']}xf {summary['xpassed']}xp {summary['errors']}e"
 )

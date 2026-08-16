@@ -26,6 +26,7 @@ def _reset_state(monkeypatch):
     monkeypatch.setenv("MEMORY_SPLADE_RETRY", "1")
     monkeypatch.setenv("MEMORY_SPLADE_FALLBACK", "1")
     monkeypatch.setenv("MEMORY_SPLADE_MAX_FAILURES", "2")
+    monkeypatch.setenv("MEMORY_TEST_SPLADE", "1")
     yield
     # restore
     monkeypatch.setattr(se, "_splade_load_attempted", False)

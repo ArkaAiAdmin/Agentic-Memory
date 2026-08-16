@@ -21,10 +21,6 @@ setattr(kg, "KG_ENABLED", True)
 
 @pytest.fixture(autouse=True)
 def reset_kg_module():
-    """Re-import knowledge_graph to pick up any reload() from prior tests."""
-    global kg
-    import knowledge_graph
-    kg = importlib.reload(knowledge_graph)
     setattr(kg, "KG_ENABLED", True)
     yield
     kg._clear_kg_enabled_cache()
