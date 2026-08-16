@@ -265,7 +265,7 @@ The 5s is hidden inside the tool execution wall time (LLM round-trip is usually 
 
 1. **Session bootstrap skipped / silent**: hook failed silently. Check `~/.config/agentic-memory/hook-errors.jsonl` (logged by the ecc-hooks plugin).
 2. **No proactive context on tool calls**: the PreToolUse hook timed out (>3s) or `MEMORY_KNOWLEDGE_GRAPH` env var unset.
-3. **Auto-save missing rows**: `node scripts/hooks/memory-auto-save.cjs` failed. Run `memory_maintenance(operation="auto_save_status")` to verify health.
+3. **Auto-save missing rows**: `node scripts/hooks/memory-auto-save.cjs` failed. Run `memory_advanced(operation="auto_save_status")` to verify health.
 4. **STDOUT not reaching the agent**: the hooks must print to STDOUT, not STDERR. (Was a 2-day debugging bug; see `agentic-memory-features-on-wiring-fixed` memory.)
 5. **MCP server not registered**: `~/.opencode/mcp-configs/mcp-servers.json` missing the `agentic-memory` entry.
 

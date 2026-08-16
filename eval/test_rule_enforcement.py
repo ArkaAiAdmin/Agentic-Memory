@@ -558,7 +558,7 @@ def test_rule21_no_ritual_maintenance():
     """Rule 21: maintenance must not be a post-task ritual.
 
     Cross-checks that Session Protocol #4 (step 4 of the session table)
-    carries the same qualifier as Rule 21 — call memory_maintenance only
+    carries the same qualifier as Rule 21 — call memory_advanced only
     when cron is down or immediate results are required — so the two
     sections of AGENTS.md do not contradict each other.
     """
@@ -572,7 +572,7 @@ def test_rule21_no_ritual_maintenance():
     # Session Protocol step 4 (the maintenance row) must be qualified the
     # same way, not an unconditional "after every op" instruction.
     step4 = re.search(
-        r"\| 4 \|.*memory_maintenance\(operation=\"auto_save_status\"\)[^\n]*\|",
+        r"\| 4 \|.*memory_advanced\(operation=\"auto_save_status\"\)[^\n]*\|",
         agents_md,
     )
     assert step4 is not None, "Rule 21: Session Protocol #4 row not found in AGENTS.md"

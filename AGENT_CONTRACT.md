@@ -57,7 +57,7 @@ The reinforce step runs automatically at session end — recalled memories get o
 
 ## 5. Maintenance Is Automated
 
-Indexing, compaction, dedup, contradiction detection, skill extraction, semantic clustering, and background workers all run on schedules. Do not call `memory_maintenance`, `memory_organize`, or individual admin tools unless cron is down or you need immediate results.
+Indexing, compaction, dedup, contradiction detection, skill extraction, semantic clustering, and background workers all run on schedules. Do not call `memory_advanced`, `memory_organize`, or individual admin tools unless cron is down or you need immediate results.
 
 ---
 

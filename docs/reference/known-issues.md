@@ -23,7 +23,7 @@ The field-level CRDT (`crdt_field.py`, migration 013) correctly merges per-field
 
 The saga wraps the DB upsert and file write, but post-save hooks (e.g., `_recalculate_fitness_scores`, `_record_last_accessed`) run after the saga commits. If a post-save hook fails, the memory is already persisted but derived state may be inconsistent.
 
-**Mitigation**: The hooks are idempotent and re-run on the next save or cron cycle. The `memory_maintenance(operation="rebuild")` command can fully recompute derived state.
+**Mitigation**: The hooks are idempotent and re-run on the next save or cron cycle. The `memory_advanced(operation="rebuild")` command can fully recompute derived state.
 
 ## Neural Forget Curve Is Actually Jaccard
 

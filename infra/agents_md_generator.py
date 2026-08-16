@@ -307,8 +307,8 @@ def gen_hard_rule_6(data: dict[str, Any]) -> str:
     tc = data["tool_counts"]
     return (
         f"**{tc['core']} CORE tools are user-facing**; "
-        f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED are operations behind the single "
-        f"`memory_maintenance` router. Don't add CORE tools without checking "
+        f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED are operations behind the "
+        f"`memory_maintenance` router (agent-facing entry: `memory_advanced`). Don't add CORE tools without checking "
         f"`docs/MCP_SURFACE.md` first."
     )
 

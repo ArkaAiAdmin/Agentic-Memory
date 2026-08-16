@@ -29,7 +29,7 @@ VOLATILE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\d+\+?\s+(test files|test functions|tests|cron jobs|scheduled jobs|lifecycle hooks|MCP modules|CORE verbs|CORE tools)"),
     re.compile(r"~\d+k\+\?\s*(LOC|test LOC)"),
     re.compile(r"Schema v\d+.*\d+\+? tables"),
-    re.compile(r"\b(370|5578|5112|148497|138785)\b"),
+    re.compile(r"\b(370|4431|5580|148569|139096)\b"),
 ]
 
 LINK_PATTERN = re.compile(r"file://([^\s\)]+)")

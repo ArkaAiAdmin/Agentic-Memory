@@ -190,10 +190,10 @@ def memory_search(
     Args:
         query: Natural-language search query (required).
         category: Filter to a category (e.g. "lessons", "decisions").
-        limit: Max results (default 10).
+        limit: Max results (default 5).
         include_global: Include global memories (default True for default agent,
             scoped for non-default agents).
-        mode: "hybrid" (default), "semantic", "fts", "facts", "graph".
+        mode: "fts" (default), "hybrid", "semantic", "facts", "graph".
         belief_status: Filter KG facts by belief status (active, retracted, deprecated, unconfirmed).
         epistemic_source: Filter KG facts by epistemic source (agent, auto_save, hook, import, cron).
         fact_type: Filter KG facts by type (observation, agent_inference, external_stated, hypothesis, derived).

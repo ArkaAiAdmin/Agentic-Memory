@@ -35,11 +35,11 @@ Always call it by name from the MCP surface. Do not call `save_pipeline.save_mem
 
 - `memory_search(query="...")` is the **default for ALL memory lookups**.
 - Do NOT call `memory_maintenance` for search. It is admin-only.
-- Default mode is `hybrid` (FTS5 + vector + KG fusion). Only change mode if hybrid returns bad results.
+- Default mode is `fts` (SQLite FTS5 keyword search). Use `mode="hybrid"` for FTS5 + vector + KG fusion, or `mode="semantic"` when keywords miss.
 
-### When to use memory_maintenance
+### When to use memory_advanced
 
-**Never call memory_maintenance as a default post-task ritual.** The system maintains itself via cron.
+**Never call memory_advanced as a default post-task ritual.** The system maintains itself via cron.
 Only call it when:
 - You need a specific admin operation NOT available as a CORE verb
 - You are debugging and need diagnostics
@@ -69,7 +69,7 @@ Only call it when:
 ### When NOT to call a tool
 
 - Do NOT call `memory_organize` unless cron is **not running** or you need an immediate result.
-- Do NOT call `memory_maintenance` for routine cleanup.
+- Do NOT call `memory_advanced` for routine cleanup (cron owns it).
 - Do NOT call `save_pipeline.save_memory` directly — use the MCP verb.
 - Do NOT call Python hooks directly — use the MCP surface.
 
@@ -86,14 +86,14 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - **Contradiction merge:** LIVE — `memory_resolve_contradiction(strategy="merge")` delegates to resolver (G3).
 - **Belief review:** LIVE — `cron_review_beliefs` queues stale beliefs; `memory_review_beliefs` reads queue (G4).
 
-**Surface: 25 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 25 CORE tools + `memory_advanced` escape hatch**
 
 - CORE tools: visible directly — call them by name.
-- `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
-- `memory_advanced(operation="...", **kwargs)`: alias for `memory_maintenance`; interchangeable.
+- `memory_advanced(operation="...", **kwargs)`: agent-facing escape hatch for all ADMIN/diagnostic tools (passes through to the `memory_maintenance` router).
+- `memory_maintenance`: admin router — CLI-only, not on the agent MCP surface.
 
-> **Important:** 92 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
-> router. Calling `memory_maintenance` with an operation name is the supported path. The 3 DEPRECATED tools
+> **Important:** 92 ADMIN + 3 DEPRECATED tools are not removed — agents reach them via `memory_advanced`,
+> which routes to the `memory_maintenance` router. The 3 DEPRECATED tools
 > are routed via their replacement verbs and also tracked for audit.
 >
 > **Self-editing is wired-and-visible.** The three skill tools — `memory_list_skills`, `memory_extract_skills`,
@@ -129,7 +129,7 @@ What do you want to do?
 ├─ Start a session?          → memory_session_start(query)
 ├─ Check system health?      → memory_health_check
 └─ Advanced / power user?    → memory_advanced(operation="any_admin_operation", **kwargs)
-                              or memory_maintenance(operation="any_admin_operation", **kwargs)
+                              (passes through to the memory_maintenance router, CLI-only)
 ```
 
 ---
@@ -505,7 +505,7 @@ bash cron/install_crontab.sh --show
 process-singleton flocks are on by default. Set `MEMORY_CRON_NO_FLOCK=1`
 (or pass `cron/scheduler.py --no-flock`) to skip them. Overlapping runs
 then become **observable + recoverable** via the `pipeline_coverage`
-health check (`cron_pipeline_health.py` + `memory_maintenance(operation="pipeline_coverage")`)
+health check (`cron_pipeline_health.py` + `memory_advanced(operation="pipeline_coverage")`)
 instead of being hard-gated by `fcntl.flock`. Only enable after the
 pipeline-coverage check is live; leave off in production unless you have
 confirmed the health check catches overlaps.
@@ -538,7 +538,7 @@ falsely failing, and attempts `launchctl load` recovery if the worker is
 down.
 
 **Manual maintenance (rare):**
-- Only call `memory_maintenance` directly if cron is **not running** or you need
+- Only call `memory_advanced` directly if cron is **not running** or you need
   an immediate result.
 - For scheduled cleanup, use `memory_organize(target="safe_default")` as a one-off.
 - For full rebuild, use `memory_organize(target="full")`.
@@ -549,9 +549,9 @@ down.
 
 | mode | When to use | How it works |
 |------|-------------|--------------|
-| `hybrid` (default) | General-purpose search | FTS5 keyword + semantic vector fusion (RRF) |
+| `fts` (default) | Exact keyword/value search | SQLite FTS5 |
+| `hybrid` | General-purpose search | FTS5 keyword + semantic vector fusion (RRF) |
 | `semantic` | Conceptual/meaning search | Vector-only (usearch) |
-| `fts` | Exact keyword/value search | SQLite FTS5 |
 | `facts` | Knowledge graph queries | KG facts with belief/type filters |
 | `graph` | Graph exploration | Graph RAG expansion |
 
@@ -624,7 +624,7 @@ memory_save(category="lessons", tags=["flaky"], pinned=True)
 ### Periodic checkpoint (weekly):
 ```
 memory_organize(target="safe_default")   # if cron isn't running
-memory_maintenance(operation="duplicates", threshold=0.85)
+memory_advanced(operation="duplicates", threshold=0.85)
 ```
 
 ---
@@ -632,18 +632,18 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 ## Troubleshooting
 
 **"Tool not found" / "Invalid" errors:**
-- The tool might be an ADMIN tool. Use `memory_maintenance(operation="...")` instead.
-- Check available tools: call `memory_maintenance(operation="help")` for the admin surface.
+- The tool might be an ADMIN tool. Use `memory_advanced(operation="...")` instead.
+- Check available tools: call `memory_advanced(operation="help")` for the admin surface.
 - Verify the server is running: check `memory/worker.log` and `memory/health-check.log`.
 
 **Empty search results:**
 - Try `mode="semantic"` if FTS5 isn't matching
 - Check if `include_global=False` is set and you need global results
-- Run `memory_maintenance(operation="rebuild", scope="fts")` to rebuild FTS5 index
+- Run `memory_advanced(operation="rebuild", scope="fts")` to rebuild FTS5 index
 
 **Slow searches:**
-- Check `memory_maintenance(operation="tier_stats")` — hot tier may be full
-- Run `memory_maintenance(operation="pinned_decay_check", dry_run=True)` to see stale pins
+- Check `memory_advanced(operation="tier_stats")` — hot tier may be full
+- Run `memory_advanced(operation="pinned_decay_check", dry_run=True)` to see stale pins
 
 **Auto-save not working:**
 - Check `memory_audit(hours=1, include_errors=True)` for errors
@@ -698,7 +698,7 @@ Current: **v78** (79 migrations, 100% down-migration coverage)
 
 - `infra/gdpr.py` — `gdpr_erase(principal_id, data_subject_sub)` with full cascade across all tables.
 - Schema (migration 049): `gdpr_requests` tracking table.
-- MCP verb: `memory_gdpr_erase` under `memory_maintenance`.
+- MCP verb: `memory_gdpr_erase` via `memory_advanced(operation="gdpr_erase")`.
 - REST endpoint: `POST /api/v1/compliance/gdpr/erase`.
 - Returns deletion certificate as JSON.
 

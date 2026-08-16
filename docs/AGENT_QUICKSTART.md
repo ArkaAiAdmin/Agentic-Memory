@@ -8,32 +8,33 @@ This guide is designed to get you up and running with the Agentic Memory System 
 
 Every agent interacting with this system is bound by the **Memory Contract**:
 1. **Read-Before-Write**: Before committing new memories or changing the state of the workspace, search existing context using `memory_search` or `memory_session_start` to prevent duplicate note creation.
-2. **Structural Integrity**: Always save memories with descriptive `title_slug` strings and correct `category` names (e.g., `lessons`, `decisions`, `status`). Do not put slashes in the slugs.
-3. **Trace and Correct**: If you make or encounter a contradiction, leverage the `dedup` maintenance tool to resolve near-duplicates or investigate the timeline with `temporal_query`.
+2. **Structural Integrity**: Always save memories with descriptive `title_slug` strings and correct `category` names (e.g., `lessons`, `decisions`, `projects`, `preferences`, `sessions`). Do not put slashes in the slugs.
+3. **Trace and Correct**: If you make or encounter a contradiction, use `memory_organize(target="dedup")` to resolve near-duplicates or `memory_search(mode="facts")` to investigate the timeline.
 
 ---
 
 ## 2. Core Verbs & Escape Hatches Reference
 
-The agent-facing surface is composed of **24 core verbs**, plus **2 escape hatches** to admin operations.
+The agent-facing surface is composed of **25 CORE tools**, plus the **`memory_advanced` escape hatch** (routes any of the 92 admin operations).
 
 ### Core Verbs (Thin wrappers with sensible defaults)
 
 **Save & Recall:**
 * `memory_save(content, category, title_slug, tags=None, pinned=False, importance=3)`: Core save pipeline.
 * `memory_delete(note_id, hard=False)`: Soft-delete a memory.
-* `memory_restore(note_id)`: Restore a soft-deleted memory.
-* `memory_supersede(old_id, new_id)`: Mark a note as outdated and superseded by another.
+* `memory_note(note_id, action="restore")`: Restore a soft-deleted memory.
+* `memory_note(note_id, action="supersede", title_slug=..., rationale=...)`: Mark a note as outdated/superseded (writes to the revision log).
 * `memory_learn(content, as_skill=False, skill_name="", category="lessons")`: Save a lesson or compile a skill.
 * `memory_recall(query, session_id)`: Fast context matching for session continuity.
 * `memory_note(note_id, action="read")`: Read/update/delete/patch/supersede a single note.
 * `memory_session_start(query="")`: Retrieve the workspace briefing and startup context.
+* `memory_session_end(session_id, summary)`: End the session, save the summary, defer open threads.
 
 **Search & Discovery:**
-* `memory_search(query, limit=5, mode="hybrid", category="")`: Unified FTS5 + semantic + KG search.
+* `memory_search(query, limit=5, mode="fts", category="", include_global=True)`: FTS5 search by default; `mode="hybrid"` for FTS5 + semantic + KG fusion.
 * `memory_recall_context(query, limit=15, deep_rerank=False)`: Structured briefing for agent cold-start.
 * `memory_graph(query, action="explore")`: Explore the knowledge graph.
-* `memory_facts_search(query, limit=10)`: Search extracted SPO facts.
+* `memory_search(query, mode="facts")`: Search extracted SPO facts.
 
 **Agent Self-Editing:**
 * `memory_list_skills(limit=50)`: List extracted skills.
@@ -50,14 +51,15 @@ The agent-facing surface is composed of **24 core verbs**, plus **2 escape hatch
 * `memory_system_health()`: Green/yellow/red health check with actionable next steps.
 * `memory_profile(action="stats")`: Agent scopes, cached skills, ARC stats.
 * `memory_review_beliefs(min_confidence=0.5)`: Review low-confidence or stale beliefs.
+* `memory_curate_autosave(action="list")`: Review auto-saved tool invocations; promote or discard them.
+* `memory_list_revisions(memory_id)`: Audit supersede/amend/revert/delete events.
 
 **Feedback & Maintenance:**
 * `memory_record_ctr_feedback(id, query_id, action="returned")`: Record click-through rate feedback on search results.
 * `memory_organize(target="safe_default")`: Run a safe maintenance batch (compact + consolidate + rewrite_links).
 
-### Escape Hatches
-* `memory_maintenance(operation="...", **kwargs)`: Run any admin operation (92 admin tools).
-* `memory_advanced(operation="...", **kwargs)`: Alias for `memory_maintenance`.
+### Escape Hatch
+* `memory_advanced(operation="...", **kwargs)`: Agent-facing escape hatch — runs any admin operation (92 tools) by passing through to the `memory_maintenance` router (CLI-only).
 
 ---
 
@@ -81,7 +83,7 @@ graph TD
 ### Durability Guarantees
 * **Saga Transactions**: Writes coordinate both SQLite changes and file modifications. A crash mid-operation triggers an automatic rollback of the transaction, leaving no partial state.
 * **Process-Safe Locking**: A file-lock (`memory.db.lock`) prevents multiple concurrent processes or threads from corrupting index updates.
-* **Bi-Temporal Validity**: Database entities record both transaction time and valid time, enabling historical audit traces via `temporal_query`.
+* **Bi-Temporal Validity**: Database entities record both transaction time and valid time, enabling historical audit traces (`time_axis="valid"|"transaction"`).
 
 ---
 
@@ -106,8 +108,8 @@ memory_organize(target="safe_default")
 If you receive database connection errors or suspect corruption:
 ```bash
 # Perform deep sqlite integrity check
-memory_maintenance(operation="check_integrity", deep=true)
+memory_advanced(operation="check_integrity", deep=true)
 
 # Rebuild all spatial and FTS indexes from scratch
-memory_maintenance(operation="backfill_all", backfill_mode="rebuild")
+memory_advanced(operation="backfill_all", backfill_mode="rebuild")
 ```

@@ -67,7 +67,7 @@ typecheck: ## Mypy type check over configured codebase
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, "$$2"}'
 
-test: ## Run the full test suite in-process (default, 3879 tests)
+test: ## Run the full test suite in-process (5,500+ tests; exact count: docs/_meta.json)
 	$(PYTHON) -m pytest eval/ --timeout=15 -q
 
 test-safe: ## Run the full test suite subprocess-per-file (MPS/OpenMP crash-safe)

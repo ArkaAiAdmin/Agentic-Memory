@@ -22,7 +22,7 @@ using the system: [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memor
 | 1 | Every session start | `agentic-memory_memory_session_start(query="<subsystem>")` |
 | 2 | Before any task | `agentic-memory_memory_search(query="<topic>")` |
 | 3 | After bug/decision fix | `agentic-memory_memory_save(category="lessons" or "decisions")` |
-| 4 | After test/index/cron op | `agentic-memory_memory_maintenance(operation="auto_save_status")` — only when cron is down or immediate results are needed (Rule 21) |
+| 4 | After test/index/cron op | `agentic-memory_memory_advanced(operation="auto_save_status")` — only when cron is down or immediate results are needed (Rule 21) |
 | 5 | Before ending session | `agentic-memory_memory_save(category="sessions")` |
 
 Minimum every session: #1 + #5. Save a **context-rich** `projects` note (importance=4) at every significant milestone — enough context to be useful weeks later, not a timestamped log line.
@@ -55,7 +55,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 > | 4  | 🔍 | `test_rule4_no_raw_alter_table_in_python` in `eval/test_rule_enforcement.py` |
 > | 5  | 🔍 | `test_rule5_search_default_includes_global` |
 > | 6  | 🔍 | `test_rule6_mcp_tool_surface_contract` in `eval/test_rule_enforcement.py` |
-> | 7  | 🔧 | bare-arg guard in `backfill/orchestrator.py::main` (rc=2) |
+> | 7  | 🔍 | `test_rule7_backfill_rejects_bare_invocation` + `test_rule7_backfill_accepts_incremental` in `eval/test_rule_enforcement.py` (bare-arg guard, rc=2) |
 > | 8  | 🔍 | `test_rule8_proddb_safety_in_eval_tests` in `eval/test_rule_enforcement.py` |
 > | 9  | 🔍 | `test_rule9_save_lock_order_flock_first` in `eval/test_rule_enforcement.py` |
 > | 11 | 🔍 | `test_rule11_no_crdt_md_drift` + `test_rule11_detects_drift` |
@@ -77,7 +77,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 <!--AUTO-GEN:END key="hard_rule_4"-->. Never `ALTER TABLE` in Python.
 5. **Default search: `include_global=True`** 🔍 with blended RRF. Don't override "for safety." (`eval/test_rule_enforcement.py` asserts the `search_memories` default.)
 6. **<!--AUTO-GEN:START key="hard_rule_6"-->
-**25 CORE tools are user-facing**; 92 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+**25 CORE tools are user-facing**; 92 ADMIN + 3 DEPRECATED are operations behind the `memory_maintenance` router (agent-facing entry: `memory_advanced`). Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
 <!--AUTO-GEN:END key="hard_rule_6"-->
 7. **Use `venv/bin/python backfill_all.py`** (incremental default) or `backfill_all.py --full` (full rebuild). 🔧 Bare args are **rejected** (exit 2, no DB created) by the guard in `backfill/orchestrator.py::main` — past bare runs created 22 MB garbage DBs at repo root. Always pass `--incremental`, `--full`, `--health`, `--auto`, or a `--db <path>`.
 8. **Tests touching prod DB must use `_ProdDBGuarded`.** See `eval/test_safety_wiring.py:60-109`.
@@ -93,7 +93,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 18. **Security by default.** Treat all external input (file content, MCP arguments, HTTP payloads) as hostile. Never log, return, or embed credentials, tokens, internal paths, or schema details in user-facing responses; strip or mask first. ⚙️ Pre-commit `secret-scan` rejects added lines matching credential patterns (`sk-`, `AKIA`, `api[_-]?key`, `password`, `token`).
 19. **Data preservation is mandatory.** Default to additive migrations; test zero data loss both up and down.
 20. **Full-suite runs: backgrounded and polled.** `nohup` + tail the log every **30 seconds** until `0 failures` — polling less often misses failures and exceeds shell timeout. Set `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` on macOS; or use `.venv/bin/python eval/run_full_suite.py`.
-21. **Don't run maintenance as a post-task ritual.** Cron and the background worker handle indexing, compaction, dedup, contradiction detection. Call `memory_maintenance` / `memory_organize` only when cron is down or immediate results are required. 🔍 Session Protocol #4 says the same; `test_rule21_no_ritual_maintenance` cross-checks them.
+21. **Don't run maintenance as a post-task ritual.** Cron and the background worker handle indexing, compaction, dedup, contradiction detection. Call `memory_advanced` / `memory_organize` only when cron is down or immediate results are required. 🔍 Session Protocol #4 says the same; `test_rule21_no_ritual_maintenance` cross-checks them.
 22. **Ask with named options, not open questions.** Never ask "what should I do?" — give 2–4 concrete alternatives with tradeoffs. If the answer is already in an existing decision or doc, act.
 23. **Do not overanalyze — act.** When the task is clear, execute it directly and verify normally (run the checks you normally would), but do not overthink: do not enumerate every possible failure mode, re-derive state that git already reports, or run redundant confirmation passes after the user has said the work is verified. A stash/branch/working-tree question is answered by one `git` command, not a 10-minute investigation. If the user says "you are overthinking," stop immediately and just perform the requested action.
 24. **Run autogen docs before every commit.** ⚙️ Execute `make update-docs` (full pipeline: `update-agents-md` → `update-architecture` → `update-mcp-tools` → `update-readme` → `update-mcp-surface`) before committing any code change. This regenerates AGENTS.md, docs/_meta.json, docs/architecture.md, docs/reference/mcp-tools.md, README badges, and docs/MCP_SURFACE.md from live code. Never commit code without first running autogen — every commit must include the updated docs. The `update-docs-fresh` pre-commit hook fails if regenerated docs differ from the staged tree.
@@ -175,7 +175,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 
 ### Pointers
 
-- **Tool registry:** `tool_registry.ADMIN_TOOLS` (in `memory_mcp.py` ~line 237) is the single source of truth. Any name there must be reachable only via `memory_maintenance`. Full tool surface + counts: `docs/MCP_SURFACE.md` (machine-enforced).
+- **Tool registry:** `tool_registry.py` (`CORE_TOOLS` / `ADMIN_TOOLS` / `DEPRECATED`) is the single source of truth — `memory_mcp.py` imports it and strips ADMIN names from the agent MCP surface. Any ADMIN name must be reachable only via `memory_advanced` (agent-facing escape hatch) or the `memory_maintenance` router (CLI-only). Full tool surface + counts: `docs/MCP_SURFACE.md` (machine-enforced).
 - **Hook wiring:** `opencode.jsonc` registers the TS plugin → Python subprocess pipeline. Don't call `hooks/*.py` directly. Full event→script map: `docs/MCP_SURFACE.md`. (`plugin/index.ts` + `plugin/agentic-memory-hooks.ts`)
 - **Feature flags:** See `memory.toml` for all feature flags (52+ boolean toggles). Key ones: `MEMORY_WRITE_JOURNAL_ENABLED` (ON — CQRS write journal; requires `background_worker` daemon to drain `journal.db`), `MEMORY_TEMPORAL_KG` (ON), `MEMORY_TOML_HOT_RELOAD` (OFF).
 - **Entry point:** Always start via `memory_mcp.py` or `cli.py`. `mcp_tools.py` auto-discovery is not the server entry point.

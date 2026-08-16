@@ -18,8 +18,8 @@ Add or apply a schema change to the agentic-memory SQLite database — adding ta
 
 ## When NOT to use this
 
-- You're just changing data (use `memory_save` or `memory_maintenance`).
-- You're rebuilding an index (use `rebuild_*.py` or `memory_maintenance(operation="rebuild")`).
+- You're just changing data (use `memory_save` or `memory_advanced`).
+- You're rebuilding an index (use `rebuild_*.py` or `memory_advanced(operation="rebuild")`).
 
 ## The current schema version
 

@@ -30,10 +30,10 @@ This is the **maintainer** version. For the high-level skill, see `skills/add-an
 
 ### 1. Decide: CORE or ADMIN?
 
-**CORE** = user-facing verb the agent invokes in normal conversation. There are 17 today (authoritative: `tool_registry.py` `CORE_TOOLS`):
-`memory_search`, `memory_save`, `memory_delete`, `memory_recall`, `memory_note`, `memory_learn`, `memory_audit`, `memory_organize`, `memory_share`, `memory_graph`, `memory_profile`, `memory_session_start`, `memory_advanced`, `memory_review_beliefs`, `memory_curate_autosave`, `memory_health_check`, `memory_system_health`.
+**CORE** = user-facing verb the agent invokes in normal conversation. There are 25 today (authoritative: `tool_registry.py` `CORE_TOOLS`):
+`memory_search`, `memory_save`, `memory_delete`, `memory_recall`, `memory_note`, `memory_learn`, `memory_audit`, `memory_organize`, `memory_share`, `memory_graph`, `memory_profile`, `memory_session_start`, `memory_session_end`, `memory_recall_context`, `memory_review_beliefs`, `memory_curate_autosave`, `memory_health_check`, `memory_system_health`, `memory_advanced`, `memory_record_ctr_feedback`, `memory_coordinate`, `memory_list_skills`, `memory_extract_skills`, `memory_compile_skill`, `memory_list_revisions`.
 
-**ADMIN** = grouped under `memory_maintenance(operation="...")`. There are 87 today (authoritative: `tool_registry.py` `ADMIN_TOOLS`). See `docs/reference/mcp-tools.md` for the full list.
+**ADMIN** = grouped under `memory_maintenance(operation="...")` — reachable by agents only via `memory_advanced`. There are 92 today (authoritative: `tool_registry.py` `ADMIN_TOOLS`). See `docs/reference/mcp-tools.md` for the full list.
 
 **Rule of thumb:**
 - Will the user-agent name this verb? → CORE
