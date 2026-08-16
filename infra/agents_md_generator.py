@@ -297,18 +297,6 @@ def gather() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@_register("what_this_system_is")
-def gen_what_this_system_is(data: dict[str, Any]) -> str:
-    tc = data["tool_counts"]
-    admin_label = f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED"
-    return "\n".join([
-        f"- **Surface**: {tc['core']} CORE verbs + `memory_maintenance` router ({admin_label} behind router) + {data['hook_count']} lifecycle hooks + {data['cron_job_count']}+ cron jobs",
-        f"- **Schema**: v{data['schema_version']}, ~{data['table_count']} tables",
-        f"- **Code**: ~{data['production_loc'] // 1000}k LOC production, ~{data['test_loc'] // 1000}k+ test LOC; see `docs/architecture.md`",
-        "- **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).",
-    ])
-
-
 @_register("hard_rule_4")
 def gen_hard_rule_4(data: dict[str, Any]) -> str:
     return str(data["schema_version"])
@@ -323,54 +311,6 @@ def gen_hard_rule_6(data: dict[str, Any]) -> str:
         f"`memory_maintenance` router. Don't add CORE tools without checking "
         f"`docs/MCP_SURFACE.md` first."
     )
-
-
-@_register("mcp_surface_contract")
-def gen_mcp_surface_contract(data: dict[str, Any]) -> str:
-    tc = data["tool_counts"]
-    return (
-        f"**Source of truth:** `docs/MCP_SURFACE.md` + `tool_registry.py`. "
-        f"The MCP server exposes **{tc['core']} CORE tools** directly plus **1 `memory_maintenance` router**; "
-        f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED are hidden behind it "
-        f"`memory_maintenance(operation=\"...\")`."
-    )
-
-
-@_register("critical_path")
-def gen_critical_path(data: dict[str, Any]) -> str:
-    tc = data["tool_counts"]
-    admin_label = f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED"
-    return "\n".join([
-        "agentic-memory/",
-        "├── save/ (save/pipeline.py)               ← write path",
-        "├── search/ (search/orchestrator.py)       ← read path",
-        f"├── infra/ (tool_registry.py)              ← {tc['core']} CORE + {admin_label} (tool registry, migrations, config)",
-        f"├── hooks/                                  ← {data['hook_count']} lifecycle hooks",
-        "├── background/",
-        "│   ├── auto_save.py   ← async inbox+daemon",
-        "│   └── background_worker.py ← CQRS write-journal daemon",
-        f"├── cron/             ← {data['cron_job_count']}+ scheduled jobs",
-        f"├── mcp_surface/         ← {data['mcp_module_count']} MCP modules",
-        "├── memory/           ← live store (gitignored)",
-        "├── docs/MCP_SURFACE.md",
-        f"└── eval/             ← {data['test_file_count']} test files, {data['test_function_count']}+ test functions",
-    ])
-
-
-@_register("current_state")
-def gen_current_state(data: dict[str, Any]) -> str:
-    tc = data["tool_counts"]
-    admin_label = f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED"
-    return "\n".join([
-        f"- **Schema v{data['schema_version']}**: {data['migration_count']} migrations (100% down-coverage), ~{data['table_count']} tables.",
-        f"- **MCP surface**: {tc['core']} CORE + 1 router ({admin_label}). See `docs/MCP_SURFACE.md`.",
-        "- **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.",
-        "- **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).",
-        "- **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.",
-        "- **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.",
-        f"- **Testing**: {data['test_file_count']} test files, {data['test_function_count']}+ test functions, ~{data['test_loc'] // 1000}k+ test LOC. Subprocess-per-file runner.",
-        "- **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.",
-    ])
 
 
 # ---------------------------------------------------------------------------

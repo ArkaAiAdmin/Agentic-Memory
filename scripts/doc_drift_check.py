@@ -52,56 +52,6 @@ def _count_migrations() -> int:
     return len(list((REPO / "migrations").glob("*.down.sql")))
 
 
-def _count_test_files() -> int:
-    return len(list((REPO / "eval").glob("test_*.py")))
-
-
-def _count_test_functions() -> int:
-    try:
-        from infra.agents_md_generator import get_meta_for_json
-        return get_meta_for_json()["num_test_functions"]
-    except Exception:
-        count = 0
-        for f in (REPO / "eval").glob("test_*.py"):
-            try:
-                for line in f.read_text(encoding="utf-8").splitlines():
-                    sline = line.strip()
-                    if sline.startswith("def test_") or sline.startswith("async def test_"):
-                        count += 1
-            except OSError:
-                pass
-        return count
-
-
-def _count_hooks() -> int:
-    return len([f for f in (REPO / "hooks").glob("*.py") if not f.stem.startswith("_")])
-
-
-def _count_cron_scripts() -> int:
-    """Count scheduled cron jobs from the canonical ``JOBS`` registry.
-
-    Uses ``cron/jobs.py`` ``JOBS`` (the single source of truth for scheduled
-    jobs) rather than globbing ``cron/*.py``, which also matches helper/
-    utility modules that are not scheduled jobs.  Consistent with
-    ``agents_md_generator.py`` and ``gen_readme_badges.py``.
-    """
-    try:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location("cron_jobs", REPO / "cron" / "jobs.py")
-        if spec is None or spec.loader is None:
-            return len([f for f in (REPO / "cron").glob("*.py") if f.is_file()])
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return len(getattr(mod, "JOBS", {}))
-    except Exception:
-        return len([f for f in (REPO / "cron").glob("*.py") if f.is_file()])
-
-
-def _count_mcp_modules() -> int:
-    return len(list(REPO.glob("mcp_*.py")))
-
-
 # ---------------------------------------------------------------------------
 # Check 1: architecture.md via generate script
 # ---------------------------------------------------------------------------
@@ -161,12 +111,6 @@ def check_agents_md() -> list[str]:
 
     tools = _parse_tool_registry()
     schema_version = _parse_schema_version()
-    migrations = _count_migrations()
-    test_files = _count_test_files()
-    test_funcs = _count_test_functions()
-    hooks = _count_hooks()
-    cron = _count_cron_scripts()
-    mcp_modules = _count_mcp_modules()
 
     # hard_rule_4: just the schema version number
     if "hard_rule_4" in sections:
@@ -186,45 +130,6 @@ def check_agents_md() -> list[str]:
         m = re.search(r"(\d+) DEPRECATED", content)
         if m and int(m.group(1)) != tools["deprecated"]:
             errors.append(f"AGENTS.md hard_rule_6 DEPRECATED count: expected {tools['deprecated']}, got {m.group(1)}")
-
-    # what_this_system_is: surface line
-    if "what_this_system_is" in sections:
-        content = sections["what_this_system_is"]
-        m = re.search(r"(\d+) CORE verbs", content)
-        if m and int(m.group(1)) != tools["core"]:
-            errors.append(f"AGENTS.md what_this_system_is CORE count: expected {tools['core']}, got {m.group(1)}")
-        m = re.search(r"v(\d+)", content)
-        if m and int(m.group(1)) != schema_version:
-            errors.append(f"AGENTS.md what_this_system_is schema version: expected v{schema_version}, got v{m.group(1)}")
-
-    # current_state: schema version, migration count, test counts
-    if "current_state" in sections:
-        content = sections["current_state"]
-        m = re.search(r"Schema v(\d+)", content)
-        if m and int(m.group(1)) != schema_version:
-            errors.append(f"AGENTS.md current_state schema version: expected v{schema_version}, got v{m.group(1)}")
-        m = re.search(r"(\d+) migrations", content)
-        if m and int(m.group(1)) != migrations:
-            errors.append(f"AGENTS.md current_state migration count: expected {migrations}, got {m.group(1)}")
-        m = re.search(r"(\d+) test files", content)
-        if m and int(m.group(1)) != test_files:
-            errors.append(f"AGENTS.md current_state test file count: expected {test_files}, got {m.group(1)}")
-        m = re.search(r"(\d+)\+ test functions", content)
-        if m and int(m.group(1)) != test_funcs:
-            errors.append(f"AGENTS.md current_state test function count: expected {test_funcs}, got {m.group(1)}")
-
-    # critical_path: hook count, cron count, mcp modules, test files/functions
-    if "critical_path" in sections:
-        content = sections["critical_path"]
-        m = re.search(r"(\d+) lifecycle hooks", content)
-        if m and int(m.group(1)) != hooks:
-            errors.append(f"AGENTS.md critical_path hook count: expected {hooks}, got {m.group(1)}")
-        m = re.search(r"(\d+)\+ scheduled jobs", content)
-        if m and int(m.group(1)) != cron:
-            errors.append(f"AGENTS.md critical_path cron count: expected {cron}, got {m.group(1)}")
-        m = re.search(r"\((\d+) modules\)", content)
-        if m and int(m.group(1)) != mcp_modules:
-            errors.append(f"AGENTS.md critical_path MCP module count: expected {mcp_modules}, got {m.group(1)}")
 
     return errors
 

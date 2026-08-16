@@ -1,0 +1,10 @@
+# .git-blame-ignore-revs — commits that should be skipped by `git blame`.
+#
+# Add commits that are pure churn (formatting sweeps, whitespace fixes,
+# mechanical renames) here so blame points at the meaningful change, not
+# the sweep. Optional: enable in your local config with
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# (This file is the repo-side record; the config command above is a
+# per-developer convenience and is intentionally NOT committed.)

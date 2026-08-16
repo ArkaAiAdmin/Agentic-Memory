@@ -479,7 +479,10 @@ class _ConnectionPool:
                     # The old conn is still valid for the old inode, but
                     # it's stale relative to the live data — writes
                     # through it would never reach the new file.
-                    if self._inode_mismatch(key, conn):
+                    # Rule 2: a missing path (deleted db file) also means
+                    # stale — the conn holds an FD into the unlinked
+                    # inode; reopen against the path.
+                    if self._inode_mismatch(key, conn) or not os.path.exists(path):
                         logger.warning(
                             "memory.db inode changed under pooled connection "
                             "(%s) — reopening against new file",
@@ -518,7 +521,7 @@ class _ConnectionPool:
                         candidate.execute("SELECT 1")
                     except Exception:
                         stale = True
-                    if not stale and self._inode_mismatch(other_key, candidate):
+                    if not stale and (self._inode_mismatch(other_key, candidate) or not os.path.exists(path)):
                         stale = True
 
                     if stale:

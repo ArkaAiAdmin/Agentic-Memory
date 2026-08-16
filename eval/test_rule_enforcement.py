@@ -11,6 +11,7 @@ advisory. Each test maps to a specific hard rule:
 Run with: venv/bin/python -m pytest eval/test_rule_enforcement.py -q
 """
 
+import re
 import sqlite3
 import subprocess
 import sys
@@ -188,6 +189,44 @@ def test_rule1_saga_internals_exempt():
             # at least one of these exists and is parseable
             assert _read(path)
     assert _SAGA_INTERNALS  # guard against accidental empty list
+
+
+# ---------------------------------------------------------------------------
+# Rule 2 — pool get evicts stale connection on missing path
+# ---------------------------------------------------------------------------
+
+
+def test_rule2_pool_get_evicts_stale_on_missing_path(tmp_path: Path):
+    """Rule 2: connection_pool.get() on a deleted/missing path must evict
+    the stale pooled connection and reopen, never return an FD into a
+    deleted file (the old conn would silently write to the unlinked inode).
+    """
+    from infra.db import _ConnectionPool
+
+    db_path = str(tmp_path / "pool_missing.db")
+    pool = _ConnectionPool(max_size=4)
+    try:
+        conn1 = pool.get(db_path)
+        conn1.execute("SELECT 1")
+
+        # Same-thread reuse returns the same connection while the file lives.
+        conn2 = pool.get(db_path)
+        assert conn2 is conn1
+        pool.put(conn2)
+
+        # Delete the db file: the pooled conn now holds an FD into the
+        # unlinked inode and SQLite liveness checks still pass on it.
+        tmp_path.joinpath("pool_missing.db").unlink()
+        assert not tmp_path.joinpath("pool_missing.db").exists()
+
+        conn3 = pool.get(db_path)
+        assert conn3 is not conn1, (
+            "Rule 2: get() returned the stale connection into the deleted file"
+        )
+        conn3.execute("SELECT 1")
+        pool.put(conn3)
+    finally:
+        pool.close_all()
 
 
 # ---------------------------------------------------------------------------
@@ -507,5 +546,38 @@ def test_rule14_saga_rollback_cleans_relations():
     src = _read(saga_py)
     assert "cleanup_memory_relations" in src or "cleanup" in src, (
         "Rule 14: Saga rollback must call cleanup_memory_relations"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 21 — no ritual maintenance; Session Protocol #4 cross-check
+# ---------------------------------------------------------------------------
+
+
+def test_rule21_no_ritual_maintenance():
+    """Rule 21: maintenance must not be a post-task ritual.
+
+    Cross-checks that Session Protocol #4 (step 4 of the session table)
+    carries the same qualifier as Rule 21 — call memory_maintenance only
+    when cron is down or immediate results are required — so the two
+    sections of AGENTS.md do not contradict each other.
+    """
+    agents_md = _read(REPO_ROOT / "AGENTS.md")
+
+    # Rule 21 body exists and is non-ritual.
+    assert "Don't run maintenance as a post-task ritual" in agents_md, (
+        "Rule 21: AGENTS.md must forbid ritual maintenance"
+    )
+
+    # Session Protocol step 4 (the maintenance row) must be qualified the
+    # same way, not an unconditional "after every op" instruction.
+    step4 = re.search(
+        r"\| 4 \|.*memory_maintenance\(operation=\"auto_save_status\"\)[^\n]*\|",
+        agents_md,
+    )
+    assert step4 is not None, "Rule 21: Session Protocol #4 row not found in AGENTS.md"
+    row = step4.group(0)
+    assert "cron is down" in row or "immediate results" in row, (
+        "Rule 21: Session Protocol #4 must be qualified (cron down / immediate results only)"
     )
 

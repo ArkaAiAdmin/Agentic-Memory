@@ -38,13 +38,22 @@ CONFIG_DRIFT_TYPECHECK_SURFACE := \
 	infra/policy_hash_diff.py \
 	mcp_surface/mcp_maintenance_policy_hash.py
 
-.PHONY: verify verify-fast lint typecheck
+.PHONY: verify verify-fast lint typecheck verify-rules
 
 verify: ## Run full unified verification gate (Python, TS, Rust, Docs, Tests)
 	node scripts/verify.mjs
 
 verify-fast: ## Run fast unified verification gate for developer workflow
 	node scripts/verify.mjs --fast
+
+verify-rules: ## Rule 16/17/18/22/23/24 guards: worktrees, TODO/secret scan, AGENTS.md contract, doc drift
+	$(PYTHON) scripts/check_worktrees.py
+	$(PYTHON) scripts/check_todo_markers.py
+	$(PYTHON) scripts/check_secrets.py
+	$(PYTHON) scripts/check_agents_md.py
+	$(PYTHON) scripts/doc_drift_check.py
+	$(PYTHON) scripts/verify_doc_meta.py
+	@echo "All rule guards pass (16, 17, 18, 22, 23, 24)."
 
 lint: ## Ruff lint check over entire codebase
 	$(PYTHON) -m ruff check . --config pyproject.toml

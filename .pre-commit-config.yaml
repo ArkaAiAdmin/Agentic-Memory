@@ -86,3 +86,31 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: agents-md-contract
+        name: agents-md-contract
+        description: "Rule 22/23 — AGENTS.md stays a stable contract: line budget, no volatile counts in prose, links resolve"
+        entry: venv/bin/python scripts/check_agents_md.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: check-worktrees
+        name: check-worktrees
+        description: Rule 16 — fail if more than one git worktree is registered (stale metadata is pruned, not counted)
+        entry: venv/bin/python scripts/check_worktrees.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: no-todo-markers
+        name: no-todo-markers
+        description: Rule 17 — reject TODO/FIXME/HACK markers on lines added in the staged diff
+        entry: venv/bin/python scripts/check_todo_markers.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: secret-scan
+        name: secret-scan
+        description: Rule 18 — reject credential-looking patterns on lines added in the staged diff
+        entry: venv/bin/python scripts/check_secrets.py
+        language: system
+        pass_filenames: false
+        always_run: true

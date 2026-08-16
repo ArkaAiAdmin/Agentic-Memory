@@ -45,16 +45,12 @@ KNOWN_META_FIELDS = [
 ]
 
 PROVENANCE_BLOCK = {
-    "what_this_system_is_auto_gen_key": "what_this_system_is",
-    "tool_surface_auto_gen_key": "mcp_surface_contract",
     "hard_rule_4_auto_gen_key": "hard_rule_4",
     "hard_rule_6_auto_gen_key": "hard_rule_6",
-    "critical_path_auto_gen_key": "critical_path",
-    "current_state_auto_gen_key": "current_state",
     "schema_doc": "docs/architecture.md",
     "mcp_doc": "docs/MCP_SURFACE.md",
     "truth_rank_1": "_meta.json (machine-enforced)",
-    "truth_rank_2": "AGENTS.md AUTO-GEN sections (via agents_md_generator.py -> gen_doc_meta.py)",
+    "truth_rank_2": "AGENTS.md hard-rule spans (via agents_md_generator.py -> gen_doc_meta.py)",
     "truth_rank_3": "docs/MCP_SURFACE.md + docs/architecture.md (manual, cross-check via gen_schema_doc.py)",
     "last_meta_regenerated": date.today().isoformat(),
 }
