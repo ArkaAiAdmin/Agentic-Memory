@@ -290,12 +290,12 @@ class TestRebuildVecIndex:
 
     @pytest.fixture(autouse=True)
     def _check_model(self):
-        """Skip if embedding model unavailable."""
+        """Ensure embedding model is loaded."""
         try:
             from infra.embedding_search import get_embedding_search
 
             es = get_embedding_search()
-            if es.model is None:
+            if not es._ensure_model():
                 pytest.skip("Embedding model not available")
         except Exception:
             pytest.skip("Embedding model not available")

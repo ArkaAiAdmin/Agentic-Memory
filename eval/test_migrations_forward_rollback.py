@@ -106,6 +106,10 @@ TABLES_BY_MIGRATION: dict[int, list[str]] = {
     72: ["system_locks"],
     73: [],  # bookkeeping / checksum re-write
     74: [],  # recreates destroyed indexes (additive only)
+    75: [],  # file_locks lock_version and tenant_id
+    76: [],  # add missing columns
+    77: [],  # saga_log indexes
+    78: [],  # end_to_end tenant scoping
 }
 
 # Column checks: for migrations that add specific columns, verify a
@@ -169,7 +173,7 @@ class TestMigrationsForward:
     """Apply each migration forward and verify schema state."""
 
     def test_run_all_migrations_forward(self, fresh_db):
-        """All migrations 000-073 apply cleanly on a fresh DB."""
+        """All migrations 000-078 apply cleanly on a fresh DB."""
         conn, db_path = fresh_db
         run_migrations(conn)
         version = _get_schema_version(conn)
@@ -177,17 +181,19 @@ class TestMigrationsForward:
             f"Expected schema_version={SCHEMA_VERSION} after full forward, got {version}"
         )
 
-    @pytest.mark.parametrize("migration_num", list(range(0, SCHEMA_VERSION + 1)))
-    def test_migration_creates_expected_tables(self, fresh_db, migration_num):
-        """After applying migration N, expected tables exist."""
+    @pytest.mark.parametrize(
+        "migration_num,expected_tables",
+        [
+            (num, tbls)
+            for num, tbls in sorted(TABLES_BY_MIGRATION.items())
+            if tbls
+        ],
+        ids=[f"M{num:03d}" for num, tbls in sorted(TABLES_BY_MIGRATION.items()) if tbls],
+    )
+    def test_migration_creates_expected_tables(self, fresh_db, migration_num, expected_tables):
+        """After applying migrations up to N, expected tables exist."""
         conn, db_path = fresh_db
-        # Apply all migrations up to and including migration_num
         run_migrations(conn)
-
-        # Check tables that THIS specific migration should create
-        expected_tables = TABLES_BY_MIGRATION.get(migration_num, [])
-        if not expected_tables:
-            pytest.skip(f"Migration {migration_num:03d} creates no new tables")
 
         actual_tables = _get_tables(conn)
         for table in expected_tables:

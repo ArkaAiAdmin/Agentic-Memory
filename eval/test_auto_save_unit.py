@@ -553,9 +553,11 @@ class TestDaemonSignalHandler(unittest.TestCase):
 
         from pathlib import Path as _P
 
-        script = _P(__file__).resolve().parent.parent / "background" / "auto_save.py"
+        script = _P(__file__).resolve().parent.parent / "background" / "daemon.py"
         if not script.exists():
-            self.skipTest(f"auto_save.py not found at {script}")
+            script = _P(__file__).resolve().parent.parent / "background" / "auto_save.py"
+        if not script.exists():
+            self.skipTest(f"daemon.py not found at {script}")
 
         src = script.read_text(encoding="utf-8")
 
@@ -566,7 +568,7 @@ class TestDaemonSignalHandler(unittest.TestCase):
             _re.DOTALL,
         )
         if not m:
-            self.skipTest("Could not locate run_daemon in auto_save.py")
+            self.fail("Could not locate run_daemon in background/daemon.py")
         body = m.group(0)
 
         # Find the line numbers (offsets within the body) of:

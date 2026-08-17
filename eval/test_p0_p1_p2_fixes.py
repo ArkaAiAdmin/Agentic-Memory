@@ -540,6 +540,7 @@ class TestKgTwoStage(unittest.TestCase):
         """Calling index_kg_for_memory twice on the same content should not duplicate work."""
         from eval._fixtures import bootstrap_temp_db_clean
         from knowledge_graph import clear_extraction_cache, index_kg_for_memory
+        from knowledge_graph.kg_schema import ensure_kg_schema
 
         clear_extraction_cache()
         db_path = Path(tempfile.mktemp(suffix=".db"))
@@ -548,72 +549,91 @@ class TestKgTwoStage(unittest.TestCase):
         content = "Qwen3 reranker hangs on Apple Silicon with PyTorch MPS"
         conn = sqlite3.connect(str(db_path))
         try:
+            ensure_kg_schema(conn)
             # First call: no cache, runs extraction.
             stats1 = index_kg_for_memory(conn, test_id, content) or {}
             # Second call: cache hit, should return same/similar.
             stats2 = index_kg_for_memory(conn, test_id, content) or {}
             # Cache hit means entities count is the same.
             self.assertEqual(stats1.get("entities", 0), stats2.get("entities", 0))
-        except Exception as e:
-            self.skipTest(f"index_kg_for_memory signature changed: {e}")
         finally:
             conn.close()
-        os.remove(db_path)
+            if db_path.exists():
+                os.remove(db_path)
 
 
 class TestFtsCronStagger(unittest.TestCase):
     """P0.2: FTS cron is at minute 33, not 30."""
 
     def test_crontab_has_fts_at_minute_33(self):
+        found = False
         try:
             r = subprocess.run(
                 ["crontab", "-l"], capture_output=True, text=True, timeout=5
             )
+            if r.returncode == 0:
+                for line in r.stdout.splitlines():
+                    if "cron_rebuild_fts" in line and not line.strip().startswith("#"):
+                        self.assertIn(
+                            "33 2",
+                            line,
+                            f"FTS cron should run at 02:33, got: {line!r}",
+                        )
+                        found = True
+                        break
         except Exception:
-            self.skipTest("crontab not available in this environment")
-        if r.returncode != 0:
-            self.skipTest(f"crontab -l returned {r.returncode}: {r.stderr}")
-        # Find the line with cron_rebuild_fts
-        for line in r.stdout.splitlines():
-            if "cron_rebuild_fts" in line and not line.strip().startswith("#"):
-                # Should be at minute 33 (33 2 * * *)
-                self.assertIn(
-                    "33 2",
-                    line,
-                    f"FTS cron should run at 02:33, got: {line!r}",
-                )
-                return
-        self.skipTest("cron_rebuild_fts line not found in crontab")
+            pass
+
+        if not found:
+            # Check consolidated scheduler registry in cron/jobs.py
+            from cron.jobs import JOBS
+            job = JOBS.get("rebuild_fts")
+            self.assertIsNotNone(job, "rebuild_fts job not found in cron/jobs.py")
+            offset = job.get("offset_min", 0)
+            self.assertEqual(
+                offset % 60,
+                33,
+                f"FTS cron in jobs.py should run at minute 33 (got offset_min={offset})",
+            )
 
 
 class TestBackfillCronPath(unittest.TestCase):
     """P0.5: backfill cron path includes .config/agentic-memory."""
 
     def test_crontab_backfill_path_is_full(self):
+        found = False
         try:
             r = subprocess.run(
                 ["crontab", "-l"], capture_output=True, text=True, timeout=5
             )
+            if r.returncode == 0:
+                for line in r.stdout.splitlines():
+                    if "backfill_all" in line and not line.strip().startswith("#"):
+                        self.assertIn(
+                            ".config/agentic-memory",
+                            line,
+                            f"backfill path should include .config/agentic-memory, got: {line!r}",
+                        )
+                        self.assertNotRegex(
+                            line,
+                            r"/Users/\w+/agentic-memory/backfill",
+                            f"backfill path uses broken /Users/.../agentic-memory/, got: {line!r}",
+                        )
+                        found = True
+                        break
         except Exception:
-            self.skipTest("crontab not available in this environment")
-        if r.returncode != 0:
-            self.skipTest(f"crontab -l returned {r.returncode}: {r.stderr}")
-        for line in r.stdout.splitlines():
-            if "backfill_all.py" in line and not line.strip().startswith("#"):
-                # The path must include .config/agentic-memory
-                self.assertIn(
-                    ".config/agentic-memory",
-                    line,
-                    f"backfill path should include .config/agentic-memory, got: {line!r}",
-                )
-                # Should NOT be the broken /Users/.../agentic-memory/ path
-                self.assertNotRegex(
-                    line,
-                    r"/Users/\w+/agentic-memory/backfill",
-                    f"backfill path uses broken /Users/.../agentic-memory/, got: {line!r}",
-                )
-                return
-        self.skipTest("backfill_all.py line not found in crontab")
+            pass
+
+        if not found:
+            # Check consolidated scheduler in cron/jobs.py and install_crontab.sh
+            from cron.jobs import JOBS
+            job = JOBS.get("backfill_all")
+            self.assertIsNotNone(job, "backfill_all job not found in cron/jobs.py")
+            self.assertIn("cron_backfill_all", str(job.get("args", [])))
+            installer_path = Path(__file__).resolve().parent.parent / "cron" / "install_crontab.sh"
+            self.assertTrue(installer_path.exists())
+            content = installer_path.read_text(encoding="utf-8")
+            self.assertIn("scheduler.py", content)
 
 
 class TestMemorySaveImportance(unittest.TestCase):

@@ -2075,7 +2075,8 @@ def _materialize_journal_once(
             f"Title slug '{req.title_slug}' escapes the category directory.",
         )
     db_path_obj = str(target_mem / "memory.db")
-    journal_path = target_mem / "journal.db"
+    if journal_path is None:
+        journal_path = target_mem / "journal.db"
 
     from infra.memory_common import _resolve_tags
     tags_list = _resolve_tags(req.category, req.tags or [], context=req.context)

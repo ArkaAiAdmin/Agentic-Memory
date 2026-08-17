@@ -1170,18 +1170,15 @@ class TestComputeFinalScore(unittest.TestCase):
         self.assertIsInstance(score, float)
 
 
-class TestCountRows(unittest.TestCase):
+class TestCountRows(_TempDbTestMixin, unittest.TestCase):
     """Kill L38 int on count_rows."""
 
     def test_count_memories(self):
-        # 2026-06-29 fix: same as test_memory_common_unit — the prod DB is
-        # not seeded on CI. Skip the row-count assertion there.
-        if os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
-            self.skipTest("CI: production DB not seeded on the runner")
-        count = count_rows(GLOBAL_MEM_DIR)
+        mem_db = self.tmp_db.parent / "memory.db"
+        if not mem_db.exists():
+            shutil.copy2(str(self.tmp_db), str(mem_db))
+        count = count_rows(self.tmp_db.parent)
         self.assertIsInstance(count, int)
-        if count < 0:
-            self.skipTest("prod DB is locked or unavailable (count_rows returned -1)")
         self.assertGreater(count, 0)
 
 

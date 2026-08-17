@@ -864,8 +864,23 @@ def process_pending_journal_entries(
     n_workers: int = 1,
 ) -> int:
     """Dequeue and process pending entries in journal."""
+    from save.pipeline import materialize_journal_entry
+
     entries = dequeue_pending_for_worker(
         journal_path, batch_size=50, worker_id=worker_id, n_workers=n_workers
     )
-    return len(entries)
+    processed = 0
+    for entry in entries:
+        try:
+            materialize_journal_entry(entry, target_base, journal_path)
+            processed += 1
+        except Exception as exc:
+            logger.exception(
+                "reconciler worker %d/%d: entry %s failed: %s",
+                worker_id,
+                n_workers,
+                entry.get("note_id", "?"),
+                exc,
+            )
+    return processed
 

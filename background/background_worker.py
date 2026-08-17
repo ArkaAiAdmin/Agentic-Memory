@@ -1494,10 +1494,22 @@ def _reconciliation_loop_sharded(
     target_base: Path,
     worker_id: int,
     n_workers: int,
+    idle_quit_after_secs: float = 3.0,
 ) -> None:
     """Run one shard of the multi-writer journal reconciliation worker loop."""
-    from infra.write_journal import process_pending_journal_entries
-    process_pending_journal_entries(journal_path, target_base, worker_id=worker_id, n_workers=n_workers)
+    import time
+    from infra.write_journal import process_pending_journal_entries, reset_stuck_processing
+
+    deadline = time.monotonic() + idle_quit_after_secs
+    while time.monotonic() < deadline:
+        reset_stuck_processing(journal_path)
+        processed = process_pending_journal_entries(
+            journal_path, target_base, worker_id=worker_id, n_workers=n_workers
+        )
+        if processed > 0:
+            deadline = time.monotonic() + idle_quit_after_secs
+        else:
+            time.sleep(0.2)
 
 
 def multiwriter_reconciliation_pool(
@@ -1507,6 +1519,24 @@ def multiwriter_reconciliation_pool(
     idle_quit_after_secs: float = 30.0,
 ) -> None:
     """Launch multi-writer journal reconciliation pool."""
-    from infra.write_journal import process_pending_journal_entries
-    process_pending_journal_entries(journal_path, target_base, n_workers=n_workers)
+    import subprocess
+    import sys
+
+    workers = []
+    for wid in range(n_workers):
+        p = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "background.fleet_worker",
+                str(journal_path),
+                str(target_base),
+                str(wid),
+                str(n_workers),
+            ],
+            cwd=str(journal_path.parent),
+        )
+        workers.append(p)
+    for p in workers:
+        p.wait()
 

@@ -107,7 +107,7 @@ class TestChunkEmbeddingIndexing(unittest.TestCase):
             _setup_chunks(conn, memory_id, "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.")
 
             es = get_embedding_search()
-            if es.model is None:
+            if not es._ensure_model():
                 self.skipTest("embedding model unavailable")
 
             chunks = chunk_memory("First paragraph.\n\nSecond paragraph.\n\nThird paragraph.")
@@ -135,7 +135,7 @@ class TestChunkEmbeddingIndexing(unittest.TestCase):
             _setup_chunks(conn, memory_id, "Para 1.\n\nPara 2.")
 
             es = get_embedding_search()
-            if es.model is None:
+            if not es._ensure_model():
                 self.skipTest("embedding model unavailable")
 
             chunks = chunk_memory("Para 1.\n\nPara 2.")
@@ -166,7 +166,7 @@ class TestChunkANNBuildAndSearch(unittest.TestCase):
             chunks = _setup_chunks(conn, memory_id, content)
 
             es = get_embedding_search()
-            if es.model is None:
+            if not es._ensure_model():
                 self.skipTest("embedding model unavailable")
 
             chunk_dicts = [
@@ -202,7 +202,7 @@ class TestChunkANNBuildAndSearch(unittest.TestCase):
             chunks = _setup_chunks(conn, memory_id, content)
 
             es = get_embedding_search()
-            if es.model is None:
+            if not es._ensure_model():
                 self.skipTest("embedding model unavailable")
 
             chunk_dicts = [

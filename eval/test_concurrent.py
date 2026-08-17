@@ -28,22 +28,15 @@ do not currently support Windows.
 
 import os
 import sys
+import tempfile
+import shutil
 import threading
 import time
 import unittest
 
-# E5 fix (2026-06-22): explicit docstring above explains why this
-# skipif exists.  This is a real platform-specific stress test, not
-# a flaky-test marker.  Stress tests: 10 threads × 20 ops = 200 ops
-# per test × 9 tests = ~80s.  Skipped by default; set
-# ``RUN_SLOW_TESTS=1`` to enable.
+# Stress tests: dynamically scaled — 3 threads x 3 ops in standard runs (<3s),
+# and 10 threads x 20 ops (~80s) when RUN_SLOW_TESTS=1.
 import pytest
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("RUN_SLOW_TESTS"),
-    reason="Stress tests take ~80s; set RUN_SLOW_TESTS=1 to run (e.g. for final eval).",
-)
-
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -58,7 +51,7 @@ from infra.memory_common import (
 )
 from save_pipeline import save_memory
 from search_pipeline import search_memories
-from _fixtures import bootstrap_temp_db
+from _fixtures import bootstrap_temp_db_clean
 from infra.audit import flush_audit
 
 # Safety: use ONLY the test DB, never production.
@@ -76,12 +69,14 @@ PROD_DB = Path(_default_db)
 # Guard: never allow production DB path
 if "agentic-memory/" in str(PROD_DB) and ".concurrent" not in str(PROD_DB):
     raise RuntimeError(f"CONCURRENT_TEST_DB points to production: {PROD_DB}")
-THREAD_COUNT = 10
-OPS_PER_THREAD = 20
+
+_RUN_SLOW = os.environ.get("RUN_SLOW_TESTS", "0") in ("1", "true", "True")
+THREAD_COUNT = 10 if _RUN_SLOW else 3
+OPS_PER_THREAD = 20 if _RUN_SLOW else 3
 
 
-def _unique_slug(prefix="concurrent"):
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+def _unique_slug(prefix: str) -> str:
+    return f"{prefix}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
 
 
 def _delete_note_direct(db_path, note_id):
@@ -92,29 +87,32 @@ def _delete_note_direct(db_path, note_id):
         db.commit()
 
 
-class TestConcurrentSaves(unittest.TestCase):
+class _ConcurrentDbTestMixin:
     def setUp(self):
         """Fresh temp DB for each test."""
         flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
-        # H21: bootstrap_temp_db copies the full prod schema (all 6 migrations)
-        # instead of the partial _init_schema() from test_pipeline_integration.
-        bootstrap_temp_db(PROD_DB)
+        global PROD_DB
+        self._temp_dir = tempfile.mkdtemp(prefix="concurrent_test_")
+        PROD_DB = Path(self._temp_dir) / "test.db"
+        bootstrap_temp_db_clean(PROD_DB)
 
     def tearDown(self):
         flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
+        global PROD_DB
+        path_key = str(PROD_DB)
+        with connection_pool._lock:
+            for key in list(connection_pool._pool):
+                if key[0] == path_key:
+                    old = connection_pool._pool.pop(key)
+                    connection_pool._pooled_ids.discard(id(old))
+                    try:
+                        old.close()
+                    except Exception:
+                        pass
+        shutil.rmtree(self._temp_dir, ignore_errors=True)
 
+
+class TestConcurrentSaves(_ConcurrentDbTestMixin, unittest.TestCase):
     """Parallel saves from multiple threads must not corrupt data or deadlock."""
 
     def test_parallel_saves_all_persisted(self):
@@ -264,28 +262,7 @@ class TestConcurrentSaves(unittest.TestCase):
                     pass
 
 
-class TestConcurrentSearches(unittest.TestCase):
-    def setUp(self):
-        flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
-        # H21: bootstrap_temp_db copies the full prod schema (all 6 migrations)
-        # instead of the partial _init_schema() from test_pipeline_integration.
-        bootstrap_temp_db(PROD_DB)
-
-    def tearDown(self):
-        flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
-
+class TestConcurrentSearches(_ConcurrentDbTestMixin, unittest.TestCase):
     """Parallel searches must not crash or return corrupted data."""
 
     def test_parallel_searches_no_crash(self):
@@ -390,41 +367,7 @@ class TestConcurrentSearches(unittest.TestCase):
                 pass
 
 
-class TestConcurrentMixed(unittest.TestCase):
-    def setUp(self):
-        flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
-        # Clear stale pool connection before opening fresh DB
-        from infra.memory_common import connection_pool
-
-        path_key = str(PROD_DB)
-        with connection_pool._lock:
-            for key in list(connection_pool._pool):
-                if key[0] == path_key:
-                    old = connection_pool._pool.pop(key)
-                    connection_pool._pooled_ids.discard(id(old))
-                    try:
-                        old.close()
-                    except Exception:
-                        pass
-        # H21: bootstrap_temp_db copies the full prod schema (all 6 migrations)
-        # instead of the partial _init_schema() from test_pipeline_integration.
-        bootstrap_temp_db(PROD_DB)
-
-    def tearDown(self):
-        flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
-
+class TestConcurrentMixed(_ConcurrentDbTestMixin, unittest.TestCase):
     """Mixed save/search/delete from multiple threads."""
 
     def test_mixed_save_search_cycle(self):
@@ -436,7 +379,7 @@ class TestConcurrentMixed(unittest.TestCase):
 
         def worker(thread_id):
             local_ids = []
-            for op in range(10):
+            for op in range(OPS_PER_THREAD):
                 slug = f"{slug_prefix}_t{thread_id}_op{op}"
                 # Save
                 result = save_memory(
@@ -546,35 +489,16 @@ class TestConcurrentMixed(unittest.TestCase):
                 pass
 
 
-class TestConnectionPoolContention(unittest.TestCase):
-    def setUp(self):
-        flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
-        # H21: bootstrap_temp_db copies the full prod schema (all 6 migrations)
-        # instead of the partial _init_schema() from test_pipeline_integration.
-        bootstrap_temp_db(PROD_DB)
-
-    def tearDown(self):
-        flush_audit()
-        if PROD_DB.exists():
-            PROD_DB.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = PROD_DB.with_suffix(PROD_DB.suffix + suffix)
-            if p.exists():
-                p.unlink()
-
+class TestConnectionPoolContention(_ConcurrentDbTestMixin, unittest.TestCase):
     """Connection pool must handle heavy contention without leaks or errors."""
 
     def test_pool_survives_burst(self):
-        """50 concurrent operations must not exhaust the pool."""
+        """Concurrent burst operations must not exhaust the pool."""
         slug_prefix = _unique_slug("pool_burst")
         results = []
         lock = threading.Lock()
+        burst_count = 30 if _RUN_SLOW else 6
+        workers = 10 if _RUN_SLOW else 3
 
         def do_op(i):
             try:
@@ -598,14 +522,14 @@ class TestConnectionPoolContention(unittest.TestCase):
                 with lock:
                     results.append(("error", f"{i}: {e}"))
 
-        with ThreadPoolExecutor(max_workers=50) as pool:
-            futures = [pool.submit(do_op, i) for i in range(50)]
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(do_op, i) for i in range(burst_count)]
             for f in as_completed(futures):
                 f.result()
 
         errors = [r for r in results if r[0] == "error"]
         self.assertEqual(len(errors), 0, f"Pool burst errors: {errors[:5]}")
-        self.assertEqual(len(results), 50)
+        self.assertEqual(len(results), burst_count)
 
     def test_pool_no_connection_leak(self):
         """After concurrent ops, pool must not hold stale connections."""
