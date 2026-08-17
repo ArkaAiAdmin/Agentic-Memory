@@ -13,6 +13,7 @@ import os
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 import sys
@@ -37,26 +38,38 @@ except Exception:
 # file instead of running all 74 migrations per test.  This cuts ~2s per
 # test file down to ~0.05s (file copy vs migration runner).
 _template_db: Path | None = None
+_template_db_lock = threading.Lock()
 
 def _get_template_db() -> Path:
-    """Return a cached template DB path, creating it on first call."""
+    """Return a cached template DB path, creating it on first call.
+
+    Double-checked locking: with 6+ concurrent worker threads hitting this on
+    first touch, an unlocked build let every worker create its own template
+    (tempfile.mktemp creates no file, so exists() is False until the build
+    finishes) and copy a path whose build was still in progress, producing
+    [Errno 2] WORKER ERRORs plus ~20 leaked template_db_* files per run.
+    Publish the global only after the build completes.
+    """
     global _template_db
     if _template_db is not None and _template_db.exists():
         return _template_db
-    _template_db = Path(tempfile.mktemp(suffix=".db", prefix="template_db_"))
-    if bootstrap_temp_db_clean is not None:
-        bootstrap_temp_db_clean(_template_db)
-    else:
-        conn = sqlite3.connect(str(_template_db), timeout=30.0)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout = 30000")
-        from infra.db_migrations import run_schema_setup
-        from fact import ensure_facts_schema
-        run_schema_setup(conn)
-        ensure_facts_schema(conn)
-        conn.commit()
-        conn.close()
-    return _template_db
+    with _template_db_lock:
+        if _template_db is not None and _template_db.exists():
+            return _template_db
+        _template_db = Path(tempfile.mktemp(suffix=".db", prefix="template_db_"))
+        if bootstrap_temp_db_clean is not None:
+            bootstrap_temp_db_clean(_template_db)
+        else:
+            conn = sqlite3.connect(str(_template_db), timeout=30.0)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout = 30000")
+            from infra.db_migrations import run_schema_setup
+            from fact import ensure_facts_schema
+            run_schema_setup(conn)
+            ensure_facts_schema(conn)
+            conn.commit()
+            conn.close()
+        return _template_db
 
 summary = {
     "passed": 0,
@@ -141,7 +154,6 @@ def _parse_junit(junit_path: Path) -> dict:
     return counts
 
 
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 lock = threading.Lock()

@@ -4,9 +4,14 @@ These tests make the maintainer rules in AGENTS.md verifiable rather than
 advisory. Each test maps to a specific hard rule:
 
   Rule 1  — no memory-content write bypasses save_memory / save_memory_journal
+  Rule 3  — vec rebuild runs after the warm-up chain, never before
   Rule 5  — default search is include_global=True (blended RRF)
   Rule 7  — backfill_all.py refuses bare invocation (no garbage DB at repo root)
+  Rule 10 — concurrent .md writes preserve losers (conflict files)
   Rule 11 — CRDT field state and the on-disk .md file must not silently drift
+  Rule 13 — journal drain is single-writer; agent enqueue is lock-free
+  Rule 19 — up-migrations are additive or data-preserving rebuilds
+  Rule 22/23 — workflow contract text is presence-guarded (behavior is judgment)
 
 Run with: venv/bin/python -m pytest eval/test_rule_enforcement.py -q
 """
@@ -579,5 +584,188 @@ def test_rule21_no_ritual_maintenance():
     row = step4.group(0)
     assert "cron is down" in row or "immediate results" in row, (
         "Rule 21: Session Protocol #4 must be qualified (cron down / immediate results only)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 3 — vec rebuild runs after the warm-up chain, never before
+# ---------------------------------------------------------------------------
+
+
+def test_rule3_backfill_rebuilds_last():
+    """Rule 3: the warm-up chain must finish embeddings/chunks backfill
+    before the vec rebuild (rebuild_vec_index.py runs AFTER warm-up, never
+    before). backfill/orchestrator.py is the chain entry point: its
+    _backfill_vec_index_raw call must appear after the embedding and chunk
+    backfill calls, and rebuild_vec_index.py must exist as the standalone
+    post-step.
+    """
+    orchestrator = _read(REPO_ROOT / "backfill" / "orchestrator.py")
+    assert "def main()" in orchestrator, (
+        "Rule 3: backfill/orchestrator.py missing main()"
+    )
+
+    emb_pos = orchestrator.find("_backfill_embeddings(")
+    chunk_pos = orchestrator.find("_backfill_chunks(")
+    vec_pos = orchestrator.find("_backfill_vec_index_raw(")
+    assert -1 not in (emb_pos, chunk_pos, vec_pos), (
+        "Rule 3: warm-up chain must call embeddings, chunks, then vec rebuild"
+    )
+    assert vec_pos > emb_pos and vec_pos > chunk_pos, (
+        "Rule 3: vec rebuild must run AFTER embedding/chunk backfill in the "
+        "warm-up chain (never before)"
+    )
+
+    rebuild = REPO_ROOT / "rebuild_vec_index.py"
+    assert rebuild.exists(), "Rule 3: rebuild_vec_index.py must exist at repo root"
+    assert "def rebuild_vec_index(" in _read(rebuild), (
+        "Rule 3: rebuild_vec_index.py must export rebuild_vec_index(...)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 10 — concurrent .md writes preserve losers
+# ---------------------------------------------------------------------------
+
+
+def test_rule10_conflict_file_preserves_loser(tmp_path: Path):
+    """Rule 10: safe_atomic_write(..., expected_existing=...) must preserve
+    the losing on-disk content as <path>.conflict-<pid>-<ts> instead of
+    overwriting it silently.
+    """
+    from infra.memory_common import safe_atomic_write
+
+    note = tmp_path / "notes" / "memo.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("v1", encoding="utf-8")
+
+    # Matching expected content: normal write, no conflict.
+    ok, conflict = safe_atomic_write(note, "v2", expected_existing="v1")
+    assert ok and conflict is None, f"Rule 10: clean write failed: {conflict}"
+    assert note.read_text(encoding="utf-8") == "v2"
+
+    # Stale expected content: the on-disk loser must be preserved in a
+    # conflict file and the write must still succeed.
+    ok, conflict = safe_atomic_write(note, "v3", expected_existing="v1")
+    assert ok, "Rule 10: write must succeed after saving the conflict"
+    assert conflict is not None, "Rule 10: expected a conflict file"
+    conflict_path = Path(conflict)
+    assert conflict_path.exists(), f"Rule 10: conflict file missing: {conflict_path}"
+    assert conflict_path.name.startswith("memo.md.conflict-"), (
+        f"Rule 10: conflict file must use .conflict-<pid>-<ts>: {conflict_path.name}"
+    )
+    assert conflict_path.read_text(encoding="utf-8") == "v2", (
+        "Rule 10: conflict file must contain the losing (on-disk) content"
+    )
+    assert note.read_text(encoding="utf-8") == "v3"
+
+
+# ---------------------------------------------------------------------------
+# Rule 13 — journal drain is single-writer; agent enqueue is lock-free
+# ---------------------------------------------------------------------------
+
+
+def test_rule13_journal_drain_and_lock_free_enqueue():
+    """Rule 13: background_worker.py must drain journal.db sequentially via
+    process_pending_journal_entries, and the agent-side enqueue
+    (write_journal.enqueue_write) must be lock-free — flock belongs only to
+    new long-lived writers touching the journal, not to agent save calls.
+    """
+    worker = _read(REPO_ROOT / "background" / "background_worker.py")
+    assert "process_pending_journal_entries" in worker, (
+        "Rule 13: background_worker.py must drain journal.db via "
+        "process_pending_journal_entries (save_memory_journal path)"
+    )
+
+    journal_src = _read(REPO_ROOT / "infra" / "write_journal.py")
+    start = journal_src.find("def enqueue_write(")
+    assert start != -1, "Rule 13: write_journal.py must expose enqueue_write"
+    end = journal_src.find("\ndef ", start + 1)
+    enqueue_body = journal_src[start:] if end == -1 else journal_src[start:end]
+    assert "flock" not in enqueue_body, (
+        "Rule 13: agent-side enqueue must be lock-free — found flock in "
+        "enqueue_write; flock belongs only to long-lived journal writers"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 19 — additive or data-preserving rebuild migrations only
+# ---------------------------------------------------------------------------
+
+
+def test_rule19_migrations_additive():
+    """Rule 19: up-migrations must be additive or data-preserving rebuilds.
+
+    SQLite has no DROP COLUMN, so schema changes are done via table-recreate:
+    CREATE new table -> INSERT INTO ... SELECT (copy) -> DROP old -> RENAME.
+    A DROP TABLE / DROP VIEW in an up-migration is only acceptable when the
+    same file recreates the object and copies the data; a drop without a
+    recreate+copy is data loss. Destructive-only statements are forbidden.
+    """
+    migrations_dir = REPO_ROOT / "migrations"
+    assert migrations_dir.is_dir(), "Rule 19: migrations/ directory missing"
+
+    up_files = sorted(
+        p for p in migrations_dir.glob("*.sql")
+        if not p.name.endswith(".down.sql")
+    )
+    down_files = sorted(migrations_dir.glob("*.down.sql"))
+    assert up_files, "Rule 19: no up-migrations found"
+    assert down_files, "Rule 19: no .down.sql files found (rollback coverage)"
+
+    offenders = []
+    for p in up_files:
+        code = "\n".join(
+            line
+            for line in _read(p).splitlines()
+            if not line.strip().startswith(("--", "#"))
+        )
+        upper = code.upper()
+        has_drop_table = "DROP TABLE" in upper
+        has_drop_view = "DROP VIEW" in upper
+        if not (has_drop_table or has_drop_view):
+            continue
+        if has_drop_table and not (
+            "CREATE TABLE" in upper
+            and re.search(r"INSERT\s+(?:OR\s+(?:IGNORE|REPLACE)\s+)?INTO", upper)
+            and "SELECT" in upper
+        ):
+            offenders.append(
+                f"{p.name}: DROP TABLE without CREATE + INSERT [OR IGNORE] INTO ... SELECT copy"
+            )
+        if has_drop_view and not re.search(r"CREATE\s+(?:TEMP\s+)?VIEW", upper):
+            offenders.append(f"{p.name}: DROP VIEW without CREATE [TEMP] VIEW recreate")
+    assert not offenders, (
+        "Rule 19: destructive migration steps without a data-preserving "
+        "recreate:\n" + "\n".join(offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 22/23 — workflow contract presence (behavioral rules)
+# ---------------------------------------------------------------------------
+
+
+def test_rule22_23_workflow_contract_presence():
+    """Rules 22/23 are behavioral — behavior cannot be CI-enforced, but the
+    contract text must not regress. Guard the key clauses: named options
+    with alternatives, and act-don't-overanalyze with the stop-word.
+    """
+    agents_md = _read(REPO_ROOT / "AGENTS.md")
+
+    assert "Ask with named options, not open questions" in agents_md, (
+        "Rule 22: AGENTS.md must forbid open-ended questions"
+    )
+    assert re.search(r"2[–-]4 concrete alternatives", agents_md), (
+        "Rule 22: must require 2-4 concrete alternatives with tradeoffs"
+    )
+    assert "Stop and ask (with 2" in agents_md, (
+        "Rule 22: the Ask vs Act section must preserve the stop-and-ask path"
+    )
+    assert "Do not overanalyze — act" in agents_md, (
+        "Rule 23: AGENTS.md must forbid overanalyzing"
+    )
+    assert "you are overthinking" in agents_md, (
+        "Rule 23: the 'you are overthinking' stop-word must be preserved"
     )
 

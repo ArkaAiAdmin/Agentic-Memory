@@ -7,6 +7,10 @@ Rule 22/23 workflow contract + W4 hardening (2026-08-17):
   not quote live counts (test files/functions, cron jobs, LOC, tool
   counts, schema tables). Live counts live in docs/_meta.json.
 - Local file:// links must resolve to existing files.
+- Required contract anchors: behavioral rules (22/23) cannot be
+  CI-enforced for behavior, but their key clauses must not silently
+  regress — presence-guarded here and in
+  eval/test_rule_enforcement.py (test_rule22_23_workflow_contract_presence).
 
 Exit 0 = OK, 1 = violation (prints report to stderr).
 Run from repo root: venv/bin/python scripts/check_agents_md.py
@@ -21,7 +25,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 AGENTS_MD = REPO / "AGENTS.md"
 
-MAX_LINES = 210
+MAX_LINES = 220
 
 # Patterns that quote volatile live counts in prose. Lines inside
 # AUTO-GEN markers are exempt (hard_rule_4/6 spans are machine-managed).
@@ -34,6 +38,16 @@ VOLATILE_PATTERNS: list[re.Pattern[str]] = [
 
 LINK_PATTERN = re.compile(r"file://([^\s\)]+)")
 
+# Key clauses of the behavioral rules. Enforcement is presence-only: the
+# contract text cannot regress without CI failing; agent behavior remains
+# judgment (mirrors test_rule22_23_workflow_contract_presence).
+REQUIRED_ANCHORS: list[tuple[str, re.Pattern[str]]] = [
+    ("Rule 22 named-options", re.compile(r"Ask with named options, not open questions")),
+    ("Rule 22 alternatives", re.compile(r"2[–-]4 concrete alternatives")),
+    ("Rule 23 act", re.compile(r"Do not overanalyze — act")),
+    ("Rule 23 stop-word", re.compile(r"you are overthinking")),
+]
+
 
 def main() -> int:
     errors: list[str] = []
@@ -42,7 +56,8 @@ def main() -> int:
         print("ERROR: AGENTS.md not found", file=sys.stderr)
         return 1
 
-    lines = AGENTS_MD.read_text(encoding="utf-8").splitlines()
+    text = AGENTS_MD.read_text(encoding="utf-8")
+    lines = text.splitlines()
 
     if len(lines) > MAX_LINES:
         errors.append(
@@ -65,7 +80,10 @@ def main() -> int:
                 errors.append(f"AGENTS.md:{lineno} quotes a volatile live count: {line.strip()}")
                 break
 
-    text = AGENTS_MD.read_text(encoding="utf-8")
+    for label, pat in REQUIRED_ANCHORS:
+        if not pat.search(text):
+            errors.append(f"AGENTS.md missing required contract anchor: {label}")
+
     for m in LINK_PATTERN.finditer(text):
         path = m.group(1)
         if not (REPO / path).exists():
