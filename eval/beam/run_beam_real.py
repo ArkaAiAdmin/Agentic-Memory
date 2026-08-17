@@ -630,14 +630,16 @@ def run_beam_real_eval(
                     gold_mids = set()
                     if src is not None:
                         flat_ids = []
-                        if isinstance(src, list):
-                            flat_ids = src
-                        elif isinstance(src, dict):
-                            for v in src.values():
-                                if isinstance(v, list):
-                                    flat_ids.extend(v)
-                                else:
-                                    flat_ids.append(v)
+                        def _flatten_src(obj):
+                            if isinstance(obj, list):
+                                for item in obj:
+                                    _flatten_src(item)
+                            elif isinstance(obj, dict):
+                                for v in obj.values():
+                                    _flatten_src(v)
+                            elif isinstance(obj, (int, str)):
+                                flat_ids.append(obj)
+                        _flatten_src(src)
                         for tid in flat_ids:
                             if tid in turn_to_memory_id:
                                 gold_mids.add(turn_to_memory_id[tid])
