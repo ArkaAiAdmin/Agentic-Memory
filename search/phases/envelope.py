@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -234,7 +235,10 @@ def _record_last_accessed(db: AnyConnection | None, result_items: list) -> None:
         db.commit()
     except Exception as e:
         _phase_inc("search.record_last_accessed", e)
-        logger.warning("_record_last_accessed failed: %s", e)
+        if isinstance(e, sqlite3.OperationalError) and ("locked" in str(e).lower() or "busy" in str(e).lower()):
+            logger.debug("_record_last_accessed skipped (database busy/locked): %s", e)
+        else:
+            logger.warning("_record_last_accessed failed: %s", e)
 
 
 def _build_search_result_envelope(

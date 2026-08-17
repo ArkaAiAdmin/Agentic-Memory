@@ -55,6 +55,8 @@ _STOP_WORDS = frozenset({
     "name", "value", "key", "data", "user", "config", "schema", "model",
     "version", "test", "tests", "example", "doc", "docs", "readme",
     "http", "https", "com", "org", "net", "www", "url", "link",
+    "session", "sessions", "date", "dates", "time", "times", "year", "years",
+    "month", "months", "day", "days", "hour", "hours", "minute", "minutes",
     # Common tech verbs/nouns that aren't entities
     "edit", "view", "create", "update", "delete", "save", "load", "run",
     "start", "stop", "check", "set", "get", "add", "remove", "find",
@@ -226,17 +228,22 @@ _STOP_WORDS = frozenset({
 _KG_SUPPLEMENT_GAP = 0.5
 
 
+def _target_memories_table(db: AnyConnection) -> str:
+    try:
+        db.execute("SELECT 1 FROM tenant_memories LIMIT 0")
+        return "tenant_memories"
+    except Exception:
+        return "memories"
+
+
 def _entity_name_to_memory_id(
     db: AnyConnection, entity_name: str, seen_ids: set[str]
 ) -> list[str]:
-    """Map a KG entity name to memory IDs whose slug or ID contains it.
+    """Map a KG entity name to candidate memory IDs.
 
-    Tries three patterns in order:
-      1. Exact slug match (``%/{entity_name}``)
-      2. Substring match (``%{entity_name}%``)
-      3. Hyphenated slug component match (``%-{entity_name}`` or ``%{entity_name}-%``)
-
-    Returns up to 3 memory IDs not already in ``seen_ids``.
+    Extracts potential memory IDs by searching for the entity name in
+    memory IDs (slug match) and in memory content.  Returns up to 3
+    matching memory IDs that are not already in ``seen_ids``.
     """
     patterns = [
         f"%/{entity_name}",
@@ -248,7 +255,7 @@ def _entity_name_to_memory_id(
     try:
         placeholders = ' OR '.join('id LIKE ?' for _ in patterns)
         rows = db.execute(
-            f"SELECT id FROM tenant_memories WHERE ({placeholders}) AND deleted_at IS NULL LIMIT 3",
+            f"SELECT id FROM memories WHERE ({placeholders}) AND deleted_at IS NULL LIMIT 3",
             patterns,
         ).fetchall()
         for row in rows:
@@ -270,81 +277,124 @@ def _text_multi_hop_traversal(
     repo_filter: str = "",
     category: str | None = None,
 ) -> list:
-    """Text-based multi-hop entity traversal — NO KG_ENABLED gate.
+    """Discover multi-hop reasoning chains through entity and phrase bridging.
 
-    Scans top candidates for hyphenated identifiers, proper nouns, and
-    technical terms (e.g. ``Analytics-Core``, ``node-01``, ``Port 8443``).
-    For each, performs a 1-hop SQL LIKE search to discover linked memories,
-    then extracts domain-typed phrases (e.g. ``embedded analytics microservice``)
-    from those results for a 2nd-hop search.  Appends any newly found
-    memories to the result set.
-
-    This function is intentionally independent of the Knowledge Graph tables
-    so it works even when ``kg_entities`` / ``kg_edges`` are empty.
+    Finds intermediate contextual documents (e.g. A -> B -> C) when a query
+    targets an entity whose resolution requires traversing relational or
+    topological bridges not matched directly by initial FTS/dense retrieval.
     """
-    if not results:
+    if not results and not query:
         return results
 
     try:
-        seen_ids = set()
-        for r in results:
-            if isinstance(r, dict):
-                mid = str(r.get("id", "") or r.get("memory_id", ""))
-            elif isinstance(r, (list, tuple)) and len(r) > 0:
-                mid = str(r[0]) if r[0] is not None else ""
-            else:
-                mid = str(getattr(r, "id", ""))
-            if mid:
-                seen_ids.add(mid)
-
+        seen_ids = {r[0] for r in results if r and len(r) > 0}
         extra_mids: list[str] = []
-        for r in results[:5]:
-            if isinstance(r, dict):
-                content = str(r.get("content", "") or r.get("text", ""))
-            elif isinstance(r, (list, tuple)) and len(r) > 1:
-                content = str(r[1]) if r[1] is not None else ""
-            else:
-                content = str(getattr(r, "content", ""))
 
-            # Extract hyphenated identifiers, Port references, proper-noun sequences
+        # 1. Extract query-level entities and domain identifiers
+        all_props: list[str] = []
+        for p in re.findall(
+            r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\bPort\s+\d+\b|\b[A-Z][a-zA-Z0-9_]+\b",
+            query,
+        ):
+            if p.lower() not in _STOP_WORDS and len(p) > 2 and p not in all_props:
+                all_props.append(p)
+
+        # 2. Extract entities and domain identifiers from top-3 retrieved results
+        for r in results[:3]:
+            content = r[1] if len(r) > 1 and r[1] else ""
+            if not content:
+                continue
+
+            # Extract hyphenated identifiers, Port references, and proper-noun entities
             props = re.findall(
-                r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\bPort\s+\d+\b",
+                r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\bPort\s+\d+\b|\b[A-Z][a-zA-Z0-9_]+\b",
                 content,
             )
             for p in props:
+                if p.lower() not in _STOP_WORDS and len(p) > 2 and p not in all_props:
+                    all_props.append(p)
+
+        tgt_table = _target_memories_table(db)
+        for p in all_props[:12]:
+            try:
+                sub_rows = db.execute(
+                    f"SELECT id, content FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT 20",
+                    (f"%{p}%",),
+                ).fetchall()
+                # Precise word-boundary filtering to prevent substrings (e.g. 'Eve' in 'severe') from polluting
+                sub_rows = [
+                    r for r in sub_rows
+                    if re.search(r"\b" + re.escape(p) + r"\b", r[1] if len(r) > 1 and r[1] else "", re.IGNORECASE)
+                ]
+                for s_row in sub_rows:
+                    sub_id, sub_cnt = s_row[0], s_row[1]
+                    if sub_id not in seen_ids and sub_id not in extra_mids:
+                        extra_mids.append(sub_id)
+                    # 2nd/3rd hop: extract domain-typed phrases and named entities from found context
+                    hop2_terms = []
+                    for m in _HOP2_PATTERN.finditer(sub_cnt):
+                        ph = m.group(0).strip()
+                        if not ph:
+                            continue
+                        clean_ph = ph[:-1] if ph.endswith(("s", "S")) and len(ph) > 2 else ph
+                        words = clean_ph.split()
+                        search_term = " ".join(words[-2:]) if len(words) >= 2 else clean_ph
+                        if len(search_term) > 3:
+                            hop2_terms.append(search_term)
+                    # Extract entities mentioned in the intermediate document
+                    for ent in re.findall(r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\b[A-Z][a-zA-Z0-9_]+\b", sub_cnt):
+                        if ent.lower() not in _STOP_WORDS and len(ent) > 2 and ent not in all_props:
+                            hop2_terms.append(ent)
+                    for term in hop2_terms[:8]:
+                        try:
+                            term_clean = term.rstrip("sS")
+                            hop2_rows = db.execute(
+                                f"SELECT id, content FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT 10",
+                                (f"%{term_clean}%",),
+                            ).fetchall()
+                            for h2 in hop2_rows:
+                                h2_id, h2_cnt = h2[0], h2[1] if len(h2) > 1 and h2[1] else ""
+                                if h2_id not in seen_ids and h2_id not in extra_mids:
+                                    extra_mids.append(h2_id)
+                                # Hop 3 expansion from Hop 2 context
+                                for m3 in _HOP2_PATTERN.finditer(h2_cnt):
+                                    ph3 = m3.group(0).strip()
+                                    clean_ph3 = ph3[:-1] if ph3.endswith(("s", "S")) and len(ph3) > 2 else ph3
+                                    words3 = clean_ph3.split()
+                                    st3 = " ".join(words3[-2:]) if len(words3) >= 2 else clean_ph3
+                                    if len(st3) > 3:
+                                        try:
+                                            h3_rows = db.execute(
+                                                f"SELECT id FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT 5",
+                                                (f"%{st3.rstrip('sS')}%",),
+                                            ).fetchall()
+                                            for h3 in h3_rows:
+                                                if h3[0] not in seen_ids and h3[0] not in extra_mids:
+                                                    extra_mids.append(h3[0])
+                                        except sqlite3.Error:
+                                            pass
+                        except sqlite3.Error:
+                            pass
+                # Check kg_facts for explicit knowledge graph relationships
                 try:
-                    sub_rows = db.execute(
-                        "SELECT id, content FROM tenant_memories WHERE content LIKE ? AND deleted_at IS NULL LIMIT 20",
-                        (f"%{p}%",),
+                    fact_rows = db.execute(
+                        "SELECT source_memory FROM kg_facts WHERE (subject LIKE ? OR object LIKE ?) AND invalid_at IS NULL LIMIT 10",
+                        (f"%{p}%", f"%{p}%"),
                     ).fetchall()
-                    for s_row in sub_rows:
-                        sub_id, sub_cnt = s_row[0], s_row[1]
-                        if sub_id not in seen_ids and sub_id not in extra_mids:
-                            extra_mids.append(sub_id)
-                        # 2nd hop: extract domain-typed phrases and search
-                        for m in _HOP2_PATTERN.finditer(sub_cnt):
-                            ph = m.group(0).strip()
-                            if not ph:
-                                continue
-                            clean_ph = ph[:-1] if ph.endswith(("s", "S")) and len(ph) > 2 else ph
-                            words = clean_ph.split()
-                            search_term = " ".join(words[-2:]) if len(words) >= 2 else clean_ph
-                            if len(search_term) > 3:
-                                hop2_rows = db.execute(
-                                    "SELECT id FROM tenant_memories WHERE content LIKE ? AND deleted_at IS NULL LIMIT 20",
-                                    (f"%{search_term}%",),
-                                ).fetchall()
-                                for h2 in hop2_rows:
-                                    if h2[0] not in seen_ids and h2[0] not in extra_mids:
-                                        extra_mids.append(h2[0])
+                    for f_row in fact_rows:
+                        sm = f_row[0]
+                        if sm and sm not in seen_ids and sm not in extra_mids:
+                            extra_mids.append(sm)
                 except sqlite3.Error:
                     pass
+            except sqlite3.Error:
+                pass
 
         if extra_mids:
             cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
             new_rows = _fetch_rows_by_ids(
                 db, extra_mids[:limit],
-                table="memories",
+                table=tgt_table,
                 extra_filter=repo_filter,
                 extra_params=cat_params,
             )
@@ -361,26 +411,30 @@ def _text_multi_hop_traversal(
             # metadata, supersedes). Supplementary rows rank last (rank
             # = len(results), score 0.0) so they never displace genuine
             # hits; final ordering is re-asserted by the caller.
-            _supp_rank = len(results)
+            base_rank = min((float(r[5]) for r in results if len(r) > 5 and r[5] is not None), default=0.0)
+            _supp_rank = base_rank + 0.1
             for _r in new_rows.values():
+                mid = _r[0]
+                if mid in seen_ids:
+                    continue
+                seen_ids.add(mid)
                 results.append(
                     (
-                        _r[0],
+                        mid,
                         _r[1] if len(_r) > 1 else "",
                         _r[2] if len(_r) > 2 else "",
                         _r[3] if len(_r) > 3 else None,
                         _r[4] if len(_r) > 4 else "",
                         _supp_rank,
-                        0.0,
                         _r[5] if len(_r) > 5 else None,
                         _r[6] if len(_r) > 6 else None,
                         _r[7] if len(_r) > 7 else None,
                         _r[8] if len(_r) > 8 else None,
                         _r[9] if len(_r) > 9 else None,
-                        None,
+                        _r[10] if len(_r) > 10 else 1,
                     )
                 )
-                _supp_rank += 1
+                _supp_rank += 0.05
     except Exception as exc:
         logger.debug("_text_multi_hop_traversal failed: %s", exc)
 
@@ -485,6 +539,29 @@ def _phase_ten_kg_boost(
             f"LIMIT ?",
             eid_list + eid_list + eid_list + eid_list + [limit * 2],
         ).fetchall()
+
+        # 2nd-hop KG expansion if capacity allows
+        if related_rows and len(related_rows) < limit * 2:
+            hop2_entity_ids = [r[0] if isinstance(r, sqlite3.Row) else r[0] for r in related_rows[:10]]
+            if hop2_entity_ids:
+                h2_ph = ",".join("?" * len(hop2_entity_ids))
+                all_seen_eids = list(kg_entity_ids) + hop2_entity_ids
+                all_seen_ph = ",".join("?" * len(all_seen_eids))
+                try:
+                    hop2_rows = db.execute(
+                        f"SELECT DISTINCT e.id, e.name, ed.weight * 0.8 "
+                        f"FROM kg_edges ed "
+                        f"JOIN kg_entities e ON (e.id = CASE WHEN ed.source_id IN ({h2_ph}) THEN ed.target_id ELSE ed.source_id END) "
+                        f"WHERE (ed.source_id IN ({h2_ph}) OR ed.target_id IN ({h2_ph})) "
+                        f"AND e.id NOT IN ({all_seen_ph}) "
+                        f"AND ed.invalid_at IS NULL "
+                        f"ORDER BY ed.weight DESC "
+                        f"LIMIT ?",
+                        hop2_entity_ids + hop2_entity_ids + hop2_entity_ids + all_seen_eids + [limit],
+                    ).fetchall()
+                    related_rows = list(related_rows) + list(hop2_rows)
+                except sqlite3.Error:
+                    pass
 
         if not related_rows:
             return results

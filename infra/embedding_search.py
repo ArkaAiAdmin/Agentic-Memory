@@ -1104,7 +1104,10 @@ class EmbeddingSearch:
                         ],
                     )
             except Exception as e:
-                logger.warning("failed to write embeddings back: %s", e)
+                if isinstance(e, sqlite3.OperationalError) and ("locked" in str(e).lower() or "busy" in str(e).lower()):
+                    logger.debug("failed to write embeddings back (database busy/locked): %s", e)
+                else:
+                    logger.warning("failed to write embeddings back: %s", e)
 
         scored.sort(key=lambda x: x[0], reverse=True)
         results = []
@@ -1211,7 +1214,10 @@ class EmbeddingSearch:
                         logger.warning("_search_full_scan: broad except swallowed: %s", _wp_exc)
                         pass
             except Exception as e:
-                logger.warning("failed to write embeddings back: %s", e)
+                if isinstance(e, sqlite3.OperationalError) and ("locked" in str(e).lower() or "busy" in str(e).lower()):
+                    logger.debug("failed to write embeddings back (database busy/locked): %s", e)
+                else:
+                    logger.warning("failed to write embeddings back: %s", e)
 
         # Encode the query and guard the ndim so a 1-row DB doesn't
         # collapse similarities into a scalar.
@@ -1481,12 +1487,12 @@ class EmbeddingSearch:
                     try:
                         cache.record_hit(mid)
                     except Exception as _wp_exc:
-                        logger.warning("_arc_track_hits: broad except swallowed: %s", _wp_exc)
+                        logger.debug("_arc_track_hits ghost promotion skipped: %s", _wp_exc)
                         pass
             finally:
                 cache.close()
         except Exception as e:
-            logger.warning("ARC hit-tracking failed: %s", e)
+            logger.debug("ARC hit-tracking skipped: %s", e)
 
 
     def index_chunk_embeddings_batch(self, db, chunks: list[dict]) -> int:

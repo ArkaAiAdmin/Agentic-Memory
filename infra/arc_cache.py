@@ -37,6 +37,7 @@ import logging
 
 import datetime
 import os
+import sqlite3
 import sys
 from contextlib import contextmanager
 from infra.db_write_queue import sqlite_write_queue
@@ -51,6 +52,8 @@ from typing import Any, Iterator
 from infra.memory_common import find_project_root  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+_VERIFIED_ARC_DBS: set[str] = set()
 
 
 # M8 fix: ARC ghost table schema. Kept here so the module is the single
@@ -119,16 +122,21 @@ class ARCCache:
             yield cur
             self.db.commit()
         except Exception as e:
-            logger.warning("transaction failed: %s", e)
+            logger.debug("ARCCache transaction failed/skipped: %s", e)
             self.db.rollback()
             raise
         finally:
             cur.close()
 
     def _ensure_tables(self) -> None:
+        db_key = str(self.db_path.resolve()) if self.db_path else ""
+        if db_key and db_key in _VERIFIED_ARC_DBS:
+            return
         with self.transaction() as cur:
             cur.execute(_ARC_SCHEMA)
             cur.execute(_ARC_STATS_SCHEMA)
+        if db_key:
+            _VERIFIED_ARC_DBS.add(db_key)
 
     def record_eviction(self, memory_id: str, tier: str) -> None:
         """Record that ``memory_id`` was evicted from ``tier``.
@@ -219,7 +227,7 @@ class ARCCache:
                     (f"recent:{memory_id}", now_ts),
                 )
         except Exception as e:
-            logger.warning("ARCCache.record_recent failed for %s: %s", memory_id, e)
+            logger.debug("ARCCache.record_recent skipped for %s: %s", memory_id, e)
 
     def reset(self) -> dict:
         """Clear all ARC state — both the ghost list and the stats table.

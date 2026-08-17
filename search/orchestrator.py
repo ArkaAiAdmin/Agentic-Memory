@@ -433,18 +433,6 @@ def _rerank_results(
                 supersedes,
             )
         )
-
-    if budget.should_run("kg_boost", 50):
-        try:
-            scored = _phase_ten_kg_boost(db, scored, query, limit=limit)
-            scored = _phase_ten_multi_hop_kg(db, scored, query, limit=limit * 2)
-        except Exception as _kg_exc:
-            logger.debug("kg_boost / multi_hop_kg skipped: %s", _kg_exc)
-        try:
-            scored = _text_multi_hop_traversal(db, scored, query, limit=limit * 2)
-        except Exception as _tmh_exc:
-            logger.debug("text_multi_hop skipped: %s", _tmh_exc)
-
     scored = _strong_match_float(scored)
     # PR1.2: CE reranking writes r[6] first (single monotonic CE stage),
     # selected by query type (weak default / chunk for long-multi-part /
@@ -536,8 +524,8 @@ def _rerank_results(
         score = float(r[6]) if r[6] is not None else 0.0
         ts = str(r[4]) if len(r) > 4 and r[4] is not None else ""
         if is_fact_or_temp:
-            # Round score to 1 decimal place to group near-equal relevance scores, then use timestamp as tie-breaker
-            return (round(score, 1), ts)
+            # Round score to 3 decimal places to group genuinely identical relevance scores, then use timestamp as tie-breaker
+            return (round(score, 3), ts)
         return (score, ts)
 
     if out and len(out) > 1:
@@ -1583,7 +1571,7 @@ def search_memories(
             _t0_tmh = time.time()
             try:
                 results = _text_multi_hop_traversal(
-                    db, results, normalized_query, limit, repo_filter, category=category or None,
+                    db, results, query, limit, repo_filter, category=category or None,
                 )
             except Exception as _tmh_exc:
                 _phase_inc("search.text_multi_hop", _tmh_exc)

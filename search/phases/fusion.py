@@ -158,6 +158,13 @@ def _hybrid_fusion(
 
         def _do_chunks() -> list:
             try:
+                if db_path and Path(db_path).exists():
+                    try:
+                        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0) as thread_conn:
+                            hits = _search_chunks_enhanced(thread_conn, fts_query, limit=limit * 2)
+                            return _merge_chunk_hits(hits)
+                    except Exception:
+                        pass
                 hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
                 return _merge_chunk_hits(hits)
             except Exception:
@@ -170,6 +177,13 @@ def _hybrid_fusion(
 
                 query_sparse = encode_sparse(normalized_query)
                 if query_sparse:
+                    if db_path and Path(db_path).exists():
+                        try:
+                            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0) as thread_conn:
+                                splade_results = splade_search(thread_conn, query_sparse, top_k=limit * _overfetch)
+                                return [mid for mid, _ in splade_results]
+                        except Exception:
+                            pass
                     splade_results = splade_search(db, query_sparse, top_k=limit * _overfetch)
                     return [mid for mid, _ in splade_results]
             except Exception as _splade_exc:
@@ -191,6 +205,23 @@ def _hybrid_fusion(
             chunk_hits_out.append(merged_chunks)
         chunk_fts_ranked = [p_id for p_id, _, _, _, _ in merged_chunks]
 
+        # Query-type aware channel calibration
+        try:
+            from search.query_parser import _detect_query_type
+            q_type = _detect_query_type(normalized_query)
+            if q_type in ("factual", "multihop", "temporal", "inference"):
+                # Conversational or factual question: boost dense semantic & sparse neural channels
+                # to prevent high BM25 term frequencies on conversational filler words from dominating rank 1
+                _sem_w *= 1.25
+                _splade_w *= 1.20
+                _chunk_fts_w *= 1.10
+                _fts_w *= 0.85
+            elif q_type == "code":
+                # Code/symbol query: prioritize exact lexical FTS
+                _fts_w *= 1.30
+                _sem_w *= 0.85
+        except Exception:
+            pass
 
         # Adaptive weighting: boost semantic for abstract/synonym queries
         # Check if FTS has few results (indicates vocabulary mismatch)
@@ -332,6 +363,9 @@ def _enhance_with_chunks(
         if not merged_chunks:
             return results
         seen_ids = {r[0] for r in results}
+        chunk_parent_ids = [p_id for p_id, _, _, _, _ in merged_chunks if p_id not in seen_ids]
+        if not chunk_parent_ids:
+            return results
         chunk_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
         chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter, extra_params=chunk_params)
         # P0-6 fix (2026-06-23): batch the valid_to check instead of

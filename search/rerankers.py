@@ -177,16 +177,19 @@ def _apply_cross_encoder_rerank(
     if deep_rerank:
         try:
             from infra._lazy_imports import get_config
-
             from infra.reranker import get_reranker, normalize_rerank_score
 
             reranker = get_reranker()
+            _DEEP_CE_CAP = 15
+            deep_docs = docs[:_DEEP_CE_CAP]
             raw = reranker.score(
-                query, docs, timeout=float(get_config().deep_rerank_timeout)
+                query, deep_docs, timeout=float(get_config().deep_rerank_timeout)
             )
             if raw is not None:
                 backend = reranker.backend()
-                ce_scores = [normalize_rerank_score(s, backend=backend) for s in raw]
+                deep_scores = [normalize_rerank_score(s, backend=backend) for s in raw]
+                tail_scores = [_cross_encoder_score(query, d) for d in docs[_DEEP_CE_CAP:]]
+                ce_scores = deep_scores + tail_scores
             else:
                 logger.debug(
                     "reranker: model unavailable, using weak CE for this query"
@@ -845,8 +848,9 @@ def _try_deep_rerank(query: str, scored_results: list, top_k: int = 30) -> list 
             return None
     except Exception:  # pragma: no cover - best-effort config read
         pass
-    head = scored_results[:top_k]
-    tail = scored_results[top_k:]
+    _DEEP_CAP = min(top_k, 15)
+    head = scored_results[:_DEEP_CAP]
+    tail = scored_results[_DEEP_CAP:]
     blend = _get_ce_blend()
     try:
         from infra.reranker import get_reranker, normalize_rerank_score
@@ -970,7 +974,8 @@ def _apply_combined_ce_rerank(
             ce = ce_norm_w[i]
         else:
             ce = _cross_encoder_score(query, scored_results[i][1] or "")
-        w6[i] = w6[i] * (1.0 - weak_blend) + ce * weak_blend
+        blended = w6[i] * (1.0 - weak_blend) + ce * weak_blend
+        w6[i] = max(raw[i] * 0.75, blended) if raw[i] >= 0.5 else blended
 
     # Final scores start at the weak-adjusted values; chunk only rewrites
     # the below-p80 candidates within the chunk window.
@@ -1026,7 +1031,8 @@ def _apply_combined_ce_rerank(
     # SINGLE write: additive interpolation for below-p80 candidates only.
     for i in ce_candidates:
         cn = ce_norm_map.get(i, 0.0)
-        final[i] = w6[i] * (1.0 - chunk_blend) + cn * chunk_blend
+        c_blended = w6[i] * (1.0 - chunk_blend) + cn * chunk_blend
+        final[i] = max(w6[i] * 0.85, c_blended) if w6[i] >= 0.4 else c_blended
 
     return _assign_rank_once(scored_results, final, chunk_k)
 

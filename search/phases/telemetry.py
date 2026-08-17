@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import threading
 import time
 from typing import TYPE_CHECKING, Optional
@@ -78,7 +79,10 @@ def _record_search_telemetry(
         db.commit()
     except Exception as e:
         _phase_inc("search.telemetry.ctr_feedback", e)
-        logger.warning("record_search_telemetry CTR failed: %s", e)
+        if isinstance(e, sqlite3.OperationalError) and ("locked" in str(e).lower() or "busy" in str(e).lower()):
+            logger.debug("record_search_telemetry CTR skipped (database busy/locked): %s", e)
+        else:
+            logger.warning("record_search_telemetry CTR failed: %s", e)
     try:
         try:
             _tenant_row = db.execute("SELECT tenant_id()").fetchone()
@@ -103,7 +107,10 @@ def _record_search_telemetry(
         db.commit()
     except Exception as e:
         _phase_inc("search.telemetry.search_interaction", e)
-        logger.warning("record_search_telemetry search_interaction failed: %s", e)
+        if isinstance(e, sqlite3.OperationalError) and ("locked" in str(e).lower() or "busy" in str(e).lower()):
+            logger.debug("record_search_telemetry search_interaction skipped (database busy/locked): %s", e)
+        else:
+            logger.warning("record_search_telemetry search_interaction failed: %s", e)
     try:
         from adaptive_retention import record_access
 
@@ -114,7 +121,10 @@ def _record_search_telemetry(
         db.commit()
     except Exception as e:
         _phase_inc("search.telemetry.adaptive_retention", e)
-        logger.warning("record_search_telemetry adaptive_retention failed: %s", e)
+        if isinstance(e, sqlite3.OperationalError) and ("locked" in str(e).lower() or "busy" in str(e).lower()):
+            logger.debug("record_search_telemetry adaptive_retention skipped (database busy/locked): %s", e)
+        else:
+            logger.warning("record_search_telemetry adaptive_retention failed: %s", e)
 
 
 def _record_search_phase_latencies(*, db, query_id: str, phase_latencies: dict[str, float]) -> None:
@@ -138,4 +148,7 @@ def _record_search_phase_latencies(*, db, query_id: str, phase_latencies: dict[s
         )
         db.commit()
     except Exception as e:
-        logger.warning("_record_search_phase_latencies failed: %s", e)
+        if isinstance(e, sqlite3.OperationalError) and ("locked" in str(e).lower() or "busy" in str(e).lower()):
+            logger.debug("_record_search_phase_latencies skipped (database busy/locked): %s", e)
+        else:
+            logger.warning("_record_search_phase_latencies failed: %s", e)

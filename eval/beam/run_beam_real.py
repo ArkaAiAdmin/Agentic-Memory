@@ -64,7 +64,7 @@ PART_FILES = [
     "10M-00001-of-00002.parquet",
 ]
 
-HF_BASE_URL = "https://huggingface.co/datasets/Mohammadta/BEAM-10M/resolve/main"
+HF_BASE_URL = "https://huggingface.co/datasets/Mohammadta/BEAM-10M/resolve/main/data"
 
 
 def ensure_beam_dataset() -> Path | None:
@@ -251,6 +251,52 @@ def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> dict[s
 def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
     """Single conversation ingest compatibility wrapper."""
     return ingest_all_conversations(db_path, [conv])
+
+
+def run_search(db_path: Path, query: str, limit: int = 20) -> list[str]:
+    """Run hybrid search and return list of memory IDs in rank order."""
+    from search.orchestrator import search_memories
+
+    result = search_memories(
+        query=query,
+        db_path=db_path,
+        limit=max(limit, 20),
+        hybrid=True,
+        rerank=True,
+        tenant_id="beam",
+        category="sessions",
+    )
+    return [r["id"] for r in result.get("results", [])]
+
+
+def score_answer(
+    answer: str,
+    expected: str,
+    rubric: list[str] | None = None,
+    compliance_indicators: list[str] | None = None,
+    non_compliance_signs: list[str] | None = None,
+    ability_type: str = "unknown",
+) -> float:
+    """Score predicted context against ground truth expectation and rubric."""
+    from eval.bench.metrics import compute_text_metrics
+
+    metrics = compute_text_metrics(
+        prediction=answer,
+        expected=expected,
+        rubric=rubric,
+        compliance_indicators=compliance_indicators,
+    )
+    score = metrics["overall_accuracy"]
+
+    # Penalize non-compliance signs if present
+    if non_compliance_signs and score > 0:
+        ans_lower = answer.lower()
+        for sign in non_compliance_signs:
+            if sign.lower() in ans_lower:
+                score = max(0.0, score - 0.5)
+                break
+
+    return score
 
 
 # ---------------------------------------------------------------------------
