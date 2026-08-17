@@ -196,3 +196,59 @@ def test_harness_cleanup_temp_dirs():
         assert len(harness.db_manager._temp_dirs) == 0
         assert not db_path.exists()
 
+
+def test_rubric_prefix_stripping_and_matching():
+    # Prompt-directive prefixes from benchmarks should be cleanly stripped
+    rubric = [
+        "LLM response should state: 17 tasks",
+        "LLM response should state: 88%",
+        "LLM response should contain: you explored various vector indexing strategies",
+    ]
+    pred = "The sprint on 2024-11-05 has 17 tasks logged in Jira with an 88% target. Earlier, you explored various vector indexing strategies."
+    res = compute_text_metrics(pred, "17 tasks with 88% target", rubric=rubric)
+    assert res["rubric_score"] == 1.0
+    assert res["overall_accuracy"] == 1.0
+
+
+def test_beam_date_and_multiplan_extraction():
+    from eval.beam.run_beam_real import parse_time_anchor, extract_conversation_content
+
+    # Date parsing
+    assert "2024-07-01" in parse_time_anchor("July-01-2024")
+    assert "2024-12-16" in parse_time_anchor("December-16-2024")
+    assert "2025-02-15" in parse_time_anchor("February-15-2025")
+
+    # Multi-plan extraction from nested chat structure
+    dummy_chat = [
+        {
+            "plan-1": [
+                {
+                    "time_anchor": "July-01-2024",
+                    "turns": [
+                        [{"role": "user", "content": "hello plan 1", "id": 1}],
+                    ],
+                }
+            ],
+            "plan-2": None,
+        },
+        {
+            "plan-1": None,
+            "plan-2": [
+                {
+                    "time_anchor": "August-01-2024",
+                    "turns": [
+                        [{"role": "assistant", "content": "hello plan 2", "id": 2}],
+                    ],
+                }
+            ],
+        },
+    ]
+
+    turns = extract_conversation_content(dummy_chat)
+    assert len(turns) == 2
+    assert turns[0]["id"] == 1
+    assert turns[0]["plan"] == "plan-1"
+    assert turns[1]["id"] == 2
+    assert turns[1]["plan"] == "plan-2"
+
+

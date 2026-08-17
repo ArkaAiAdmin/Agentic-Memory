@@ -199,6 +199,7 @@ def populate_eval_memory_indexes_batch(
     conn: sqlite3.Connection,
     items: list[tuple[str, str, str, list[str] | None]],
     use_llm_facts: bool = False,
+    max_kg_facts: int | None = 2000,
 ) -> None:
     """Batch-index multiple memories across all multi-indexes in parallel/batched passes.
 
@@ -207,12 +208,19 @@ def populate_eval_memory_indexes_batch(
     if not items:
         return
 
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        def tqdm(iterable, *args, **kwargs):
+            return iterable
+
     # 1. Chunk FTS
     try:
         from search.chunk_index import _qw5_ensure_schema, _qw5_index_chunks_for
 
         _qw5_ensure_schema(conn)
-        for memory_id, content, _, _ in items:
+        print("\n[1/6] Indexing Chunk FTS5...", flush=True)
+        for memory_id, content, _, _ in tqdm(items, desc="Chunk FTS5", disable=len(items) < 50):
             if content and content.strip():
                 _qw5_index_chunks_for(conn, memory_id, content)
     except Exception:
@@ -224,6 +232,7 @@ def populate_eval_memory_indexes_batch(
 
         embed_inputs = [(mid, cnt) for mid, cnt, _, _ in items if cnt and cnt.strip()]
         if embed_inputs:
+            print("\n[2/6] Generating Dense Vector Embeddings (bge-base)...", flush=True)
             get_embedding_search().index_embeddings_batch(conn, embed_inputs)
     except Exception:
         pass
@@ -235,6 +244,7 @@ def populate_eval_memory_indexes_batch(
         _ensure_colbert_schema(conn)
         colbert_inputs = [(mid, cnt) for mid, cnt, _, _ in items if cnt and cnt.strip()]
         if colbert_inputs:
+            print("\n[3/6] Indexing ColBERT Multi-Vector Tokens...", flush=True)
             index_memory_colbert_batch(conn, colbert_inputs)
     except Exception:
         pass
@@ -246,16 +256,20 @@ def populate_eval_memory_indexes_batch(
         _ensure_splade_schema(conn)
         splade_inputs = [(mid, cnt) for mid, cnt, _, _ in items if cnt and cnt.strip()]
         if splade_inputs:
+            print("\n[4/6] Indexing SPLADE Neural Sparse Vectors...", flush=True)
             index_memory_splade_batch(conn, splade_inputs)
     except Exception:
         pass
+
+    kg_items = items[:max_kg_facts] if max_kg_facts is not None else items
 
     # 5. Knowledge Graph
     try:
         from knowledge_graph import ensure_kg_schema, index_kg_for_memory
 
         ensure_kg_schema(conn)
-        for memory_id, content, _, _ in items:
+        print(f"\n[5/6] Extracting Knowledge Graph Entities ({len(kg_items)} items)...", flush=True)
+        for memory_id, content, _, _ in tqdm(kg_items, desc="Knowledge Graph Entities", disable=len(kg_items) < 50):
             if content and content.strip():
                 index_kg_for_memory(conn, memory_id, content)
     except Exception:
@@ -272,7 +286,8 @@ def populate_eval_memory_indexes_batch(
             os.environ["MEMORY_LLM_EXTRACTION"] = "0"
             _llm_changed = True
         try:
-            for memory_id, content, _, _ in items:
+            print(f"\n[6/6] Extracting Temporal Facts ({len(kg_items)} items)...", flush=True)
+            for memory_id, content, _, _ in tqdm(kg_items, desc="Temporal Facts", disable=len(kg_items) < 50):
                 if content and content.strip():
                     index_facts_for_memory(conn, memory_id, content)
         finally:

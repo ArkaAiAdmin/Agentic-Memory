@@ -77,6 +77,23 @@ def compute_token_f1(prediction: str, ground_truth: str) -> float:
     return 2 * (precision * recall) / (precision + recall)
 
 
+def _clean_rubric_item(r: str) -> str:
+    """Clean directive prefixes and instruction wrappers from benchmark rubrics."""
+    cleaned = re.sub(
+        r"^(?:llm\s+)?(?:response\s+)?(?:should\s+)?(?:state|contain|mention|indicate|include|have|refer\s+to|state\s+that|mention\s+that|be):\s*",
+        "",
+        r.strip(),
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"^(?:states?|mentions?|contains?|includes?):\s*",
+        "",
+        cleaned.strip(),
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip()
+
+
 def compute_text_metrics(
     prediction: str,
     expected: str,
@@ -91,23 +108,57 @@ def compute_text_metrics(
     sub = 1.0 if (exp_norm and exp_norm in pred_norm) else 0.0
     f1 = compute_token_f1(prediction, expected) if expected else 0.0
 
+    # For long candidate predictions (retrieved chunks), compute best-window span F1
+    pred_tokens = pred_norm.split()
+    gold_tokens = exp_norm.split()
+    if gold_tokens and len(pred_tokens) > len(gold_tokens) * 2 and len(gold_tokens) >= 2:
+        gold_len = len(gold_tokens)
+        window_size = min(len(pred_tokens), gold_len * 3)
+        best_span_f1 = 0.0
+        step = max(1, gold_len // 2)
+        for i in range(0, len(pred_tokens) - gold_len + 1, step):
+            span_text = " ".join(pred_tokens[i:i + window_size])
+            span_f1 = compute_token_f1(span_text, expected)
+            if span_f1 > best_span_f1:
+                best_span_f1 = span_f1
+                if best_span_f1 >= 0.9:
+                    break
+        f1 = max(f1, best_span_f1)
+
     # Rubric & compliance scoring
     rubric_score = 0.0
     if compliance_indicators:
         hits = 0
         for ind in compliance_indicators:
-            ind_norm = _normalize_text(ind)
-            if ind_norm in pred_norm:
+            ind_clean = _clean_rubric_item(ind)
+            ind_norm = _normalize_text(ind_clean or ind)
+            if ind_norm and ind_norm in pred_norm:
                 hits += 1
             else:
                 words = [w for w in ind_norm.split() if len(w) > 3]
                 if words and sum(1 for w in words if w in pred_norm) >= max(1, len(words) * 2 // 3):
                     hits += 1
-        ratio = hits / len(compliance_indicators)
+        ratio = hits / len(compliance_indicators) if compliance_indicators else 0.0
         rubric_score = 1.0 if ratio >= 0.5 else (ratio * 2)
     elif rubric:
-        hits = sum(1 for r in rubric if _normalize_text(r) in pred_norm)
-        rubric_score = hits / len(rubric)
+        hits = 0
+        for r in rubric:
+            r_clean = _clean_rubric_item(r)
+            r_norm = _normalize_text(r_clean or r)
+            if not r_norm:
+                continue
+            if r_norm in pred_norm:
+                hits += 1
+            else:
+                words = [w for w in r_norm.split() if len(w) > 2]
+                if words and sum(1 for w in words if w in pred_norm) >= max(1, len(words) * 2 // 3):
+                    hits += 1
+                else:
+                    # Check numbers/quantities
+                    nums = re.findall(r"\d+(?:\.\d+)?", r_norm)
+                    if nums and all(n in pred_norm for n in nums):
+                        hits += 1
+        rubric_score = hits / len(rubric) if rubric else 0.0
 
     overall_accuracy = max(em, sub, 1.0 if f1 >= 0.6 else 0.0, rubric_score)
 

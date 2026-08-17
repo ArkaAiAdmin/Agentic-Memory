@@ -82,25 +82,33 @@ def index_memory_splade_batch(
     Returns the total number of sparse entries inserted.
     """
     from infra.splade_encoder import encode_sparse_batch
-
-    texts = [content for _, content in batch]
-    sparse_results = encode_sparse_batch(texts)
-    if sparse_results is None:
-        return 0
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        def tqdm(iterable, *args, **kwargs):
+            return iterable
 
     total = 0
     now = time.time()
-    for (memory_id, _), sparse in zip(batch, sparse_results):
-        if not sparse:
+    batch_size = 32
+
+    for i in tqdm(range(0, len(batch), batch_size), desc="SPLADE Sparse Vectors", disable=len(batch) < 50):
+        sub_batch = batch[i:i + batch_size]
+        texts = [content for _, content in sub_batch]
+        sparse_results = encode_sparse_batch(texts)
+        if sparse_results is None:
             continue
-        conn.execute("DELETE FROM splade_tokens WHERE memory_id = ?", (memory_id,))
-        for vocab_id, weight in sparse:
-            conn.execute(
-                "INSERT INTO splade_tokens (memory_id, vocab_id, weight, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (memory_id, vocab_id, weight, now),
-            )
-            total += 1
+        for (memory_id, _), sparse in zip(sub_batch, sparse_results):
+            if not sparse:
+                continue
+            conn.execute("DELETE FROM splade_tokens WHERE memory_id = ?", (memory_id,))
+            for vocab_id, weight in sparse:
+                conn.execute(
+                    "INSERT INTO splade_tokens (memory_id, vocab_id, weight, created_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (memory_id, vocab_id, weight, now),
+                )
+                total += 1
     return total
 
 

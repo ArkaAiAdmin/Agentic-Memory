@@ -70,6 +70,7 @@ eval/prebuilt_db_path.txt
 SEARCH_SOTA_STATUS.md
 eval/results/
 eval/beam/results/
+.cache/
 
 # Plans and scratch (not source)
 plans/

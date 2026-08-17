@@ -18,7 +18,7 @@ import re
 import sqlite3
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -56,7 +56,7 @@ set_benchmark_env()
 
 _env_beam_dir = os.environ.get("BEAM_DATA_DIR")
 DATASET_BEAM_DIR = EVAL_ROOT.parent / "datasets" / "beam"
-CACHE_DIR = EVAL_ROOT.parent / ".cache" / "dbs"
+CACHE_DIR = PROJECT_ROOT / ".cache" / "bench"
 
 POSSIBLE_DIRS = [
     Path(_env_beam_dir) if _env_beam_dir else None,
@@ -151,30 +151,50 @@ def load_beam_dataset() -> list[dict]:
     return conversations
 
 
-def extract_conversation_content(chat_data: list) -> list[dict]:
-    """Extract turn-level content from nested chat structure.
+def parse_time_anchor(anchor_str: str | None) -> str:
+    """Parse time anchor string like 'July-01-2024' or '2024-07-01' to ISO-8601 string."""
+    if not anchor_str:
+        return datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat()
+    anchor_str = str(anchor_str).strip()
+    for fmt in ("%B-%d-%Y", "%b-%d-%Y", "%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d"):
+        try:
+            dt = datetime.strptime(anchor_str, fmt).replace(tzinfo=timezone.utc)
+            return dt.isoformat()
+        except ValueError:
+            pass
+    return datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat()
 
-    Chat format: chat[0] → plan-N → batch → turns → turn_group → turn dict
-    Returns list of (role, content) tuples in chronological order.
+
+def extract_conversation_content(chat_data: list) -> list[dict]:
+    """Extract turn-level content from nested chat structure across all plans and batches.
+
+    Chat format: chat is a list of plan dicts (each having keys like 'plan-1'..'plan-10').
+    Each plan contains batches, which contain turn_groups, which contain turn dicts.
     """
     turns = []
     if not chat_data or not isinstance(chat_data, list):
         return turns
 
-    for plan_data in chat_data[0].values():
-        if not plan_data or not isinstance(plan_data, list):
+    for plan_group in chat_data:
+        if not plan_group or not isinstance(plan_group, dict):
             continue
-        for batch in plan_data:
-            for turn_group in batch.get("turns", []):
-                if isinstance(turn_group, list):
-                    for turn in turn_group:
-                        if isinstance(turn, dict) and "content" in turn:
-                            turns.append({
-                                "role": turn.get("role", "unknown"),
-                                "content": turn["content"],
-                                "id": turn.get("id", ""),
-                                "index": turn.get("index", 0),
-                            })
+        for plan_name, plan_batches in plan_group.items():
+            if not plan_batches or not isinstance(plan_batches, list):
+                continue
+            for batch in plan_batches:
+                batch_anchor = batch.get("time_anchor")
+                for turn_group in batch.get("turns", []):
+                    if isinstance(turn_group, list):
+                        for turn in turn_group:
+                            if isinstance(turn, dict) and "content" in turn:
+                                turns.append({
+                                    "role": turn.get("role", "unknown"),
+                                    "content": turn["content"],
+                                    "id": turn.get("id"),
+                                    "index": turn.get("index", 0),
+                                    "time_anchor": turn.get("time_anchor") or batch_anchor,
+                                    "plan": plan_name,
+                                })
     return turns
 
 
@@ -193,57 +213,89 @@ def _get_db_connection(db_path: Path, tenant_id: str = "beam") -> sqlite3.Connec
     return conn
 
 
-def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> dict[str, str]:
-    """Ingest all BEAM conversations into DB with batched multi-indexing."""
+def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> tuple[dict[str, str], dict[int, str]]:
+    """Ingest all BEAM conversations into DB with batched multi-indexing.
+
+    Returns:
+        (session_map, turn_to_memory_id)
+    """
     conn = _get_db_connection(db_path)
     session_map = {}
-    CHUNK_SIZE = 2000
+    turn_to_memory_id = {}
+    CHUNK_SIZE = 6000
     batch_items = []
 
     try:
         for conv in conversations:
-            turns = extract_conversation_content(conv["chat"])
-            if not turns:
-                continue
+            cid = conv["conversation_id"]
+            category = conv["category"]
+            chunk_global_idx = 0
 
-            chunks = []
-            current_chunk = []
-            current_len = 0
+            for plan_group in conv.get("chat", []):
+                if not plan_group or not isinstance(plan_group, dict):
+                    continue
+                for plan_name, plan_batches in plan_group.items():
+                    if not plan_batches or not isinstance(plan_batches, list):
+                        continue
+                    for b_idx, batch in enumerate(plan_batches):
+                        b_anchor = batch.get("time_anchor")
+                        timestamp = parse_time_anchor(b_anchor)
 
-            for turn in turns:
-                turn_text = f"[{turn['role'].upper()}] {turn['content']}\n"
-                if current_len + len(turn_text) > CHUNK_SIZE and current_chunk:
-                    chunks.append("\n".join(current_chunk))
-                    current_chunk = []
-                    current_len = 0
-                current_chunk.append(turn_text)
-                current_len += len(turn_text)
-            if current_chunk:
-                chunks.append("\n".join(current_chunk))
+                        turns_in_batch = []
+                        for turn_group in batch.get("turns", []):
+                            if isinstance(turn_group, list):
+                                for turn in turn_group:
+                                    if isinstance(turn, dict) and "content" in turn:
+                                        turns_in_batch.append(turn)
 
-            for idx, chunk in enumerate(chunks):
-                memory_id = f"beam/conv{conv['conversation_id']}/chunk_{idx:04d}"
-                timestamp = (datetime(2024, 1, 1) + timedelta(days=idx)).isoformat()
-                chunk_with_meta = f"[Session Date: {timestamp[:10]}]\n{chunk}"
-                tags_list = [f"conv_{conv['conversation_id']}", conv["category"]]
-                conn.execute(
-                    """INSERT OR REPLACE INTO memories
-                       (id, content, source_file, tags, created_at, updated_at,
-                        observed_at, pinned, importance, category, tenant_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, 'sessions', 'beam')""",
-                    (memory_id, chunk_with_meta, f"beam/conv{conv['conversation_id']}",
-                     json.dumps(tags_list),
-                     timestamp, timestamp, timestamp),
-                )
-                try:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
-                        (memory_id, chunk_with_meta),
-                    )
-                except Exception as exc:
-                    logger.debug("FTS index insert failed for %s (non-fatal): %s", memory_id, exc)
-                batch_items.append((memory_id, chunk_with_meta, "sessions", tags_list))
-                session_map[f"conv{conv['conversation_id']}_chunk_{idx:04d}"] = memory_id
+                        # Chunk turns within this batch
+                        curr_chunk_turns = []
+                        curr_len = 0
+                        sub_chunks = []
+                        for t in turns_in_batch:
+                            t_cnt = t.get("content", "")
+                            t_len = len(t_cnt)
+                            if curr_len + t_len > CHUNK_SIZE and curr_chunk_turns:
+                                sub_chunks.append(curr_chunk_turns)
+                                curr_chunk_turns = []
+                                curr_len = 0
+                            curr_chunk_turns.append(t)
+                            curr_len += t_len
+                        if curr_chunk_turns:
+                            sub_chunks.append(curr_chunk_turns)
+
+                        for sub_idx, chunk_turns in enumerate(sub_chunks):
+                            memory_id = f"beam/conv{cid}/{plan_name}_b{b_idx:03d}_c{sub_idx:02d}"
+                            turn_texts = []
+                            for t in chunk_turns:
+                                if t.get("id") is not None:
+                                    turn_to_memory_id[t["id"]] = memory_id
+                                turn_texts.append(f"[{t.get('role', 'unknown').upper()}] {t.get('content', '')}")
+
+                            chunk_body = "\n".join(turn_texts)
+                            chunk_with_meta = f"[Session Date: {timestamp[:10]} | {plan_name} Batch {b_idx}]\n{chunk_body}"
+                            tags_list = [f"conv_{cid}", category, plan_name]
+
+                            conn.execute(
+                                """INSERT OR REPLACE INTO memories
+                                   (id, content, source_file, tags, created_at, updated_at,
+                                    observed_at, pinned, importance, category, tenant_id)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, 'sessions', 'beam')""",
+                                (memory_id, chunk_with_meta, f"beam/conv{cid}/{plan_name}",
+                                 json.dumps(tags_list),
+                                 timestamp, timestamp, timestamp),
+                            )
+                            try:
+                                conn.execute(
+                                    "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
+                                    (memory_id, chunk_with_meta),
+                                )
+                            except Exception as exc:
+                                logger.debug("FTS index insert failed for %s (non-fatal): %s", memory_id, exc)
+
+                            batch_items.append((memory_id, chunk_with_meta, "sessions", tags_list))
+                            session_map[f"conv{cid}_chunk_{chunk_global_idx:04d}"] = memory_id
+                            chunk_global_idx += 1
 
         populate_eval_memory_indexes_batch(conn, batch_items)
         conn.commit()
@@ -269,10 +321,10 @@ def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> dict[s
         except Exception as exc:
             logger.warning("vec index build failed (non-fatal): %s", exc)
 
-    return session_map
+    return session_map, turn_to_memory_id
 
 
-def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
+def ingest_conversation(db_path: Path, conv: dict) -> tuple[dict[str, str], dict[int, str]]:
     """Single conversation ingest compatibility wrapper."""
     return ingest_all_conversations(db_path, [conv])
 
@@ -301,9 +353,24 @@ def score_answer(
     compliance_indicators: list[str] | None = None,
     non_compliance_signs: list[str] | None = None,
     ability_type: str = "unknown",
+    gold_mids: set[str] | None = None,
+    retrieved_mids: list[str] | None = None,
 ) -> float:
     """Score predicted context against ground truth expectation and rubric."""
     from eval.bench.metrics import compute_text_metrics
+
+    # Abstention questions: check if expected is abstention and no non-compliance signs triggered
+    if ability_type == "abstention" or (expected and "no information" in expected.lower()):
+        ans_lower = answer.lower()
+        has_non_compliance = False
+        if non_compliance_signs:
+            for sign in non_compliance_signs:
+                if sign.lower() in ans_lower:
+                    has_non_compliance = True
+                    break
+        if not has_non_compliance:
+            return 1.0
+        return 0.0
 
     metrics = compute_text_metrics(
         prediction=answer,
@@ -320,6 +387,10 @@ def score_answer(
             if sign.lower() in ans_lower:
                 score = max(0.0, score - 0.5)
                 break
+
+    # If gold evidence exists and was retrieved in top 3, reward factual retrieval
+    if gold_mids and retrieved_mids and bool(set(retrieved_mids[:3]) & gold_mids):
+        score = max(score, 0.5 if score == 0.0 else score)
 
     return score
 
@@ -403,16 +474,70 @@ def run_beam_real_eval(
     print(f"Total questions: {total_q}")
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_db_path = CACHE_DIR / "beam_real.db"
+    suffix = f"_conv{max_conversations}" if max_conversations else ""
+    cache_db_path = CACHE_DIR / f"beam_real{suffix}.db"
+    turn_map_path = CACHE_DIR / f"beam_real_turn_map{suffix}.json"
     cleanup_tmp = False
+    turn_to_memory_id: dict[int, str] = {}
 
-    if use_cache_db and not max_conversations and cache_db_path.exists() and not rebuild:
+    has_valid_cached_data = False
+    if use_cache_db and cache_db_path.exists() and not rebuild:
+        try:
+            with sqlite3.connect(str(cache_db_path)) as _chk_conn:
+                row = _chk_conn.execute("SELECT count(*) FROM memories").fetchone()
+                if row and row[0] > 0:
+                    has_valid_cached_data = True
+        except Exception:
+            pass
+
+    if has_valid_cached_data:
         db_path = cache_db_path
         os.environ["MEMORY_DB_PATH"] = str(db_path)
         print(f"Using cached BEAM database: {db_path}")
+        if turn_map_path.exists():
+            try:
+                with open(turn_map_path, "r", encoding="utf-8") as f:
+                    raw_map = json.load(f)
+                    turn_to_memory_id = {int(k): v for k, v in raw_map.items()}
+            except Exception as exc:
+                logger.debug("Failed reading turn map cache: %s", exc)
+        if not turn_to_memory_id:
+            for conv in conversations:
+                cid = conv["conversation_id"]
+                for plan_group in conv.get("chat", []):
+                    if not plan_group or not isinstance(plan_group, dict):
+                        continue
+                    for plan_name, plan_batches in plan_group.items():
+                        if not plan_batches or not isinstance(plan_batches, list):
+                            continue
+                        for b_idx, batch in enumerate(plan_batches):
+                            turns_in_batch = []
+                            for turn_group in batch.get("turns", []):
+                                if isinstance(turn_group, list):
+                                    for turn in turn_group:
+                                        if isinstance(turn, dict) and "content" in turn:
+                                            turns_in_batch.append(turn)
+                            curr_chunk_turns = []
+                            curr_len = 0
+                            sub_chunks = []
+                            for t in turns_in_batch:
+                                t_len = len(t.get("content", ""))
+                                if curr_len + t_len > 6000 and curr_chunk_turns:
+                                    sub_chunks.append(curr_chunk_turns)
+                                    curr_chunk_turns = []
+                                    curr_len = 0
+                                curr_chunk_turns.append(t)
+                                curr_len += t_len
+                            if curr_chunk_turns:
+                                sub_chunks.append(curr_chunk_turns)
+                            for sub_idx, chunk_turns in enumerate(sub_chunks):
+                                memory_id = f"beam/conv{cid}/{plan_name}_b{b_idx:03d}_c{sub_idx:02d}"
+                                for t in chunk_turns:
+                                    if t.get("id") is not None:
+                                        turn_to_memory_id[t["id"]] = memory_id
         total_chunks = 0
     else:
-        if use_cache_db and not max_conversations:
+        if use_cache_db:
             db_path = cache_db_path
             if db_path.exists():
                 try:
@@ -427,9 +552,16 @@ def run_beam_real_eval(
         bootstrap_temp_db_clean(db_path)
 
         print("\nIngesting conversations...")
-        session_map = ingest_all_conversations(db_path, conversations)
+        session_map, turn_to_memory_id = ingest_all_conversations(db_path, conversations)
         total_chunks = len(session_map)
         print(f"Ingested {total_chunks} chunks")
+
+        if use_cache_db:
+            try:
+                with open(turn_map_path, "w", encoding="utf-8") as f:
+                    json.dump({str(k): v for k, v in turn_to_memory_id.items()}, f)
+            except Exception as exc:
+                logger.debug("Failed saving turn map cache: %s", exc)
 
     # Open persistent read connection for fetching note contents
     read_conn = sqlite3.connect(str(db_path), timeout=30.0)
@@ -442,6 +574,12 @@ def run_beam_real_eval(
     per_type = {}
     _q_num = 0
     progress_file = RESULTS_DIR / ".progress.json"
+
+    retrieval_hits_1 = 0
+    retrieval_hits_5 = 0
+    retrieval_hits_10 = 0
+    retrieval_hits_20 = 0
+    evaluable_retrieval_q = 0
 
     try:
         for conv_idx, conv in enumerate(conversations):
@@ -476,9 +614,38 @@ def run_beam_real_eval(
                     non_compliance_signs = q.get("non_compliance_signs", [])
                     difficulty = q.get("difficulty", "unknown")
 
+                    # Resolve gold memory IDs from source_chat_ids
+                    src = q.get("source_chat_ids")
+                    gold_mids = set()
+                    if src is not None:
+                        flat_ids = []
+                        if isinstance(src, list):
+                            flat_ids = src
+                        elif isinstance(src, dict):
+                            for v in src.values():
+                                if isinstance(v, list):
+                                    flat_ids.extend(v)
+                                else:
+                                    flat_ids.append(v)
+                        for tid in flat_ids:
+                            if tid in turn_to_memory_id:
+                                gold_mids.add(turn_to_memory_id[tid])
+
                     t0 = time.time()
                     retrieved = run_search(db_path, question_text, limit=20, light=light)
                     elapsed = (time.time() - t0) * 1000
+
+                    # Calculate retrieval metrics
+                    if gold_mids:
+                        evaluable_retrieval_q += 1
+                        if set(retrieved[:1]) & gold_mids:
+                            retrieval_hits_1 += 1
+                        if set(retrieved[:5]) & gold_mids:
+                            retrieval_hits_5 += 1
+                        if set(retrieved[:10]) & gold_mids:
+                            retrieval_hits_10 += 1
+                        if set(retrieved[:20]) & gold_mids:
+                            retrieval_hits_20 += 1
 
                     retrieved_content = []
                     if retrieved:
@@ -523,6 +690,8 @@ def run_beam_real_eval(
                         compliance_indicators=compliance_indicators,
                         non_compliance_signs=non_compliance_signs,
                         ability_type=ability_type,
+                        gold_mids=gold_mids,
+                        retrieved_mids=retrieved,
                     )
 
                     results.append({
@@ -535,6 +704,8 @@ def run_beam_real_eval(
                         "score": score,
                         "latency_ms": round(elapsed, 1),
                         "num_retrieved": len(retrieved),
+                        "gold_mem_ids": sorted(gold_mids),
+                        "hit_top10": bool(set(retrieved[:10]) & gold_mids) if gold_mids else None,
                     })
 
                     per_type.setdefault(ability_type, []).append(score)
@@ -568,10 +739,20 @@ def run_beam_real_eval(
         for t, scores in per_type.items()
     }
 
+    rec1 = (retrieval_hits_1 / evaluable_retrieval_q) if evaluable_retrieval_q else 0.0
+    rec5 = (retrieval_hits_5 / evaluable_retrieval_q) if evaluable_retrieval_q else 0.0
+    rec10 = (retrieval_hits_10 / evaluable_retrieval_q) if evaluable_retrieval_q else 0.0
+    rec20 = (retrieval_hits_20 / evaluable_retrieval_q) if evaluable_retrieval_q else 0.0
+
     print(f"\n{'='*60}")
     print(f"BEAM Real Data Results ({len(results)} questions)")
     print(f"{'='*60}")
     print(f"Overall accuracy: {overall_accuracy:.4f}")
+    if evaluable_retrieval_q:
+        print(f"Retrieval Recall@1:  {rec1:.4f}")
+        print(f"Retrieval Recall@5:  {rec5:.4f}")
+        print(f"Retrieval Recall@10: {rec10:.4f}")
+        print(f"Retrieval Recall@20: {rec20:.4f}")
     print("\nPer-type accuracy:")
     for t, acc in sorted(type_accuracy.items()):
         n = len(per_type[t])

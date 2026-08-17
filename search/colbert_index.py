@@ -119,19 +119,16 @@ def index_memory_colbert_batch(
     all_chunks: list[tuple[str, int, str]] = []  # (memory_id, chunk_idx, text)
 
     for memory_id, content in batch:
-        chunk_tuples = _qw5_chunk_content(content)
-        chunks: list[str] = []
-        for c in chunk_tuples:
-            if isinstance(c, tuple) and len(c) >= 3:
-                chunks.append(str(c[2]))
-            else:
-                chunks.append(str(c))
-        if not chunks:
-            chunks = [content]
-        for chunk_idx, chunk_text in enumerate(chunks):
-            all_chunks.append((memory_id, chunk_idx, chunk_text))
+        if content and content.strip():
+            all_chunks.append((memory_id, 0, content))
 
-    for i in range(0, len(all_chunks), 32):
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        def tqdm(iterable, *args, **kwargs):
+            return iterable
+
+    for i in tqdm(range(0, len(all_chunks), 32), desc="ColBERT Token Encodings", disable=len(all_chunks) < 50):
         chunk_batch = all_chunks[i:i+32]
         texts = [c[2] for c in chunk_batch]
         encoded = encode_tokens_batch(texts)
