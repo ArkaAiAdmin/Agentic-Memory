@@ -277,10 +277,10 @@ def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> tuple[
 
                         for sub_idx, chunk_turns in enumerate(sub_chunks):
                             memory_id = f"beam/conv{cid}/{plan_name}_b{b_idx:03d}_c{sub_idx:02d}"
-                            turn_texts = []
                             for t in chunk_turns:
                                 if t.get("id") is not None:
                                     turn_to_memory_id[t["id"]] = memory_id
+                                    turn_to_memory_id[f"{cid}_{t['id']}"] = memory_id
                                 turn_texts.append(f"[{t.get('role', 'unknown').upper()}] {t.get('content', '')}")
 
                             chunk_body = "\n".join(turn_texts)
@@ -641,8 +641,9 @@ def run_beam_real_eval(
                                 flat_ids.append(obj)
                         _flatten_src(src)
                         for tid in flat_ids:
-                            if tid in turn_to_memory_id:
-                                gold_mids.add(turn_to_memory_id[tid])
+                            mem = turn_to_memory_id.get(f"{cid}_{tid}") or turn_to_memory_id.get(tid)
+                            if mem:
+                                gold_mids.add(mem)
 
                     t0 = time.time()
                     retrieved = run_search(db_path, question_text, limit=20, light=light)

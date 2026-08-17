@@ -422,3 +422,10 @@ class TestAttributeExtractor:
         candidates = [("m1", "Using v3.2.1 in production")]
         result = extract_entity_attribute("what version", candidates)
         assert result is not None
+
+    def test_compound_pages_and_cost(self):
+        candidates = [("m1", "I ordered an album with 50 pages and it cost $75.")]
+        result = extract_entity_attribute("How many pages did the album have and what was the cost?", candidates)
+        assert result is not None
+        assert "50 pages" in result
+        assert "$75" in result
