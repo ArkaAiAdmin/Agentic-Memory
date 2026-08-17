@@ -75,12 +75,8 @@ class TestCollectData(unittest.TestCase):
 class TestSectionFunctions(unittest.TestCase):
     def test_all_expected_sections_registered(self):
         expected = {
-            "what_this_system_is",
-            "critical_path",
             "hard_rule_4",
             "hard_rule_6",
-            "mcp_surface_contract",
-            "current_state",
         }
         self.assertEqual(set(SECTION_FNS.keys()), expected)
 
@@ -97,11 +93,11 @@ class TestSectionFunctions(unittest.TestCase):
         result = SECTION_FNS["hard_rule_4"](data)
         self.assertIn(str(data["schema_version"]), result)
 
-    def test_current_state_mentions_schema_and_mcp(self):
+    def test_hard_rule_6_mentions_core_and_admin(self):
         data = gather()
-        result = SECTION_FNS["current_state"](data)
-        self.assertIn("Schema", result)
-        self.assertIn("MCP", result)
+        result = SECTION_FNS["hard_rule_6"](data)
+        self.assertIn("CORE", result)
+        self.assertIn("ADMIN", result)
 
 
 class TestUpdateMarkers(unittest.TestCase):

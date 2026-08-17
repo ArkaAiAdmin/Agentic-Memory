@@ -505,13 +505,14 @@ class TestComputeFinalScoreMore(unittest.TestCase):
         self.assertGreater(score_pinned, score_not_pinned)
 
     def test_boost_pinned_false_no_bonus(self):
+        fixed_ts = now_iso()
         score_pinned = _compute_final_score(
             ScoreContext(
                 rank=-1.0,
                 fitness=0.5,
                 importance=3,
                 pinned=True,
-                created=now_iso(),
+                created=fixed_ts,
                 tags_json="[]",
                 query="test",
                 boost_pinned=False,
@@ -524,7 +525,7 @@ class TestComputeFinalScoreMore(unittest.TestCase):
                 fitness=0.5,
                 importance=3,
                 pinned=False,
-                created=now_iso(),
+                created=fixed_ts,
                 tags_json="[]",
                 query="test",
                 boost_pinned=False,

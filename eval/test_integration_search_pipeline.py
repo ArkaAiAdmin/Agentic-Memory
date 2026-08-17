@@ -456,14 +456,14 @@ class TestRecencyBoost:
         _insert_raw(
             tmp_db,
             note_old,
-            "recency matching content here",
+            "recency matching content from previous year archived",
             tags=["test"],
             created_at=old_time,
         )
         _insert_raw(
             tmp_db,
             note_new,
-            "recency matching content here",
+            "recency matching content from current year fresh",
             tags=["test"],
             created_at=new_time,
         )
@@ -472,6 +472,7 @@ class TestRecencyBoost:
         )
         ids = [r["id"] for r in result["results"] if r["id"] in (note_old, note_new)]
         assert len(ids) >= 2
+        assert result["results"][0]["id"] == note_new
         assert result["results"][0]["id"] != result["results"][1]["id"]
 
 
