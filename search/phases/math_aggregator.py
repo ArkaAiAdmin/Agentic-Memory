@@ -74,6 +74,7 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
             if b_val > 0 and d_vals:
                 rem = b_val - sum(d_vals)
                 fmt = format_numeric_val(rem)
+                return f"${fmt}" if "$" in all_text or "$" in query else fmt
     # 2. Multi-entity aggregation (e.g. combining my Elasticsearch and Solr projects)
     multi_entity_match = re.search(
         r"(?:combining|combines|total.*?between|total.*?for|total.*?when combining)\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+and\s+([A-Za-z0-9_\-]+)",

@@ -26,8 +26,7 @@ from infra.memory_config import install_root
 # don't block indefinitely when HF Hub is unreachable or slow.
 os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
 
-if TYPE_CHECKING:
-    import numpy as np
+import numpy as np
 
 # Vector-search result cache. Same LRU+TTL pattern as knowledge_graph.
 # 20 entries / 30s TTL balances hit rate with staleness: a freshly-
