@@ -608,6 +608,46 @@ def _counting_phase(
     search_phrases.extend(keywords[:3])
 
     for target in search_phrases:
+        # Structured KG State Ledger check first (Option B)
+        try:
+            from search.temporal_facts import query_state_count_from_ledger
+            ledger_state = query_state_count_from_ledger(db, target)
+            if ledger_state and ledger_state["count"] > 0:
+                count = ledger_state["count"]
+                sorted_vals = ", ".join(ledger_state["values"])
+                count_content = (
+                    f"The {target} has had {count} distinct values in history: {sorted_vals}. "
+                    f"Total distinct count: {count}."
+                )
+                synthetic = (
+                    f"count_{target}",
+                    count_content,
+                    "eval://aggregate",
+                    "[]",
+                    "",
+                    0, 1.0, 1.0, 5, 0, None, "{}", None,
+                )
+                new_results = [synthetic]
+                existing_ids = {synthetic[0]}
+                for mem_id in ledger_state.get("source_memories", []):
+                    m_row = db.execute(
+                        "SELECT id, content, source_file, tags, created_at, observed_at FROM memories WHERE id = ?",
+                        (mem_id,)
+                    ).fetchone()
+                    if m_row and m_row[0] not in existing_ids:
+                        existing_ids.add(m_row[0])
+                        new_results.append((
+                            m_row[0], m_row[1], m_row[2], m_row[3], m_row[4], 0, 0.8,
+                            1.0, 3, 0, None, "{}", None,
+                        ))
+                for r in results:
+                    if r[0] not in existing_ids:
+                        existing_ids.add(r[0])
+                        new_results.append(r)
+                return new_results[:limit]
+        except Exception:
+            pass
+
         safe_target = target.replace('"', '""')
         try:
             # Query all sessions matching the target
@@ -745,6 +785,8 @@ def _temporal_compare(
         r"where\s+is\s+(?:the\s+)?next\s+",
         r"when\s+is\s+(?:the\s+)?.*\s+(?:scheduled|happening|taking\s+place)",
         r"when\s+(?:was|is|did)\s+.*\s+(?:last\s+updated|last\s+changed|updated|changed)",
+        r"changed\s+several\s+times",
+        r"current\s+value",
     ]
 
     is_ordering = any(_re.search(p, query, _re.IGNORECASE) for p in _TC_ORDERING_PATTERNS)
@@ -761,7 +803,8 @@ def _temporal_compare(
         "has", "been", "earliest", "latest", "doing", "listening", "using",
         "going", "wearing", "reading", "eating", "working", "learning",
         "watching", "currently", "right", "these", "days", "at", "moment",
-        "presently", "where", "next", "scheduled", "for",
+        "presently", "where", "next", "scheduled", "for", "current", "value",
+        "several", "times",
     }
 
     # 1. Ordering queries with multiple candidate entities
@@ -849,11 +892,34 @@ def _temporal_compare(
             return results
 
         search_targets = []
+        if len(keywords) >= 3:
+            search_targets.append(" ".join(keywords[:3]))
         if len(keywords) >= 2:
             search_targets.append(" ".join(keywords[:2]))
         search_targets.extend(keywords[:3])
 
         for target in search_targets:
+            # Structured KG State Ledger check first (Option B)
+            try:
+                from search.temporal_facts import query_latest_fact_from_ledger
+                ledger_fact = query_latest_fact_from_ledger(db, target)
+                if ledger_fact and ledger_fact.get("source_memory"):
+                    m_row = db.execute(
+                        "SELECT id, content, source_file, tags, created_at, observed_at FROM memories WHERE id = ?",
+                        (ledger_fact["source_memory"],)
+                    ).fetchone()
+                    if m_row:
+                        new_results = [(
+                            m_row[0], m_row[1], m_row[2], m_row[3],
+                            m_row[4], 0, 1.0, 1.0, 5, 0, None, "{}", None,
+                        )]
+                        for r in results:
+                            if r[0] != m_row[0]:
+                                new_results.append(r)
+                        return new_results[:limit]
+            except Exception:
+                pass
+
             safe_target = target.replace('"', '""')
             try:
                 rows = db.execute(
@@ -1222,38 +1288,40 @@ def search_memories(
     if mode in ("fact_lookup", "fts"):
         # Lightweight parse: skip semantic expansion (~10s), graph RAG (~1s),
         # reasoning expansion (~1s), and drift enforcement.
-        from search.query_parser import normalize_unicode, _STOP_WORDS
+        from search.query_parser import normalize_unicode, _STOP_WORDS, _QUERY_EXPANSIONS
         import re as _re
         normalized_query = normalize_unicode(query)
+        _fact_stop = _STOP_WORDS | {
+            "current", "now", "what", "is", "the", "latest", "present",
+            "presently", "currently", "changed", "since", "beginning", "if", "so",
+            "last", "updated", "modified", "and", "or", "stand", "stands", "prefer",
+            "prefers", "get", "gets", "going", "trip", "scheduled", "used", "days",
+            "at", "in", "for", "to", "of", "with", "by", "from", "on", "about",
+            "tell", "me", "there", "where", "does", "moment", "are", "were", "was",
+            "how", "when", "which", "who", "whom", "this", "that", "these", "those",
+        }
         _bare_tokens = [w for w in _re.findall("[\\w@\\#\\.\\+\\-]+", normalized_query, flags=_re.UNICODE)
-                        if w.lower() not in _STOP_WORDS and len(w) > 1]
-        if _bare_tokens:
-            # Detect multi-word entities (consecutive non-stop-words) and
-            # use phrase matching for them. This prevents "volunteer hours"
-            # from matching "working hours" — the exact phrase must appear.
-            # "current" is not a formal stop word but is absent from BEAM
-            # content ("X is now Y" format), so exclude it from entities.
-            _fact_stop = _STOP_WORDS | {"current", "now", "what"}
-            _entities = []
-            _current = []
-            for t in _bare_tokens:
-                if t.lower() not in _fact_stop and len(t) > 1:
-                    _current.append(t)
-                else:
-                    if len(_current) >= 2:
-                        _entities.append(" ".join(_current))
-                    _current = []
-            if len(_current) >= 2:
-                _entities.append(" ".join(_current))
+                        if w.lower() not in _fact_stop and len(w) > 1]
 
-            if _entities:
-                # Combine exact phrase match with individual token fallback
-                phrase_terms = [f'"{e}"' for e in _entities]
-                token_terms = [f'"{t}"' for t in _bare_tokens if len(t) > 1]
-                fts_query = " OR ".join(phrase_terms + token_terms)
+        # Check query expansions (synonyms like framework -> tech stack, exercise -> workout plan)
+        _expanded_terms = []
+        q_lower = query.lower()
+        for trigger, exps in _QUERY_EXPANSIONS.items():
+            if _re.search(rf"\b{_re.escape(trigger)}\b", q_lower):
+                _expanded_terms.extend(exps)
+
+        if _bare_tokens or _expanded_terms:
+            _bigrams = []
+            if len(_bare_tokens) >= 2:
+                for _idx in range(len(_bare_tokens) - 1):
+                    _bigrams.append(f"{_bare_tokens[_idx]} {_bare_tokens[_idx+1]}")
+
+            phrase_parts = [f'"{b}"' for b in _bigrams] + [f'"{e}"' for e in _expanded_terms]
+            token_parts = [f'"{t}"' for t in _bare_tokens if len(t) > 1]
+            if phrase_parts:
+                fts_query = " OR ".join(phrase_parts + token_parts)
             else:
-                # Single-token queries: use OR
-                fts_query = " OR ".join(f'"{t}"' for t in _bare_tokens if len(t) > 1)
+                fts_query = " OR ".join(token_parts)
         else:
             fts_query = ""
         bare_text = " ".join(_bare_tokens)
