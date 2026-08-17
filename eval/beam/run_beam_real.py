@@ -299,6 +299,53 @@ def score_answer(
     return score
 
 
+def _write_live_progress(
+    progress_file: Path,
+    q_num: int,
+    total_q: int,
+    conv_idx: int,
+    total_convs: int,
+    cid: str,
+    ability_type: str,
+    question_text: str,
+    score: float,
+    latency_ms: float,
+    results: list[dict],
+    per_type: dict[str, list[float]],
+) -> None:
+    """Write atomic live progress JSON file for zero-latency monitoring."""
+    tmp_file = progress_file.with_suffix(".tmp")
+    running_acc = sum(r["score"] for r in results) / len(results) if results else 0.0
+    type_acc = {
+        t: sum(scores) / len(scores) if scores else 0.0
+        for t, scores in per_type.items()
+    }
+    data = {
+        "status": "running",
+        "completed_questions": q_num,
+        "total_questions": total_q,
+        "percent_complete": round((q_num / max(1, total_q)) * 100, 1),
+        "conversation_index": conv_idx + 1,
+        "total_conversations": total_convs,
+        "conversation_id": cid,
+        "current_ability": ability_type,
+        "current_question": question_text[:120],
+        "last_question_score": score,
+        "last_question_latency_ms": round(latency_ms, 1),
+        "running_overall_accuracy": round(running_acc, 4),
+        "running_per_type_accuracy": {k: round(v, 4) for k, v in type_acc.items()},
+        "last_heartbeat_epoch": time.time(),
+        "last_heartbeat_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    try:
+        progress_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp_file, "w") as f:
+            json.dump(data, f, indent=2)
+        tmp_file.replace(progress_file)
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Main evaluation
 # ---------------------------------------------------------------------------
@@ -366,9 +413,10 @@ def run_beam_real_eval(
     results = []
     per_type = {}
     _q_num = 0
+    progress_file = RESULTS_DIR / ".progress.json"
 
     try:
-        for conv in conversations:
+        for conv_idx, conv in enumerate(conversations):
             cid = conv["conversation_id"]
             category = conv["category"]
             probing = conv["probing_questions"]
@@ -464,6 +512,21 @@ def run_beam_real_eval(
                     })
 
                     per_type.setdefault(ability_type, []).append(score)
+
+                    _write_live_progress(
+                        progress_file=progress_file,
+                        q_num=_q_num,
+                        total_q=total_q,
+                        conv_idx=conv_idx,
+                        total_convs=len(conversations),
+                        cid=cid,
+                        ability_type=ability_type,
+                        question_text=question_text,
+                        score=score,
+                        latency_ms=elapsed,
+                        results=results,
+                        per_type=per_type,
+                    )
     finally:
         read_conn.close()
 
