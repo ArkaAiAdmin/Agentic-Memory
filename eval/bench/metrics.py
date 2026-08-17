@@ -37,6 +37,8 @@ def compute_retrieval_metrics(
         top_k = retrieved[:k]
         hits = len(set(top_k) & gold)
         scores[f"recall@{k}"] = hits / len(gold)
+        scores[f"recall_all@{k}"] = 1.0 if hits == len(gold) else 0.0
+        scores[f"recall_any@{k}"] = 1.0 if hits > 0 else 0.0
         scores[f"precision@{k}"] = hits / k if k > 0 else 0.0
 
         # NDCG@k
@@ -50,8 +52,9 @@ def compute_retrieval_metrics(
     return scores
 
 
-def _normalize_text(s: str) -> str:
-    s = s.lower().strip()
+
+def _normalize_text(s: Any) -> str:
+    s = str(s if s is not None else "").lower().strip()
     s = re.sub(r"[^\w\s\$\.,]", "", s)
     return s
 
@@ -77,12 +80,13 @@ def compute_token_f1(prediction: str, ground_truth: str) -> float:
     return 2 * (precision * recall) / (precision + recall)
 
 
-def _clean_rubric_item(r: str) -> str:
+def _clean_rubric_item(r: Any) -> str:
     """Clean directive prefixes and instruction wrappers from benchmark rubrics."""
+    r_str = str(r if r is not None else "").strip()
     cleaned = re.sub(
         r"^(?:llm\s+)?(?:response\s+)?(?:should\s+)?(?:state|contain|mention|indicate|include|have|refer\s+to|state\s+that|mention\s+that|be):\s*",
         "",
-        r.strip(),
+        r_str,
         flags=re.IGNORECASE,
     )
     cleaned = re.sub(
@@ -96,13 +100,13 @@ def _clean_rubric_item(r: str) -> str:
 
 def compute_text_metrics(
     prediction: str,
-    expected: str,
+    expected: Any,
     rubric: list[str] | None = None,
     compliance_indicators: list[str] | None = None,
 ) -> dict[str, float]:
     """Compute exact match, multiset token F1, substring match, and rubric compliance."""
     pred_norm = _normalize_text(prediction)
-    exp_norm = _normalize_text(expected) if expected else ""
+    exp_norm = _normalize_text(expected) if expected is not None else ""
 
     em = 1.0 if (exp_norm and pred_norm == exp_norm) else 0.0
     sub = 1.0 if (exp_norm and exp_norm in pred_norm) else 0.0

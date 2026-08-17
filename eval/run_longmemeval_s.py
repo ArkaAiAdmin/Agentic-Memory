@@ -29,11 +29,15 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 EVAL_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = EVAL_ROOT.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(EVAL_ROOT))
+
 RESULTS_PATH = EVAL_ROOT / "results" / "longmemeval-s-run.json"
 DATASET_PATH = EVAL_ROOT / "datasets" / "longmemeval_s_synth.jsonl"
 
 import memory_mcp  # noqa: E402
-from eval._fixtures import (
+from _fixtures import (
     format_query_progress,
     init_benchmark_stdout,
     print_stage_banner,
@@ -827,7 +831,8 @@ def main():
         bootstrap_db(_warmup_db)
         insert_memory(_warmup_db, "warmup/1", "warmup query", ["warmup"], datetime.now(timezone.utc).isoformat())
         try:
-            memory_mcp.search_memories(_warmup_db, "warmup", limit=1, hybrid=True, use_history=False)
+            from search.orchestrator import search_memories
+            search_memories(query="warmup", db_path=_warmup_db, limit=1, hybrid=True, use_history=False)
             print("✓ Encoders pre-warmed successfully.", flush=True)
         except Exception:
             pass
@@ -839,6 +844,7 @@ def main():
 
     # Phase 4: Evaluation Execution Loop
     print_stage_banner(4, "Evaluation Execution", f"{len(questions)} questions")
+    from search.orchestrator import search_memories
     per_question: list[dict] = []
     hybrid_hits = 0
     baseline_hits = 0
@@ -875,9 +881,9 @@ def main():
         # Hybrid search
         t0 = time.perf_counter()
         try:
-            r_hybrid = memory_mcp.search_memories(
-                db_path,
-                query,
+            r_hybrid = search_memories(
+                query=query,
+                db_path=db_path,
                 limit=10,
                 hybrid=True,
                 use_history=False,
@@ -890,9 +896,9 @@ def main():
         # Baseline (hybrid=False) search
         t0 = time.perf_counter()
         try:
-            r_baseline = memory_mcp.search_memories(
-                db_path,
-                query,
+            r_baseline = search_memories(
+                query=query,
+                db_path=db_path,
                 limit=10,
                 hybrid=False,
                 use_history=False,

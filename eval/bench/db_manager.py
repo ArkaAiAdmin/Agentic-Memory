@@ -73,7 +73,10 @@ class BenchmarkDBManager:
 
         Returns: (db_path, ingest_time_seconds, was_cached)
         """
-        from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes_batch
+        try:
+            from eval._fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes_batch
+        except ImportError:
+            from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes_batch
 
         d_hash = self.get_dataset_hash(sessions, tenant_id=tenant_id)
         cached_db_path = self.cache_dir / f"{suite_name}_{d_hash}.db"
@@ -83,10 +86,10 @@ class BenchmarkDBManager:
             try:
                 conn = sqlite3.connect(str(cached_db_path))
                 count = conn.execute(
-                    "SELECT COUNT(*) FROM memories WHERE tenant_id = ?", (tenant_id,)
+                    "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
                 ).fetchone()[0]
-                conn.close()
-                if count >= len(sessions):
+                expected_count = len(set(s.session_id for s in sessions))
+                if count >= expected_count and expected_count > 0:
                     return cached_db_path, 0.0, True
             except Exception as e:
                 logger.warning("Cached DB invalid (%s), rebuilding...", e)
@@ -128,7 +131,7 @@ class BenchmarkDBManager:
                         observed_at, pinned, importance, category, tenant_id)
                        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, ?, ?)""",
                     (s.session_id, s.content, source_file, tags_json,
-                     s.timestamp, s.timestamp, s.timestamp, s.category, tenant_id),
+                     s.timestamp, s.timestamp, s.timestamp, s.category, s.tenant_id or tenant_id),
                 )
                 try:
                     conn.execute(

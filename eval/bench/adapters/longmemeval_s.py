@@ -72,8 +72,9 @@ class LongMemEvalSAdapter(BaseBenchmarkAdapter):
                 gold_ids = set(q.get("answer_session_ids", []))
 
                 for i, (sid, sess) in enumerate(zip(s_ids, s_turns)):
-                    if sid not in seen_sessions:
-                        seen_sessions.add(sid)
+                    sess_key = f"{qid}_{sid}"
+                    if sess_key not in seen_sessions:
+                        seen_sessions.add(sess_key)
                         content = _join_turns(sess)
                         if not content.strip():
                             continue
@@ -89,6 +90,7 @@ class LongMemEvalSAdapter(BaseBenchmarkAdapter):
                                 timestamp=observed_at,
                                 category="sessions",
                                 tags=[sid],
+                                tenant_id=f"longmem_{qid}",
                             )
                         )
 
@@ -111,6 +113,7 @@ class LongMemEvalSAdapter(BaseBenchmarkAdapter):
                         gold_session_ids=gold_ids,
                         category=q.get("question_type", "general"),
                         as_of=as_of_val,
+                        tenant_id=f"longmem_{qid}",
                         metadata={"n_sessions": len(s_ids)},
                     )
                 )

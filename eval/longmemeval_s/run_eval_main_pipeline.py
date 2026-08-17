@@ -362,8 +362,8 @@ def run(
     print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
     try:
         _ = search_memories(
-            db_path,
-            "warmup query",
+            query="warmup query",
+            db_path=db_path,
             limit=1,
             category="sessions",
             tenant_id="longmem_warmup",
@@ -430,8 +430,8 @@ def run(
 
             tenant_id = f"longmem_{qid}"
             result = search_memories(
-                db_path,
-                question,
+                query=question,
+                db_path=db_path,
                 limit=50,
                 category="sessions",
                 tenant_id=tenant_id,

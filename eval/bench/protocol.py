@@ -15,6 +15,7 @@ class BenchmarkSession:
     timestamp: str  # ISO-8601 string
     category: str = "sessions"
     tags: list[str] = field(default_factory=list)
+    tenant_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -28,6 +29,7 @@ class BenchmarkQuestion:
     gold_session_ids: set[str] = field(default_factory=set)
     category: str = "general"
     as_of: float | None = None
+    tenant_id: str | None = None
     rubric: list[str] | None = None
     compliance_indicators: list[str] | None = None
     non_compliance_signs: list[str] | None = None
