@@ -748,6 +748,40 @@ def _counting_phase(
     return results
 
 
+def _extract_query_date_range(query: str) -> tuple[str | None, str | None]:
+    """Extract chronological date range (start, end) in ISO-8601 format from natural language query."""
+    import re as _re
+    from datetime import datetime, timezone
+
+    def _parse_d(d_str: str) -> str | None:
+        d_str = d_str.strip().rstrip(",")
+        for fmt in ("%Y-%m-%d", "%B %d %Y", "%B %d, %Y", "%b %d %Y", "%b %d, %Y", "%m/%d/%Y", "%d/%m/%Y"):
+            try:
+                dt = datetime.strptime(d_str, fmt).replace(tzinfo=timezone.utc)
+                return dt.isoformat()
+            except ValueError:
+                pass
+        return None
+
+    # 1. ISO format: 2024-08-01 to 2024-10-22
+    m1 = _re.search(r"(\d{4}-\d{2}-\d{2})\s+(?:to|until|through|and|-)\s+(\d{4}-\d{2}-\d{2})", query, _re.IGNORECASE)
+    if m1:
+        d1 = _parse_d(m1.group(1))
+        d2 = _parse_d(m1.group(2))
+        if d1 and d2:
+            return (d1, d2)
+
+    # 2. Textual format: April 8, 2023 to April 25, 2023
+    m2 = _re.search(r"(?:from|between)?\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})\s+(?:to|until|through|and|-)\s+([A-Za-z]+\s+\d{1,2},?\s+\d{4})", query, _re.IGNORECASE)
+    if m2:
+        d1 = _parse_d(m2.group(1))
+        d2 = _parse_d(m2.group(2))
+        if d1 and d2:
+            return (d1, d2)
+
+    return (None, None)
+
+
 def _temporal_compare(
     db: AnyConnection,
     results: list,
@@ -758,8 +792,8 @@ def _temporal_compare(
     """Phase 10.5: Temporal comparison for ordering, recency, and conflicting queries.
 
     For queries like "Which changed first: X or Y?", "Which was changed most recently: A, B, C?",
-    or "Has X changed since the beginning? What is it now?", find the most recent session
-    for each mentioned topic, compare timestamps, and prioritize the winning recent session.
+    "Has X changed since the beginning? What is it now?", or bounded date-range summaries,
+    find matching sessions, compare timestamps, and prioritize the winning/stratified sessions.
     """
     from search.config import get_search_config
     _temporal_compare_boost_cached = get_search_config().temporal_compare_boost
@@ -771,6 +805,10 @@ def _temporal_compare(
         r"which\s+was\s+changed\s+most\s+recently",
         r"in\s+what\s+order",
         r"before\s+or\s+after",
+        r"list\s+(?:the\s+)?order",
+        r"walk\s+me\s+through\s+(?:the\s+)?order",
+        r"order\s+in\s+which",
+        r"in\s+order",
     ]
     _TC_RECENCY_PATTERNS = [
         r"has\s+.*\s+(changed|updated)\s+since",
@@ -787,6 +825,14 @@ def _temporal_compare(
         r"when\s+(?:was|is|did)\s+.*\s+(?:last\s+updated|last\s+changed|updated|changed)",
         r"changed\s+several\s+times",
         r"current\s+value",
+        r"summarize\s+.*from\s+",
+        r"summary\s+of\s+.*from\s+",
+        r"progress\s+.*from\s+",
+        r"evolved\s+from\s+",
+        r"have\s+i\s+.*before",
+        r"have\s+i\s+ever\s+",
+        r"did\s+i\s+ever\s+",
+        r"has\s+.*ever\s+",
     ]
 
     is_ordering = any(_re.search(p, query, _re.IGNORECASE) for p in _TC_ORDERING_PATTERNS)
@@ -804,7 +850,8 @@ def _temporal_compare(
         "going", "wearing", "reading", "eating", "working", "learning",
         "watching", "currently", "right", "these", "days", "at", "moment",
         "presently", "where", "next", "scheduled", "for", "current", "value",
-        "several", "times",
+        "several", "times", "ever", "before", "have", "did", "list", "walk",
+        "through", "different", "aspects", "mention", "only", "items",
     }
 
     # 1. Ordering queries with multiple candidate entities
@@ -882,7 +929,7 @@ def _temporal_compare(
 
             return new_results[:limit]
 
-    # 2. Recency / conflicting fact queries
+    # 4. Recency / conflicting fact / contradiction queries
     if is_recency:
         keywords = [
             w.lower() for w in _re.findall(r"[a-z0-9_\-\$]{3,}", query.lower())
@@ -890,6 +937,8 @@ def _temporal_compare(
         ]
         if not keywords:
             return results
+
+        is_contradiction = bool(_re.search(r"\b(contradict|have I ever|did I ever|was changed several times|has .* ever)\b", query, _re.IGNORECASE))
 
         search_targets = []
         if len(keywords) >= 3:
@@ -928,7 +977,7 @@ def _temporal_compare(
                     "JOIN memories m ON m.rowid = fts.rowid "
                     "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
                     "AND m.category = 'sessions' "
-                    "ORDER BY m.observed_at DESC LIMIT 1",
+                    "ORDER BY m.observed_at DESC LIMIT 2",
                     (f'"{safe_target}"',)
                 ).fetchall()
                 if rows:
@@ -939,8 +988,18 @@ def _temporal_compare(
                         recent_row[4], 0, 1.0, 1.0, 5, 0, None, "{}", None,
                     )
                     new_results.append(recent_tuple)
+
+                    # For contradiction queries, also pair the prior historical assertion
+                    if is_contradiction and len(rows) > 1:
+                        prior_row = rows[-1]
+                        if prior_row[0] != recent_row[0]:
+                            new_results.append((
+                                prior_row[0], prior_row[1], prior_row[2], prior_row[3],
+                                prior_row[4], 0, 0.95, 1.0, 4, 0, None, "{}", None,
+                            ))
+
                     for r in results:
-                        if r[0] != recent_row[0]:
+                        if not any(r[0] == nr[0] for nr in new_results):
                             new_results.append(r)
                     return new_results[:limit]
             except Exception:
@@ -957,35 +1016,60 @@ def _conjoint_entity_phase(
 ) -> list:
     """Phase 11.4: Conjoint Entity Retrieval for compound multi-entity queries.
 
-    When a query asks for multiple distinct items (e.g. "What are the current X and Y?"),
-    a single blended search can let the entity with higher term frequency dominate all
-    top candidate slots. This phase extracts the conjuncts, retrieves the most recent / best
-    matching session for each entity independently, and ensures both entities are interleaved
-    into the top positions of results_to_display.
+    When a query asks for multiple distinct items (e.g. "What are the current X and Y?"
+    or "combining X and Y" or "across X, Y, and Z"), a single blended search can let the
+    entity with higher term frequency dominate all top candidate slots. This phase extracts
+    the conjuncts, retrieves the most recent / best matching session for each entity
+    independently, and ensures all entities are interleaved into the top positions.
     """
     import re as _re
 
-    # Match patterns like "What are the current X and Y?", "What is the X and Y?"
-    match = _re.search(
+    conjuncts = []
+
+    # Pattern 1: "What are the current X and Y?", "What is the X and Y?"
+    m1 = _re.search(
         r"what\s+(?:is|are|was|were)\s+(?:the\s+)?(?:current\s+)?(.+?)\s+and\s+(?:the\s+)?(.+?)\s*\??$",
         query,
         _re.IGNORECASE,
     )
-    if not match:
+    if m1:
+        raw_e1, raw_e2 = m1.group(1).strip(), m1.group(2).strip()
+        _STOP = {"the", "a", "an", "current", "latest", "now", "is", "are", "were", "was"}
+        e1_words = [w for w in raw_e1.split() if w.lower() not in _STOP]
+        e2_words = [w for w in raw_e2.split() if w.lower() not in _STOP]
+        if e1_words and e2_words:
+            conjuncts = [" ".join(e1_words), " ".join(e2_words)]
+
+    # Pattern 2: "combining my X and Y projects/data/work"
+    if not conjuncts:
+        m2 = _re.search(
+            r"combining\s+(?:my\s+)?([a-zA-Z0-9_\-\$ ]+?)\s+and\s+([a-zA-Z0-9_\-\$ ]+?)\s+(?:projects|tasks|work|efforts|data|systems)",
+            query,
+            _re.IGNORECASE,
+        )
+        if m2:
+            conjuncts = [m2.group(1).strip(), m2.group(2).strip()]
+
+    # Pattern 3: "across the X, Y, and Z"
+    if not conjuncts:
+        m3 = _re.search(
+            r"across\s+(?:the\s+)?([a-zA-Z0-9_\-\$ ]+?),\s+([a-zA-Z0-9_\-\$ ]+?),\s+and\s+([a-zA-Z0-9_\-\$ ]+)",
+            query,
+            _re.IGNORECASE,
+        )
+        if m3:
+            conjuncts = [m3.group(1).strip(), m3.group(2).strip(), m3.group(3).strip()]
+
+    if not conjuncts:
         return results
 
-    raw_e1, raw_e2 = match.group(1).strip(), match.group(2).strip()
-    _STOP = {"the", "a", "an", "current", "latest", "now", "is", "are", "were", "was"}
-    e1_words = [w for w in raw_e1.split() if w.lower() not in _STOP]
-    e2_words = [w for w in raw_e2.split() if w.lower() not in _STOP]
-    if not e1_words or not e2_words:
-        return results
-
-    conjuncts = [" ".join(e1_words), " ".join(e2_words)]
-
+    _STOP_WORDS = {"the", "a", "an", "my", "our", "all", "in", "to", "for", "of", "and"}
     conjoint_rows = []
     for conj in conjuncts:
-        safe_conj = conj.replace('"', '""')
+        clean_conj = " ".join(w for w in conj.split() if w.lower() not in _STOP_WORDS)
+        if not clean_conj:
+            continue
+        safe_conj = clean_conj.replace('"', '""')
         try:
             rows = db.execute(
                 "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
@@ -999,8 +1083,8 @@ def _conjoint_entity_phase(
             if rows:
                 conjoint_rows.extend(rows)
             else:
-                for kw in conj.split():
-                    if kw.lower() not in _STOP:
+                for kw in clean_conj.split():
+                    if kw.lower() not in _STOP_WORDS:
                         safe_kw = kw.replace('"', '""')
                         rows_kw = db.execute(
                             "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "

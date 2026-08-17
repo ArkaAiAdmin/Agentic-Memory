@@ -662,15 +662,16 @@ def run_beam_real_eval(
                             retrieval_hits_20 += 1
 
                     retrieved_content = []
+                    context_limit = 20 if ability_type in ("event_ordering", "summarization") else 10
                     if retrieved:
-                        for mid in retrieved[:10]:
+                        for mid in retrieved[:context_limit]:
                             row = read_conn.execute(
                                 "SELECT content FROM memories WHERE id = ?", (mid,)
                             ).fetchone()
                             if row:
                                 retrieved_content.append(row[0])
 
-                    candidates_tuple = [(mid, content, "", "", "") for mid, content in zip(retrieved[:10], retrieved_content)]
+                    candidates_tuple = [(mid, content, "", "", "") for mid, content in zip(retrieved[:context_limit], retrieved_content)]
                     combined_content = " ".join(retrieved_content)
 
                     try:
