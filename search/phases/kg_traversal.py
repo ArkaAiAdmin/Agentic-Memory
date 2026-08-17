@@ -299,8 +299,8 @@ def _text_multi_hop_traversal(
             if p.lower() not in _STOP_WORDS and len(p) > 2 and p not in all_props:
                 all_props.append(p)
 
-        # 2. Extract entities and domain identifiers from top-3 retrieved results
-        for r in results[:3]:
+        # 2. Extract entities and domain identifiers from top retrieved result
+        for r in results[:1]:
             content = r[1] if len(r) > 1 and r[1] else ""
             if not content:
                 continue
@@ -315,13 +315,35 @@ def _text_multi_hop_traversal(
                     all_props.append(p)
 
         tgt_table = _target_memories_table(db)
-        for p in all_props[:12]:
+
+        def _fast_find_rows(term: str, limit: int = 10) -> list[tuple[str, str]]:
+            clean = re.sub(r"[^\w\s-]", "", term).strip()
+            if not clean or len(clean) < 2:
+                return []
             try:
-                sub_rows = db.execute(
-                    f"SELECT id, content FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT 20",
-                    (f"%{p}%",),
+                fts_rows = db.execute(
+                    f"SELECT m.id, m.content FROM memories_fts f JOIN {tgt_table} m ON f.id = m.id "
+                    "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL LIMIT ?",
+                    (f'"{clean}"', limit),
                 ).fetchall()
-                # Precise word-boundary filtering to prevent substrings (e.g. 'Eve' in 'severe') from polluting
+                if fts_rows:
+                    return fts_rows
+            except Exception:
+                pass
+            try:
+                return db.execute(
+                    f"SELECT id, content FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT ?",
+                    (f"%{clean}%", limit),
+                ).fetchall()
+            except Exception:
+                return []
+
+        for p in all_props[:4]:
+            if len(extra_mids) >= limit:
+                break
+            try:
+                sub_rows = _fast_find_rows(p, limit=8)
+                # Precise word-boundary filtering to prevent substrings from polluting
                 sub_rows = [
                     r for r in sub_rows
                     if re.search(r"\b" + re.escape(p) + r"\b", r[1] if len(r) > 1 and r[1] else "", re.IGNORECASE)
@@ -330,6 +352,8 @@ def _text_multi_hop_traversal(
                     sub_id, sub_cnt = s_row[0], s_row[1]
                     if sub_id not in seen_ids and sub_id not in extra_mids:
                         extra_mids.append(sub_id)
+                        if len(extra_mids) >= limit:
+                            break
                     # 2nd/3rd hop: extract domain-typed phrases and named entities from found context
                     hop2_terms = []
                     for m in _HOP2_PATTERN.finditer(sub_cnt):
@@ -341,53 +365,58 @@ def _text_multi_hop_traversal(
                         search_term = " ".join(words[-2:]) if len(words) >= 2 else clean_ph
                         if len(search_term) > 3:
                             hop2_terms.append(search_term)
-                    # Extract entities mentioned in the intermediate document
                     for ent in re.findall(r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\b[A-Z][a-zA-Z0-9_]+\b", sub_cnt):
                         if ent.lower() not in _STOP_WORDS and len(ent) > 2 and ent not in all_props:
                             hop2_terms.append(ent)
-                    for term in hop2_terms[:8]:
-                        try:
-                            term_clean = term.rstrip("sS")
-                            hop2_rows = db.execute(
-                                f"SELECT id, content FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT 10",
-                                (f"%{term_clean}%",),
-                            ).fetchall()
-                            for h2 in hop2_rows:
-                                h2_id, h2_cnt = h2[0], h2[1] if len(h2) > 1 and h2[1] else ""
-                                if h2_id not in seen_ids and h2_id not in extra_mids:
-                                    extra_mids.append(h2_id)
-                                # Hop 3 expansion from Hop 2 context
+                    for term in hop2_terms[:3]:
+                        if len(extra_mids) >= limit:
+                            break
+                        term_clean = term.rstrip("sS")
+                        hop2_rows = _fast_find_rows(term_clean, limit=4)
+                        for h2 in hop2_rows:
+                            h2_id, h2_cnt = h2[0], h2[1] if len(h2) > 1 and h2[1] else ""
+                            if h2_id not in seen_ids and h2_id not in extra_mids:
+                                extra_mids.append(h2_id)
+                                if len(extra_mids) >= limit:
+                                    break
+                            # Hop 3 expansion from Hop 2 context
+                            if len(extra_mids) < limit:
                                 for m3 in _HOP2_PATTERN.finditer(h2_cnt):
                                     ph3 = m3.group(0).strip()
                                     clean_ph3 = ph3[:-1] if ph3.endswith(("s", "S")) and len(ph3) > 2 else ph3
                                     words3 = clean_ph3.split()
                                     st3 = " ".join(words3[-2:]) if len(words3) >= 2 else clean_ph3
                                     if len(st3) > 3:
-                                        try:
-                                            h3_rows = db.execute(
-                                                f"SELECT id FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT 5",
-                                                (f"%{st3.rstrip('sS')}%",),
-                                            ).fetchall()
-                                            for h3 in h3_rows:
-                                                if h3[0] not in seen_ids and h3[0] not in extra_mids:
-                                                    extra_mids.append(h3[0])
-                                        except sqlite3.Error:
-                                            pass
-                        except sqlite3.Error:
-                            pass
+                                        h3_rows = _fast_find_rows(st3.rstrip("sS"), limit=2)
+                                        for h3 in h3_rows:
+                                            if h3[0] not in seen_ids and h3[0] not in extra_mids:
+                                                extra_mids.append(h3[0])
+                                                if len(extra_mids) >= limit:
+                                                    break
                 # Check kg_facts for explicit knowledge graph relationships
                 try:
+                    clean_p = p.strip()
                     fact_rows = db.execute(
-                        "SELECT source_memory FROM kg_facts WHERE (subject LIKE ? OR object LIKE ?) AND invalid_at IS NULL LIMIT 10",
-                        (f"%{p}%", f"%{p}%"),
+                        "SELECT source_memory FROM kg_facts WHERE (subject = ? OR object = ?) AND invalid_at IS NULL LIMIT 10",
+                        (clean_p, clean_p),
                     ).fetchall()
+                    if not fact_rows:
+                        try:
+                            fact_rows = db.execute(
+                                "SELECT source_memory FROM kg_facts_fts WHERE kg_facts_fts MATCH ? LIMIT 10",
+                                (f'"{clean_p}"',),
+                            ).fetchall()
+                        except Exception:
+                            pass
                     for f_row in fact_rows:
                         sm = f_row[0]
                         if sm and sm not in seen_ids and sm not in extra_mids:
                             extra_mids.append(sm)
+                            if len(extra_mids) >= limit:
+                                break
                 except sqlite3.Error:
                     pass
-            except sqlite3.Error:
+            except Exception:
                 pass
 
         if extra_mids:

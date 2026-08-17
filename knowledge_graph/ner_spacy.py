@@ -47,11 +47,31 @@ def augment_entities(text: str, existing: list[tuple[str, str]]) -> list[tuple[s
     precedence.  Garbage patterns (ISO dates, UUIDs, pure numbers) are
     filtered to match the regex pipeline's garbage filter.
     """
-    try:
-        import spacy
-        model: Any = spacy.load("en_core_web_trf")
-    except Exception as e:
-        logger.warning("spaCy NER unavailable: %s", e)
+_SPACY_MODEL: Any = None
+
+
+def _get_spacy_model() -> Any:
+    global _SPACY_MODEL
+    if _SPACY_MODEL is None:
+        try:
+            import spacy
+            _SPACY_MODEL = spacy.load("en_core_web_trf")
+        except Exception as e:
+            logger.warning("spaCy NER unavailable: %s", e)
+            return None
+    return _SPACY_MODEL
+
+
+def augment_entities(text: str, existing: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Run spaCy NER on *text*, return additional (entity_text, entity_type) pairs.
+
+    Entries that already exist in *existing* (case-insensitive match on
+    entity text) are deduplicated so regex-extracted entities take
+    precedence.  Garbage patterns (ISO dates, UUIDs, pure numbers) are
+    filtered to match the regex pipeline's garbage filter.
+    """
+    model = _get_spacy_model()
+    if model is None:
         return []
     doc = model(text[:100_000])
     existing_texts = {e[0].lower() for e in existing}

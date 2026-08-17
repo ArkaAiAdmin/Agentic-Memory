@@ -21,6 +21,11 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(line_buffering=True)
+
 logger = logging.getLogger(__name__)
 
 EVAL_ROOT = Path(__file__).resolve().parent
@@ -245,6 +250,25 @@ def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> dict[s
     finally:
         conn.close()
 
+    # Build the persisted usearch vec index from the cached embeddings so the
+    # first hybrid search doesn't silently re-encode every memory (4-6 min CPU
+    # stall with no phase stats — the reason fresh benchmark runs looked hung).
+    # Pure cache hits (content_hash matches what index_embeddings_batch wrote),
+    # so this is seconds, not minutes. Must run AFTER embeddings are written.
+    if batch_items:
+        try:
+            from rebuild_vec_index import rebuild_vec_index
+
+            stats = rebuild_vec_index(str(db_path))
+            logger.info(
+                "vec index built: n_indexed=%s serialized=%sB elapsed=%.2fs",
+                stats.get("n_indexed"),
+                stats.get("serialized_bytes"),
+                stats.get("elapsed_s", 0.0),
+            )
+        except Exception as exc:
+            logger.warning("vec index build failed (non-fatal): %s", exc)
+
     return session_map
 
 
@@ -253,7 +277,7 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
     return ingest_all_conversations(db_path, [conv])
 
 
-def run_search(db_path: Path, query: str, limit: int = 20) -> list[str]:
+def run_search(db_path: Path, query: str, limit: int = 20, light: bool = False) -> list[str]:
     """Run hybrid search and return list of memory IDs in rank order."""
     from search.orchestrator import search_memories
 
@@ -262,7 +286,8 @@ def run_search(db_path: Path, query: str, limit: int = 20) -> list[str]:
         db_path=db_path,
         limit=max(limit, 20),
         hybrid=True,
-        rerank=True,
+        rerank=not light,
+        mode="fts" if light else "hybrid",
         tenant_id="beam",
         category="sessions",
     )
@@ -355,6 +380,7 @@ def run_beam_real_eval(
     output_path: Path = None,
     use_cache_db: bool = True,
     rebuild: bool = False,
+    light: bool = False,
 ) -> dict:
     """Run BEAM evaluation on real data."""
     from eval._fixtures import bootstrap_temp_db_clean
@@ -409,7 +435,9 @@ def run_beam_real_eval(
     read_conn = sqlite3.connect(str(db_path), timeout=30.0)
 
     # Run evaluation
-    print("\nRunning evaluation...")
+    print("\n" + "=" * 80, flush=True)
+    print(f"STARTING BEAM EVALUATION ({total_q} questions across {len(conversations)} conversations)", flush=True)
+    print("=" * 80, flush=True)
     results = []
     per_type = {}
     _q_num = 0
@@ -431,8 +459,6 @@ def run_beam_real_eval(
                         continue
 
                     _q_num += 1
-                    if _q_num % 25 == 0 or _q_num == 1:
-                        print(f"  [{_q_num}/{total_q} questions processed]", flush=True)
 
                     if hasattr(memory_mcp, "_search_cache"):
                         memory_mcp._search_cache.clear()
@@ -451,7 +477,7 @@ def run_beam_real_eval(
                     difficulty = q.get("difficulty", "unknown")
 
                     t0 = time.time()
-                    retrieved = run_search(db_path, question_text, limit=20)
+                    retrieved = run_search(db_path, question_text, limit=20, light=light)
                     elapsed = (time.time() - t0) * 1000
 
                     retrieved_content = []
@@ -512,6 +538,12 @@ def run_beam_real_eval(
                     })
 
                     per_type.setdefault(ability_type, []).append(score)
+                    running_acc = sum(r["score"] for r in results) / len(results)
+                    status_icon = "✅ PASS" if score >= 0.6 else "❌ FAIL"
+                    print(
+                        f"  [Q {_q_num:2d}/{total_q:2d}] {status_icon} (Score: {score:.2f}, {elapsed:5.0f}ms) | Acc: {running_acc*100:5.1f}% | [{ability_type:<24}] Q: {question_text[:35]}...",
+                        flush=True,
+                    )
 
                     _write_live_progress(
                         progress_file=progress_file,
@@ -582,6 +614,8 @@ if __name__ == "__main__":
                         help="Force rebuild DB")
     parser.add_argument("--no-cache", action="store_true",
                         help="Do not use cached DB")
+    parser.add_argument("--light", action="store_true",
+                        help="Run in light search mode (fast evaluation)")
     args = parser.parse_args()
 
     out_p = Path(args.output) if args.output else None
@@ -590,4 +624,5 @@ if __name__ == "__main__":
         output_path=out_p,
         use_cache_db=not args.no_cache,
         rebuild=args.rebuild,
+        light=args.light,
     )

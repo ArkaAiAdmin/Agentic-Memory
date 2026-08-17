@@ -112,6 +112,9 @@ def set_benchmark_env() -> None:
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
     os.environ["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
+    os.environ["MEMORY_DB_FLOCK"] = "0"
+    os.environ["MEMORY_AUTO_SAVE_DISABLED"] = "1"
+    os.environ["MEMORY_AGENT_ID"] = "beam"
 
 
 def populate_eval_memory_indexes(
@@ -215,20 +218,13 @@ def populate_eval_memory_indexes_batch(
     except Exception:
         pass
 
-    # 2. Vector Embeddings
+    # 2. Vector Embeddings (Batched)
     try:
-        from save.indexers import _index_embedding
+        from infra.embedding_search import get_embedding_search
 
-        for memory_id, content, cat, t_list in items:
-            if content and content.strip():
-                _index_embedding(
-                    conn,
-                    memory_id,
-                    content,
-                    category=cat or "sessions",
-                    tags=t_list or [],
-                    source_file=memory_id,
-                )
+        embed_inputs = [(mid, cnt) for mid, cnt, _, _ in items if cnt and cnt.strip()]
+        if embed_inputs:
+            get_embedding_search().index_embeddings_batch(conn, embed_inputs)
     except Exception:
         pass
 
