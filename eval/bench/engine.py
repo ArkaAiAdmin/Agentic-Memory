@@ -22,6 +22,13 @@ from .metrics import (
     compute_retrieval_metrics,
     compute_text_metrics,
 )
+from .observability import (
+    format_query_progress,
+    init_benchmark_stdout,
+    print_stage_banner,
+    print_summary_report,
+    write_live_progress,
+)
 from .protocol import BenchmarkQuestion, BenchmarkResult, BenchmarkSession, SuiteSummary
 
 logger = logging.getLogger(__name__)
@@ -65,7 +72,8 @@ class BenchmarkHarness:
         checkpoint_interval: int = 50,
         config: dict[str, Any] | None = None,
     ) -> SuiteSummary:
-        """Run a full benchmark suite end-to-end."""
+        """Run a full benchmark suite end-to-end with phase-by-phase observability."""
+        init_benchmark_stdout()
         set_benchmark_env()
 
         # 1. Resolve adapter
@@ -76,16 +84,16 @@ class BenchmarkHarness:
         else:
             adapter = adapter_or_name
 
-        print(f"\n{'='*70}")
-        print(f"BENCHMARK SUITE: {suite_name.upper()} (v{adapter.version})")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}", flush=True)
+        print(f"BENCHMARK SUITE: {suite_name.upper()} (Adapter: {adapter.__class__.__name__}, v{adapter.version})", flush=True)
+        print(f"{'='*80}", flush=True)
 
-        # 2. Load dataset with error handling
-        print(f"Loading dataset via {adapter.__class__.__name__}...")
+        # Phase 1: Load dataset
+        print_stage_banner(1, "Dataset Loading", f"Adapter={adapter.__class__.__name__}")
         t_load = time.time()
         try:
             sessions, questions = adapter.load(limit=max_questions)
-            print(f"Loaded {len(sessions)} sessions, {len(questions)} questions in {time.time() - t_load:.2f}s")
+            print(f"✓ Loaded {len(sessions)} sessions, {len(questions)} questions in {time.time() - t_load:.2f}s", flush=True)
         except Exception as exc:
             err_msg = f"Failed to load dataset in adapter {adapter.__class__.__name__}: {exc}\n{traceback.format_exc()}"
             logger.error(err_msg)
@@ -117,8 +125,8 @@ class BenchmarkHarness:
                 category_metrics={},
             )
 
-        # 3. Get or build database
-        print(f"Preparing database for {suite_name} (cache={use_cache_db}, rebuild={force_rebuild})...")
+        # Phase 2: Database Preparation & Indexing
+        print_stage_banner(2, "Database Ingestion & Multi-Index Building", f"cache={use_cache_db}, rebuild={force_rebuild}")
         db_path, ingest_time, was_cached = self.db_manager.get_or_create_db(
             suite_name=suite_name,
             sessions=sessions,
@@ -127,16 +135,36 @@ class BenchmarkHarness:
             force_rebuild=force_rebuild,
         )
         os.environ["MEMORY_DB_PATH"] = str(db_path)
-        print(f"Database ready at {db_path} (cached={was_cached}, ingest_time={ingest_time:.2f}s)")
+        print(f"✓ Database ready at {db_path} (cached={was_cached}, ingest_time={ingest_time:.2f}s)", flush=True)
 
-        # 4. Run evaluation loop
-        print(f"\nExecuting {len(questions)} queries against 14-phase search pipeline...")
+        # Phase 3: Encoder Warmup
+        print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
         from search.orchestrator import search_memories
         import memory_mcp
+
+        try:
+            _ = search_memories(
+                db_path,
+                "warmup query",
+                limit=1,
+                include_global=True,
+                rerank=True,
+                tenant_id=adapter.tenant_id,
+                category="all",
+            )
+            print("✓ Encoders pre-warmed successfully.", flush=True)
+        except Exception as exc:
+            logger.debug("Warmup query non-fatal exception: %s", exc)
+
+        # Phase 4: Evaluation Execution Loop
+        print_stage_banner(4, "Evaluation Execution", f"{len(questions)} queries against 14-phase search pipeline")
 
         results: list[BenchmarkResult] = []
         latencies: list[float] = []
         per_category_scores: dict[str, list[dict[str, float]]] = {}
+        per_category_acc: dict[str, list[float]] = {}
+        progress_file = self.results_dir / ".progress.json"
+        suite_progress_file = self.results_dir / f".progress_{suite_name}.json"
 
         t_start_wall = time.time()
         read_conn = sqlite3.connect(str(db_path), timeout=30.0)
@@ -146,17 +174,6 @@ class BenchmarkHarness:
         try:
             total_q = len(questions)
             for q_idx, q in enumerate(questions, start=1):
-                # Progress logging with live ETA calculation
-                if q_idx % 25 == 0 or q_idx == 1 or q_idx == total_q:
-                    elapsed = time.time() - t_start_wall
-                    q_rate = q_idx / max(0.1, elapsed)
-                    remaining_q = total_q - q_idx
-                    eta_sec = remaining_q / max(0.01, q_rate)
-                    print(
-                        f"  [{q_idx}/{total_q}] elapsed={elapsed:.1f}s, ETA={eta_sec:.1f}s ({q_rate:.1f} q/s)...",
-                        flush=True,
-                    )
-
                 if hasattr(memory_mcp, "_search_cache"):
                     memory_mcp._search_cache.clear()
 
@@ -221,9 +238,11 @@ class BenchmarkHarness:
 
                 # Compute scores
                 scores: dict[str, float] = {}
+                primary_score = 0.0
                 if q.gold_session_ids:
                     r_metrics = compute_retrieval_metrics(retrieved_ids, q.gold_session_ids)
                     scores.update(r_metrics)
+                    primary_score = r_metrics.get("recall@10", r_metrics.get("mrr", 0.0))
 
                 if q.expected_answer or q.rubric or q.compliance_indicators:
                     t_metrics = compute_text_metrics(
@@ -234,6 +253,7 @@ class BenchmarkHarness:
                     )
                     scores.update(t_metrics)
                     scores["lafs"] = compute_lafs(t_metrics.get("token_f1", 0.0), latency_ms)
+                    primary_score = t_metrics.get("overall_accuracy", primary_score)
 
                 # Parse search envelope telemetry
                 phase_latencies = search_res.get("phase_latencies", {})
@@ -260,6 +280,40 @@ class BenchmarkHarness:
                 )
                 results.append(res)
                 per_category_scores.setdefault(q.category, []).append(scores)
+                per_category_acc.setdefault(q.category, []).append(primary_score)
+
+                running_overall = sum(r.scores.get("overall_accuracy", r.scores.get("recall@10", 0.0)) for r in results) / len(results)
+                running_type_acc = {
+                    cat: sum(scs) / len(scs) if scs else 0.0
+                    for cat, scs in per_category_acc.items()
+                }
+
+                # Live query progress logging
+                line_msg = format_query_progress(
+                    q_num=q_idx,
+                    total_q=total_q,
+                    score=primary_score,
+                    latency_ms=latency_ms,
+                    running_acc=running_overall,
+                    category=q.category,
+                    query_text=q.query,
+                )
+                print(line_msg, flush=True)
+
+                # Atomic live progress writer
+                for p_file in (progress_file, suite_progress_file):
+                    write_live_progress(
+                        progress_file=p_file,
+                        q_num=q_idx,
+                        total_q=total_q,
+                        category=q.category,
+                        question_text=q.query,
+                        score=primary_score,
+                        latency_ms=latency_ms,
+                        running_overall=running_overall,
+                        running_per_type=running_type_acc,
+                        extra_fields={"suite_name": suite_name},
+                    )
 
                 # Periodic checkpointing
                 if checkpoint_interval > 0 and q_idx % checkpoint_interval == 0:
@@ -290,7 +344,9 @@ class BenchmarkHarness:
         wall_time = time.time() - t_start_wall
         latency_stats = calculate_latency_stats(latencies)
 
-        # 5. Compute macro aggregations
+        # Phase 5: Compute macro aggregations & save
+        print_stage_banner(5, "Results Aggregation & Verification", f"{len(results)} questions analyzed")
+
         all_metric_keys = set()
         for r in results:
             all_metric_keys.update(r.scores.keys())
@@ -324,7 +380,7 @@ class BenchmarkHarness:
             config=config or {},
         )
 
-        # 6. Save results
+        # Save results
         ts_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         out_file = self.results_dir / f"{suite_name}_{ts_str}.json"
         latest_file = self.results_dir / f"latest_{suite_name}.json"
@@ -349,22 +405,28 @@ class BenchmarkHarness:
         with open(latest_file, "w", encoding="utf-8") as f:
             json.dump(summary_dict, f, indent=2)
 
-        # 7. Print summary report
-        print(f"\n{'='*70}")
-        print(f"RESULTS SUMMARY: {suite_name.upper()}")
-        print(f"{'='*70}")
-        print(f"Total Questions: {summary.total_questions}")
-        print(f"Wall Time:       {summary.wall_time_seconds}s ({summary.total_questions / max(0.1, summary.wall_time_seconds):.1f} q/s)")
-        print(f"Latency:         mean={latency_stats['mean']}ms, p50={latency_stats['p50']}ms, p95={latency_stats['p95']}ms, p99={latency_stats['p99']}ms")
-        print("\nMacro Metrics:")
-        for mk, mv in summary.macro_metrics.items():
-            print(f"  {mk:<20}: {mv:.4f}")
+        # Print summary report
+        cat_scores_simple = {
+            cat: cm.get("overall_accuracy", cm.get("recall@10", cm.get("exact_match", 0.0)))
+            for cat, cm in category_metrics.items()
+        }
+        cat_counts = {cat: int(cm.get("count", 0)) for cat, cm in category_metrics.items()}
+        retrieval_recalls = {
+            k: v for k, v in macro_metrics.items() if k.startswith("recall@") or k.startswith("mrr")
+        }
+        overall_val = macro_metrics.get("overall_accuracy", macro_metrics.get("recall@10", 0.0))
 
-        print("\nCategory Metrics:")
-        for cat, cm in sorted(summary.category_metrics.items()):
-            n_cat = int(cm.get("count", 0))
-            acc = cm.get("overall_accuracy", cm.get("recall@10", cm.get("exact_match", 0.0)))
-            print(f"  {cat:<25} (n={n_cat:>4}): score={acc:.4f}")
-
-        print(f"\nSaved detailed results to:\n  - {out_file}\n  - {latest_file}")
+        print_summary_report(
+            benchmark_name=suite_name,
+            total_q=summary.total_questions,
+            wall_time_s=summary.wall_time_seconds,
+            overall_metric=overall_val,
+            metric_name="Macro Metric",
+            category_scores=cat_scores_simple,
+            category_counts=cat_counts,
+            latency_stats=latency_stats,
+            retrieval_recalls=retrieval_recalls,
+            output_path=latest_file,
+        )
         return summary
+

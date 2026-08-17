@@ -43,9 +43,20 @@ from metrics import compute_all_k
 from search.orchestrator import search_memories
 
 # Bootstrap a temp DB with the full schema
-from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env
+from _fixtures import (
+    bootstrap_temp_db_clean,
+    format_query_progress,
+    init_benchmark_stdout,
+    populate_eval_memory_indexes,
+    print_stage_banner,
+    print_summary_report,
+    set_benchmark_env,
+    write_live_progress,
+)
 
+init_benchmark_stdout()
 set_benchmark_env()
+
 
 
 KS = (5, 10, 30, 50)
@@ -266,7 +277,8 @@ def run(
                 count += 1
         return count
 
-    # Collect and seed sessions grouped by question tenant_id
+    # Phase 2: Seeding & Pre-computing
+    print_stage_banner(2, "Database Ingestion & Multi-Index Building", f"db={db_path.name}")
     print(f"Seeding sessions for {len(evaluable)} questions into DB...")
     conn = sqlite3.connect(str(db_path))
     try:
@@ -300,7 +312,6 @@ def run(
                 except Exception:
                     pass
 
-
         conn.commit()
         try:
             conn.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
@@ -309,7 +320,7 @@ def run(
             logger.debug("FTS rebuild skipped for seeded sessions (non-fatal): %s", exc)
     finally:
         conn.close()
-    print(f"Done seeding. DB size: {db_path.stat().st_size / 1024:.1f} KB")
+    print(f"✓ Done seeding. DB size: {db_path.stat().st_size / 1024:.1f} KB")
 
     # Pre-compute embeddings AFTER seeding
     try:
@@ -330,15 +341,47 @@ def run(
                 sessions_to_embed = [(r[0], r[1]) for r in rows if r[1]]
                 n = _embed_and_store_batch(conn, sessions_to_embed, model)
                 conn.commit()
-                print(f"Embedded {n} sessions")
+                print(f"✓ Embedded {n} sessions")
         else:
-            print(f"Found {has_emb} existing embeddings, skipping pre-compute")
+            print(f"✓ Found {has_emb} existing embeddings, skipping pre-compute")
         conn.close()
     except Exception as e:
         print(f"Embedding pre-compute failed: {e}")
 
-    print(f"Starting evaluation of {len(evaluable)} questions...")
+    try:
+        from rebuild_vec_index import rebuild_vec_index
+        stats = rebuild_vec_index(str(db_path))
+        print(
+            f"✓ Vector index built: {stats.get('n_indexed')} items ({stats.get('serialized_bytes')} bytes) in {stats.get('elapsed_s', 0.0):.2f}s",
+            flush=True,
+        )
+    except Exception as exc:
+        logger.warning("vec index build failed (non-fatal): %s", exc)
+
+    # Phase 3: Warmup
+    print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
+    try:
+        _ = search_memories(
+            db_path,
+            "warmup query",
+            limit=1,
+            category="sessions",
+            tenant_id="longmem_warmup",
+            hybrid=True,
+            deep_rerank=False,
+            rerank=True,
+        )
+        print("✓ Encoders pre-warmed successfully.", flush=True)
+    except Exception as exc:
+        print(f"  ⚠ Warmup non-fatal notice: {exc}", flush=True)
+
+    # Phase 4: Evaluation Execution
+    print_stage_banner(4, "Evaluation Execution", f"{len(evaluable)} questions against 14-phase search pipeline")
     total_t = time.perf_counter()
+    progress_file = EVAL_DIR / "results" / ".progress.json"
+    suite_progress_file = EVAL_DIR / "results" / ".progress_longmemeval_s.py.json"
+    per_type_scores: dict[str, list[float]] = {}
+    latencies: list[float] = []
 
     def _save_checkpoint():
         if not output_file or not per_q:
@@ -363,14 +406,16 @@ def run(
         except Exception as exc:
             logger.debug("Checkpoint save failed (non-fatal): %s", exc)
 
-    for idx, q in enumerate(evaluable):
+    for idx, q in enumerate(evaluable, start=1):
         qid = q["question_id"]
         if qid in completed_qids:
             continue
 
         gold = set(q["answer_session_ids"])
         question = q["question"]
+        qtype = q.get("question_type", "general")
 
+        t_q0 = time.perf_counter()
         try:
             qdate = q.get("question_date")
             as_of_val = None
@@ -400,47 +445,85 @@ def run(
         except Exception as e:
             print(f"  Error on {qid}: {e}")
             ranked = []
+        dt_ms = (time.perf_counter() - t_q0) * 1000.0
+        latencies.append(dt_ms)
 
         scores = compute_all_k(ranked, gold, ks=KS)
+        score_10 = scores.get("recall_any@10", 0.0)
+
         per_q.append({
             "question_id": qid,
-            "question_type": q["question_type"],
+            "question_type": qtype,
             "n_sessions": len(q.get("haystack_session_ids", [])),
             "scores": scores,
+            "latency_ms": round(dt_ms, 2),
         })
         completed_qids.add(qid)
         for k, v in scores.items():
             per_metric[k].append(v)
+        per_type_scores.setdefault(qtype, []).append(score_10)
+
+        running_rec10 = mean(per_metric["recall_any@10"]) if per_metric.get("recall_any@10") else 0.0
+        running_per_type = {
+            t: mean(scs) for t, scs in per_type_scores.items() if scs
+        }
+
+        # Single-line query progress
+        line_msg = format_query_progress(
+            q_num=len(per_q),
+            total_q=len(evaluable),
+            score=score_10,
+            latency_ms=dt_ms,
+            running_acc=running_rec10,
+            category=qtype,
+            query_text=question,
+            extra_metric_label="Rec@10",
+        )
+        print(line_msg, flush=True)
+
+        # Atomic live progress writer
+        for p_file in (progress_file, suite_progress_file):
+            write_live_progress(
+                progress_file=p_file,
+                q_num=len(per_q),
+                total_q=len(evaluable),
+                category=qtype,
+                question_text=question,
+                score=score_10,
+                latency_ms=dt_ms,
+                running_overall=running_rec10,
+                running_per_type=running_per_type,
+                extra_fields={"benchmark": "LongMemEval-S", "question_id": qid},
+            )
 
         # Periodically trigger garbage collection to control memory growth
-        if (idx + 1) % 25 == 0:
+        if (idx) % 25 == 0:
             gc.collect()
 
         # Incremental checkpointing every 5 questions or on first/last
-        if (len(per_q) % 5 == 0) or idx == 0 or idx == len(evaluable) - 1:
+        if (len(per_q) % 5 == 0) or idx == 1 or idx == len(evaluable):
             _save_checkpoint()
-
-        if (idx + 1) % 25 == 0 or idx == 0 or idx == len(evaluable) - 1:
-            elapsed = time.perf_counter() - total_t
-            rate = len(per_q) / elapsed if elapsed > 0 else 0
-            eta = (len(evaluable) - len(per_q)) / rate if rate > 0 else 0
-            print(
-                f"  [{len(per_q)}/{len(evaluable)}] {qid} ({q['question_type']}) "
-                f"recall@10={scores['recall_any@10']:.2f} "
-                f"rate={rate:.1f}/s ETA={eta:.0f}s",
-                flush=True
-            )
 
     wall = time.perf_counter() - total_t
     agg = {f"recall_any@{k}": mean(per_metric[f"recall_any@{k}"]) for k in KS} if per_metric else {}
     agg.update({f"recall_all@{k}": mean(per_metric[f"recall_all@{k}"]) for k in KS} if per_metric else {})
     agg.update({f"ndcg_any@{k}": mean(per_metric[f"ndcg_any@{k}"]) for k in KS} if per_metric else {})
 
+    # Phase 5: Results Aggregation
+    print_stage_banner(5, "Results Aggregation & Verification", f"{len(evaluable)} questions analyzed")
+
+    from eval.bench.metrics import calculate_latency_stats
+    lat_stats = calculate_latency_stats(latencies)
+
     report = {
+        "benchmark": "LongMemEval-S-Main-Pipeline",
         "n_questions": len(evaluable),
         "wall_time_s": round(wall, 2),
-        "mean_latency_ms": round(wall / len(evaluable) * 1000, 1) if evaluable else 0,
+        "mean_latency_ms": round(lat_stats.get("mean", 0.0), 1),
+        "latency_ms": lat_stats,
         "macro_metrics": agg,
+        "per_type_recall_at_10": {t: round(mean(scs), 4) for t, scs in per_type_scores.items() if scs},
+        "per_type_counts": {t: len(scs) for t, scs in per_type_scores.items()},
         "per_question": per_q,
     }
 
@@ -459,7 +542,14 @@ def main():
     parser.add_argument("--force-reseed", action="store_true", help="Force re-seeding DB")
     args = parser.parse_args()
 
+    print(f"\n{'='*80}", flush=True)
+    print("BENCHMARK SUITE: LONGMEMEVAL-S (Main Search Pipeline)", flush=True)
+    print(f"{'='*80}", flush=True)
+
+    print_stage_banner(1, "Dataset Loading", f"Path={args.input}")
     corpus = load_corpus(args.input, limit=args.limit)
+    print(f"✓ Loaded {len(corpus)} corpus items", flush=True)
+
     report = run(
         corpus,
         limit=args.limit,
@@ -468,7 +558,9 @@ def main():
         force_reseed=args.force_reseed,
     )
 
-    with open(args.output, "w") as f:
+    out_p = Path(args.output)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_p, "w") as f:
         json.dump(report, f, indent=2)
 
     # Clean up temporary checkpoint file on successful completion
@@ -479,11 +571,24 @@ def main():
         except OSError:
             pass
 
-    print(f"\n{'=' * 60}")
-    print("Macro-averaged metrics:")
-    for k, v in sorted(report["macro_metrics"].items()):
-        print(f"  {k}: {v:.4f}")
-    print(f"\nResults saved to {args.output}")
+    overall_r10 = report.get("macro_metrics", {}).get("recall_any@10", 0.0)
+    retrieval_recalls = {
+        k: v for k, v in report.get("macro_metrics", {}).items() if "recall" in k
+    }
+
+    print_summary_report(
+        benchmark_name="LongMemEval-S",
+        total_q=report.get("n_questions", 0),
+        wall_time_s=report.get("wall_time_s", 0.0),
+        overall_metric=overall_r10,
+        metric_name="RecallAny@10 (Macro)",
+        category_scores=report.get("per_type_recall_at_10", {}),
+        category_counts=report.get("per_type_counts", {}),
+        latency_stats=report.get("latency_ms", {}),
+        retrieval_recalls=retrieval_recalls,
+        output_path=out_p,
+    )
+
 
 
 if __name__ == "__main__":

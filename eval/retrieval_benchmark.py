@@ -38,7 +38,19 @@ if str(INSTALL_DIR) not in sys.path:
 from infra.memory_common import open_db  # noqa: E402
 from infra.memory_config import get_memory_paths  # noqa: E402
 _, _, GLOBAL_MEM_DIR = get_memory_paths()
-from _fixtures import bootstrap_temp_db_clean  # noqa: E402
+from _fixtures import (
+    bootstrap_temp_db_clean,
+    format_query_progress,
+    init_benchmark_stdout,
+    print_stage_banner,
+    print_summary_report,
+    set_benchmark_env,
+    write_live_progress,
+)
+
+init_benchmark_stdout()
+set_benchmark_env()
+
 
 # ---------------------------------------------------------------------------
 # Golden dataset types
@@ -194,6 +206,17 @@ def _seed_db(db_path: Path, golden: _GOLDEN_SET) -> None:
             populate_eval_memory_indexes_batch(conn, items, use_llm_facts=False)
         finally:
             conn.close()
+
+        try:
+            from rebuild_vec_index import rebuild_vec_index
+            stats = rebuild_vec_index(str(db_path))
+            print(
+                f"✓ Vector index built: {stats.get('n_indexed')} items ({stats.get('serialized_bytes')} bytes) in {stats.get('elapsed_s', 0.0):.2f}s",
+                flush=True,
+            )
+        except Exception:
+            pass
+
 
 
 # ---------------------------------------------------------------------------
@@ -444,30 +467,48 @@ class RetrievalBenchmark:
             pass
 
     def run(self) -> dict:
-        """Execute the benchmark and return the full report dict.
+        """Execute the benchmark and return the full report dict."""
+        print(f"\n{'='*80}", flush=True)
+        print("BENCHMARK SUITE: RETRIEVAL BENCHMARK (FTS & Hybrid)", flush=True)
+        print(f"{'='*80}", flush=True)
 
-        Returns:
-            A dict with keys ``phases`` (name → PhaseMetrics dict),
-            ``per_case`` (list of per-case result dicts), and
-            ``dataset_info`` (counts from the golden set).
-        """
+        print_stage_banner(1, "Dataset Loading", f"{len(self._golden.get('memories', []))} memories, {len(self._cases)} test cases")
+        print(f"✓ Loaded {len(self._golden.get('memories', []))} golden memories and {len(self._cases)} test cases", flush=True)
+
+        print_stage_banner(2, "Database Ingestion & Multi-Index Building", "Isolated temporary DB")
+        t_setup = time.time()
         db_path = self._setup_db()
+        print(f"✓ DB initialized and multi-indexed in {time.time() - t_setup:.2f}s", flush=True)
+
         try:
-            # Warm up embedding and reranker models so cold-start
-            # latency doesn't contaminate the timed measurements.
+            print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming models")
             self._warmup_models()
+            print("✓ Encoders pre-warmed successfully.", flush=True)
+
+            print_stage_banner(4, "Evaluation Execution", f"{len(self._cases)} test cases across FTS and Hybrid")
             phases: dict[str, _PhaseRunResult] = {
                 "fts": _PhaseRunResult(name="fts"),
                 "hybrid": _PhaseRunResult(name="hybrid"),
             }
             per_case: list[dict] = []
+            progress_file = INSTALL_DIR / "eval" / "results" / ".progress.json"
+            suite_progress_file = INSTALL_DIR / "eval" / "results" / ".progress_retrieval_bench.json"
+            t_eval_start = time.time()
+            all_hybrid_latencies: list[float] = []
 
-            for case in self._cases:
+            for idx, case in enumerate(self._cases, start=1):
                 for phase_name, run_fn in [
                     ("fts", self._run_fts),
                     ("hybrid", self._run_hybrid),
                 ]:
                     self._run_case(db_path, case, run_fn, phases[phase_name])
+
+                # Get latest recorded hybrid score & latency
+                h_metrics = phases["hybrid"].to_metrics()
+                h_prec5 = phases["hybrid"].prec_at_5_sum / max(1, phases["hybrid"].total_cases)
+                h_rec5 = phases["hybrid"].rec_at_5_sum / max(1, phases["hybrid"].total_cases)
+                last_lat = phases["hybrid"].latency_sum_ms / max(1, phases["hybrid"].total_cases)
+                all_hybrid_latencies.append(last_lat)
 
                 per_case.append(
                     {
@@ -480,7 +521,36 @@ class RetrievalBenchmark:
                     }
                 )
 
-            return {
+                line_msg = format_query_progress(
+                    q_num=idx,
+                    total_q=len(self._cases),
+                    score=h_rec5,
+                    latency_ms=last_lat,
+                    running_acc=h_rec5,
+                    category=case.category or "general",
+                    query_text=case.query,
+                    extra_metric_label="Rec@5",
+                )
+                print(line_msg, flush=True)
+
+                for p_file in (progress_file, suite_progress_file):
+                    write_live_progress(
+                        progress_file=p_file,
+                        q_num=idx,
+                        total_q=len(self._cases),
+                        category=case.category or "general",
+                        question_text=case.query,
+                        score=h_rec5,
+                        latency_ms=last_lat,
+                        running_overall=h_rec5,
+                        extra_fields={"benchmark": "Retrieval-Golden-Set"},
+                    )
+
+            wall_time = time.time() - t_eval_start
+
+            print_stage_banner(5, "Results Aggregation & Verification", f"{len(self._cases)} test cases analyzed")
+
+            report = {
                 "phases": {
                     name: {
                         "precision_at_5": m.to_metrics().precision_at_5,
@@ -500,6 +570,44 @@ class RetrievalBenchmark:
                     "total_memories": len(self._golden.get("memories", [])),
                     "total_test_cases": len(self._cases),
                 },
+                "wall_time_seconds": round(wall_time, 2),
             }
+
+            from eval.bench.metrics import calculate_latency_stats
+            lat_stats = calculate_latency_stats(all_hybrid_latencies)
+
+            hybrid_rec5 = report["phases"]["hybrid"]["recall_at_5"]
+            retrieval_recalls = {
+                "Hybrid Recall@5": hybrid_rec5,
+                "Hybrid Precision@5": report["phases"]["hybrid"]["precision_at_5"],
+                "FTS Recall@5": report["phases"]["fts"]["recall_at_5"],
+                "FTS Precision@5": report["phases"]["fts"]["precision_at_5"],
+                "Hybrid MRR": report["phases"]["hybrid"]["mrr"],
+                "FTS MRR": report["phases"]["fts"]["mrr"],
+            }
+
+            out_file = INSTALL_DIR / "eval" / "results" / "retrieval_benchmark_results.json"
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_file, "w", encoding="utf-8") as f:
+                json.dump(report, f, indent=2)
+
+            print_summary_report(
+                benchmark_name="Retrieval Benchmark",
+                total_q=len(self._cases),
+                wall_time_s=wall_time,
+                overall_metric=hybrid_rec5,
+                metric_name="Recall@5 (Hybrid)",
+                latency_stats=lat_stats,
+                retrieval_recalls=retrieval_recalls,
+                output_path=out_file,
+            )
+
+            return report
         finally:
             self._teardown_db()
+
+
+if __name__ == "__main__":
+    bench = RetrievalBenchmark()
+    bench.run()
+

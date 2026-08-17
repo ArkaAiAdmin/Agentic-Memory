@@ -150,5 +150,19 @@ class BenchmarkDBManager:
         finally:
             conn.close()
 
+        if batch_items:
+            try:
+                from rebuild_vec_index import rebuild_vec_index
+
+                stats = rebuild_vec_index(str(target_path))
+                print(
+                    f"Vector index built: {stats.get('n_indexed')} items "
+                    f"({stats.get('serialized_bytes')} bytes) in {stats.get('elapsed_s', 0.0):.2f}s",
+                    flush=True,
+                )
+            except Exception as exc:
+                logger.warning("vec index build failed (non-fatal): %s", exc)
+
         ingest_time = time.time() - t0
         return target_path, round(ingest_time, 2), False
+

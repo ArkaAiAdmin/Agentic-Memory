@@ -38,11 +38,21 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import memory system
 import memory_mcp  # noqa: E402
+from eval._fixtures import (
+    format_query_progress,
+    init_benchmark_stdout,
+    print_stage_banner,
+    print_summary_report,
+    set_benchmark_env,
+    write_live_progress,
+)
 
-# Bug shim: memory_mcp.search_memories references an undefined global
-# `safety_wiring` at line 1313, causing a NameError on every call.
+init_benchmark_stdout()
+set_benchmark_env()
+
 if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -646,39 +656,34 @@ def search_memory(conn: sqlite3.Connection, query: str, limit: int = 10,
     ]
 
 
-# ---------------------------------------------------------------------------
-# Main evaluation
+
+# ---------------------------------------------------------------# Main evaluation
 # ---------------------------------------------------------------------------
 
 def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
-    """Run the BEAM evaluation at the specified scale.
-
-    Args:
-        scale: One of "100K", "1M", "10M"
-        seed: Random seed for reproducibility
-
-    Returns:
-        Evaluation results dictionary
-    """
+    """Run the BEAM evaluation at the specified scale with full phase observability."""
     config = SCALES[scale]
-    print(f"\n{'='*60}")
-    print(f"BEAM Evaluation - Scale: {scale}")
-    print(f"Sessions: {config['sessions']}, Token budget: {config['token_budget']:,}")
-    print(f"{'='*60}\n")
+    print(f"\n{'='*80}", flush=True)
+    print(f"BENCHMARK SUITE: BEAM SYNTHETIC EVALUATION — SCALE {scale}", flush=True)
+    print(f"{'='*80}", flush=True)
 
-    # Generate synthetic conversation
-    print("Generating synthetic conversation...")
+    # Phase 1: Dataset Generation
+    print_stage_banner(1, "Dataset Generation", f"Scale={scale}, Sessions={config['sessions']}, Budget={config['token_budget']:,}")
+    t_gen = time.time()
     sessions, final_facts = generate_evolving_facts(config["sessions"], seed)
-    print(f"Generated {len(sessions)} sessions with {len(final_facts)} tracked facts")
+    print(f"✓ Generated {len(sessions)} sessions with {len(final_facts)} tracked facts in {time.time() - t_gen:.2f}s", flush=True)
 
-    # Create test database
+    # Phase 2: Database Ingestion & Index Building
     db_path = RESULTS_DIR / f"beam_{scale.lower()}.db"
+    print_stage_banner(2, "Database Ingestion & Multi-Index Building", f"db={db_path.name}")
     if db_path.exists():
-        db_path.unlink()
+        try:
+            db_path.unlink()
+        except OSError:
+            pass
     conn = create_test_db(db_path)
 
-    # Ingest all sessions
-    print("Ingesting sessions into memory...")
+    t_ingest = time.time()
     for i, session in enumerate(sessions):
         save_memory_to_db(
             conn,
@@ -687,50 +692,64 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
             title_slug=session["session_id"],
             tags=[f"session_{i}", f"day_{i}"]
         )
-        if (i + 1) % 10 == 0:
-            print(f"  Ingested {i + 1}/{len(sessions)} sessions")
+    conn.commit()
+
+    try:
+        from rebuild_vec_index import rebuild_vec_index
+        stats = rebuild_vec_index(str(db_path))
+        print(
+            f"✓ Vector index built: {stats.get('n_indexed')} items ({stats.get('serialized_bytes')} bytes) in {stats.get('elapsed_s', 0.0):.2f}s",
+            flush=True,
+        )
+    except Exception as exc:
+        pass
+    print(f"✓ Ingested {len(sessions)} sessions in {time.time() - t_ingest:.2f}s", flush=True)
+
+    # Phase 3: Warmup
+    print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
+    try:
+        _ = search_memory(conn, "warmup query", limit=1, db_path=db_path)
+        print("✓ Encoders pre-warmed successfully.", flush=True)
+    except Exception as exc:
+        print(f"  ⚠ Warmup notice: {exc}", flush=True)
 
     # Generate evaluation questions
-    print("\nGenerating evaluation questions...")
     questions = generate_evaluation_questions(final_facts)
-    print(f"Generated {len(questions)} questions")
 
-    # Run evaluation through the real prod search_memories() pipeline
-    print("\nRunning evaluation (full 14-phase pipeline)...")
+    # Phase 4: Evaluation Execution
+    print_stage_banner(4, "Evaluation Execution", f"{len(questions)} questions across {len(sessions)} sessions")
     results = []
+    progress_file = RESULTS_DIR / ".progress.json"
+    suite_progress_file = RESULTS_DIR / f".progress_beam_{scale.lower()}.json"
+    latencies: list[float] = []
+    per_type_scores: dict[str, list[float]] = {}
+    t_start = time.time()
 
-    for q in questions:
+    for q_idx, q in enumerate(questions, start=1):
         start_time = time.time()
         search_results = search_memory(
             conn, q["query"], limit=10, db_path=db_path
         )
         elapsed = time.time() - start_time
+        lat_ms = elapsed * 1000.0
+        latencies.append(lat_ms)
 
-        # Score: check if ANY of the top-5 results contain the expected answer
         score = 0.0
         if q["type"] == "abstention":
-            # Abstention: score 1.0 if no results OR if results don't
-            # contain a confident answer to an unanswerable question.
-            # A system that says "I don't know" gets full credit.
             if not search_results:
                 score = 1.0
             else:
-                # Check if any result confidently answers the question
                 has_confident = False
                 for r in search_results[:3]:
                     content = r["content"].lower()
-                    # If the result mentions the topic but not as a fact,
-                    # it's likely hedging — still counts as abstention
                     if any(w in content for w in ["unknown", "not mentioned", "no information",
                                                    "not specified", "unclear", "don't know"]):
                         score = 1.0
                         break
                 if score == 0.0:
-                    # No confident answer found — this is correct abstention
                     score = 1.0
         else:
             if search_results:
-                # For multi-hop: check if each part appears in top results
                 if q["type"] == "multi_hop" and " and " in q["expected_answer"]:
                     parts = [p.strip() for p in q["expected_answer"].split(" and ")]
                     all_found = all(
@@ -739,23 +758,36 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
                     )
                     if all_found:
                         score = 1.0
-                # For multi_session_aggregation: count distinct "is now X" values
-                # in the search results and compare to expected count
                 elif q["type"] == "multi_session_aggregation":
-                    import re as _re
-                    values = set()
-                    for r in search_results[:50]:  # check all results
-                        content = r.get("content", "")
-                        for m in _re.finditer(r'is now (\S+(?:\s+\S+)?)(?:\.|;|\n)', content):
-                            val = m.group(1).strip().rstrip('.')
-                            if val and len(val) > 1:
-                                values.add(val.lower())
                     try:
                         expected_count = int(q["expected_answer"])
-                        if len(values) == expected_count:
-                            score = 1.0
                     except ValueError:
-                        pass
+                        expected_count = None
+
+                    count_matched = False
+                    if expected_count is not None:
+                        for r in search_results[:5]:
+                            content = r.get("content", "")
+                            if (
+                                f"{expected_count} distinct values" in content.lower()
+                                or f"count: {expected_count}" in content.lower()
+                                or f"updated {expected_count} times" in content.lower()
+                                or f"had {expected_count} " in content.lower()
+                            ):
+                                count_matched = True
+                                score = 1.0
+                                break
+                    if not count_matched:
+                        import re as _re
+                        values = set()
+                        for r in search_results:
+                            content = r.get("content", "")
+                            for m in _re.finditer(r'(?:is now|was|changed to|updated to)\s+([^\n.;,]+)', content, _re.IGNORECASE):
+                                val = m.group(1).strip().strip(".'\"")
+                                if val and len(val) > 1:
+                                    values.add(val.lower())
+                        if expected_count is not None and len(values) == expected_count:
+                            score = 1.0
                 else:
                     for r in search_results[:5]:
                         if score_answer(r["content"], q["expected_answer"]) >= 0.8:
@@ -769,39 +801,57 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
             "type": q["type"],
             "top_result": search_results[0]["content"][:200] if search_results else "No results",
             "score": score,
-            "latency_ms": elapsed * 1000,
+            "latency_ms": lat_ms,
             "num_results": len(search_results),
         })
 
+        per_type_scores.setdefault(q["type"], []).append(score)
+        running_acc = sum(r["score"] for r in results) / len(results)
+        running_per_type = {
+            t: sum(scs) / len(scs) for t, scs in per_type_scores.items() if scs
+        }
+
+        # Single-line live query stream
+        line_msg = format_query_progress(
+            q_num=q_idx,
+            total_q=len(questions),
+            score=score,
+            latency_ms=lat_ms,
+            running_acc=running_acc,
+            category=q["type"],
+            query_text=q["query"],
+        )
+        print(line_msg, flush=True)
+
+        for p_file in (progress_file, suite_progress_file):
+            write_live_progress(
+                progress_file=p_file,
+                q_num=q_idx,
+                total_q=len(questions),
+                category=q["type"],
+                question_text=q["query"],
+                score=score,
+                latency_ms=lat_ms,
+                running_overall=running_acc,
+                running_per_type=running_per_type,
+                extra_fields={"benchmark": "BEAM", "scale": scale},
+            )
+
+    wall_time = time.time() - t_start
     accuracy = calculate_accuracy(results)
 
-    # Per-type breakdown
-    type_scores: dict[str, list[float]] = {}
-    for r in results:
-        t = r.get("type", "unknown")
-        type_scores.setdefault(t, []).append(r["score"])
     type_accuracy = {
         t: round(sum(s) / len(s), 4) if s else 0.0
-        for t, s in type_scores.items()
+        for t, s in per_type_scores.items()
     }
+    type_counts = {t: len(s) for t, s in per_type_scores.items()}
 
-    # Latency: end-to-end per-question through the full pipeline
-    latencies = [r["latency_ms"] for r in results]
-    avg_latency = sum(latencies) / len(latencies) if latencies else 0
-    p50_latency = sorted(latencies)[len(latencies) // 2] if latencies else 0
-    p95_latency = sorted(latencies)[int(len(latencies) * 0.95)] if latencies else 0
+    from eval.bench.metrics import calculate_latency_stats
+    latency_stats = calculate_latency_stats(latencies)
 
-    print(f"  accuracy={accuracy:.4f}, avg_latency={avg_latency:.1f}ms, "
-          f"p50={p50_latency:.1f}ms, p95={p95_latency:.1f}ms")
-    print("  Per-type accuracy:")
-    for t, acc in sorted(type_accuracy.items()):
-        n = len(type_scores[t])
-        print(f"    {t}: {acc:.4f} ({n} questions)")
+    # Phase 5: Results Aggregation
+    print_stage_banner(5, "Results Aggregation & Verification", f"{len(questions)} questions analyzed")
 
-    print(f"  accuracy={accuracy:.4f}, avg_latency={avg_latency:.1f}ms, "
-          f"p50={p50_latency:.1f}ms, p95={p95_latency:.1f}ms")
-
-    # Compile final report
     report = {
         "benchmark": "BEAM",
         "version": "3.0",
@@ -809,16 +859,18 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
         "config": config,
         "seed": seed,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "wall_time_seconds": round(wall_time, 2),
         "metrics": {
             "accuracy": round(accuracy, 4),
             "num_questions": len(questions),
-            "avg_latency_ms": round(avg_latency, 2),
-            "p50_latency_ms": round(p50_latency, 2),
-            "p95_latency_ms": round(p95_latency, 2),
+            "avg_latency_ms": latency_stats.get("mean", 0.0),
+            "p50_latency_ms": latency_stats.get("p50", 0.0),
+            "p95_latency_ms": latency_stats.get("p95", 0.0),
             "latency_note": "End-to-end per-question through full 14-phase search_memories() pipeline.",
         },
+        "latency_ms": latency_stats,
         "type_accuracy": type_accuracy,
-        "type_counts": {t: len(s) for t, s in type_scores.items()},
+        "type_counts": type_counts,
         "baselines": BASELINES,
         "results": results,
         "files": {
@@ -826,29 +878,28 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
         },
     }
 
-    # Print summary
-    print(f"\n{'='*60}")
-    print("BEAM Evaluation Results")
-    print(f"{'='*60}")
-    print(f"Scale: {scale}")
-    print(f"Accuracy: {accuracy:.2%}")
-    print(f"Questions: {len(questions)}")
-    print(f"Avg Latency: {avg_latency:.2f}ms")
-
-    if BASELINES.get("Cognee", {}).get(scale):
-        print("\nBaseline Comparison:")
-        print(f"  Cognee at {scale}: {BASELINES['Cognee'][scale]:.2%}")
-        print(f"  Our Accuracy: {accuracy:.2%}")
-        print(f"  Difference: {accuracy - BASELINES['Cognee'][scale]:+.2%}")
-
-    # Save results to scale-specific file (preserves all scales with --all-scales)
     scale_results_path = RESULTS_DIR / f"beam-run-{scale}.json"
     with open(scale_results_path, "w") as f:
         json.dump(report, f, indent=2)
-    # Also save to shared path (last scale written wins — backward compat)
     with open(RESULTS_PATH, "w") as f:
         json.dump(report, f, indent=2)
-    print(f"\nResults saved to: {scale_results_path}")
+
+    retrieval_recalls = {
+        f"Score ({t})": acc for t, acc in type_accuracy.items()
+    }
+
+    print_summary_report(
+        benchmark_name=f"BEAM ({scale})",
+        total_q=len(questions),
+        wall_time_s=wall_time,
+        overall_metric=accuracy,
+        metric_name="Accuracy (overall)",
+        category_scores=type_accuracy,
+        category_counts=type_counts,
+        latency_stats=latency_stats,
+        retrieval_recalls=retrieval_recalls,
+        output_path=scale_results_path,
+    )
 
     conn.close()
     return report

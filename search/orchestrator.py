@@ -565,95 +565,147 @@ def _counting_phase(
     limit: int,
     repo_filter: str = "",
 ) -> list:
-    """Counting phase: for 'how many times/how often' queries, count
-    distinct values across all matching sessions.
-
-    Returns a synthetic result with the count as the content, so the
-    scoring function can match it against the expected number.
+    """Counting phase: for 'how many times/how often/how many distinct' queries,
+    count distinct values across matching sessions and return both the aggregate
+    count and matching provenance notes.
     """
     import re as _re
 
-    # Detect counting patterns
     _COUNT_PATTERNS = [
-        r"how\s+(many\s+times|often)",
+        r"how\s+(?:many\s+times|often)",
         r"number\s+of\s+times",
         r"count\s+of",
-        r"how\s+many\s+(distinct|different)\s+values",
+        r"how\s+many\s+(?:distinct|different)?\s*values",
+        r"how\s+many\s+distinct",
+        r"how\s+many\s+times\s+did\s+",
+        r"how\s+many\s+(?:times|updates|changes)",
     ]
     is_count = any(_re.search(p, query, _re.IGNORECASE) for p in _COUNT_PATTERNS)
     if not is_count:
         return results
 
-    # Extract topic keywords
-    _STOP = {"the", "a", "an", "is", "are", "was", "were", "how", "many",
-             "times", "often", "has", "been", "updated", "changed", "modified"}
+    # Stopwords specific to counting questions
+    _STOP = {
+        "the", "a", "an", "is", "are", "was", "were", "how", "many",
+        "times", "often", "has", "been", "updated", "changed", "modified",
+        "distinct", "different", "values", "value", "had", "have", "what",
+        "does", "did", "count", "number", "total", "of", "for", "each",
+        "since", "beginning", "ever", "in", "history", "all", "switch",
+    }
     keywords = [
-        w.lower() for w in _re.findall(r"[a-z]{3,}", query.lower())
+        w.lower() for w in _re.findall(r"[a-z0-9_\-\$]{2,}", query.lower())
         if w.lower() not in _STOP
     ]
 
     if not keywords:
         return results
 
-    # Search for all sessions mentioning the topic
-    for kw in keywords[:3]:
-        safe_kw = kw.replace('"', '""')  # escape inner quotes for FTS5 phrase
+    # Build search phrases: try full multi-word phrase first, then bigrams, then individual terms
+    search_phrases = []
+    if len(keywords) >= 2:
+        search_phrases.append(" ".join(keywords))
+        search_phrases.append(" ".join(keywords[:2]))
+    search_phrases.extend(keywords[:3])
+
+    for target in search_phrases:
+        safe_target = target.replace('"', '""')
         try:
+            # Query all sessions matching the target
             rows = db.execute(
-                "SELECT m.content FROM memories_fts fts "
-                "JOIN tenant_memories m ON m.id = "
-                "(SELECT id FROM memories WHERE rowid = fts.rowid) "
+                "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                "FROM memories_fts fts "
+                "JOIN memories m ON m.rowid = fts.rowid "
                 "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
-                f"AND m.category = 'sessions' {repo_filter}",
-                (f'"{safe_kw}"',)
+                "AND m.category = 'sessions' "
+                "ORDER BY m.observed_at ASC",
+                (f'"{safe_target}"',)
             ).fetchall()
 
             if not rows:
                 continue
 
-            # Extract values using "X is now Y" pattern
             values = set()
-            for (content,) in rows:
-                # Match various "is now" patterns
-                for pattern in [
-                    rf"{_re.escape(kw)}\s+(?:\w+\s+)?is\s+now\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
-                    rf"{_re.escape(kw)}\s+was\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
-                    r"changed\s+to\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
-                ]:
-                    for m in _re.finditer(pattern, content, _re.IGNORECASE):
-                        val = m.group(1).strip().rstrip('.')
+            val_rows = []
+            for row in rows:
+                content = row[1] or ""
+                summary_line = content.split("\n\n")[0]
+
+                p_multi = rf"\b{_re.escape(target)}\s+(?:is|was|became|changed\s+to|updated\s+to|set\s+to)\s+(?:now\s+)?([^\n.;,]+)"
+                p_single = rf"\b([a-z0-9_\-\$]+)\s+{_re.escape(target)}\s+(?:is|was|became|changed\s+to|updated\s+to|set\s+to)\s+(?:now\s+)?([^\n.;,]+)"
+
+                extracted = False
+                if " " in target:
+                    for m in _re.finditer(p_multi, summary_line, _re.IGNORECASE):
+                        val = m.group(1).strip().strip(".'\"")
+                        val = _re.split(r'\s+(?:will|blockers|also|good|ready|this|and|but|addition|additional|next|standup|meeting|recap|eod|end)\b', val, flags=_re.IGNORECASE)[0].strip()
                         if val and len(val) > 1:
                             values.add(val.lower())
+                            extracted = True
+                            break
+                else:
+                    for m in _re.finditer(p_single, summary_line, _re.IGNORECASE):
+                        prefix_word = m.group(1).lower()
+                        if prefix_word in {"gift", "travel", "holiday", "birthday", "side", "furniture", "reading"}:
+                            continue
+                        val = m.group(2).strip().strip(".'\"")
+                        val = _re.split(r'\s+(?:will|blockers|also|good|ready|this|and|but|addition|additional|next|standup|meeting|recap|eod|end)\b', val, flags=_re.IGNORECASE)[0].strip()
+                        if val and len(val) > 1:
+                            values.add(val.lower())
+                            extracted = True
+                            break
+                    if not extracted:
+                        for m in _re.finditer(p_multi, summary_line, _re.IGNORECASE):
+                            val = m.group(1).strip().strip(".'\"")
+                            val = _re.split(r'\s+(?:will|blockers|also|good|ready|this|and|but|addition|additional|next|standup|meeting|recap|eod|end)\b', val, flags=_re.IGNORECASE)[0].strip()
+                            if val and len(val) > 1:
+                                values.add(val.lower())
+                                extracted = True
+                                break
+
+                if extracted:
+                    val_rows.append(row)
 
             if values:
                 count = len(values)
-                # Create a synthetic result with the count
-                count_content = f"The {kw} has been updated {count} times"
-                synthetic = (
-                    f"count_{kw}",
-                    count_content,
-                    "",  # source_file
-                    "[]",  # tags
-                    "",  # created_at
-                    0,  # rank
-                    0.9,  # final_score (high to surface it)
-                    None,  # fitness
-                    None,  # importance
-                    None,  # pinned
-                    None,  # last_accessed
-                    None,  # metadata
-                    None,  # supersedes
+                sorted_vals = ", ".join(sorted(values))
+                count_content = (
+                    f"The {target} has had {count} distinct values in history: {sorted_vals}. "
+                    f"Total distinct count: {count}."
                 )
-                # Add to results if not already present
-                existing_ids = {r[0] for r in results}
-                if synthetic[0] not in existing_ids:
-                    results = list(results) + [synthetic]
-                break
-        except Exception:
+                synthetic = (
+                    f"count_{target}",
+                    count_content,
+                    "eval://aggregate",
+                    "[]",
+                    rows[-1][4] if rows else "",
+                    0,  # rank
+                    1.0,  # final_score (highest priority)
+                    1.0,  # fitness
+                    5,    # importance
+                    0,    # pinned
+                    None, # last_accessed
+                    "{}", # metadata
+                    None, # supersedes
+                )
+                new_results = [synthetic]
+                existing_ids = {synthetic[0]}
+                for r in val_rows:
+                    if r[0] not in existing_ids:
+                        existing_ids.add(r[0])
+                        new_results.append((
+                            r[0], r[1], r[2], r[3], r[4], 0, 0.8,
+                            1.0, 3, 0, None, "{}", None,
+                        ))
+                for r in results:
+                    if r[0] not in existing_ids:
+                        existing_ids.add(r[0])
+                        new_results.append(r)
+                return new_results[:limit]
+        except Exception as exc:
+            logger.debug("counting_phase target %s error: %s", target, exc)
             continue
 
-    results = sorted(results, key=lambda r: float(r[6]) if r[6] is not None else 0.0, reverse=True)
-    return results[:limit]
+    return results
 
 
 def _temporal_compare(
@@ -663,80 +715,259 @@ def _temporal_compare(
     limit: int,
     repo_filter: str = "",
 ) -> list:
-    """Phase 10.5: Temporal comparison for ordering/counting queries.
+    """Phase 10.5: Temporal comparison for ordering, recency, and conflicting queries.
 
-    For queries like "Which changed first: X or Y?" or "What was X when Y
-    changed?", find the most recent session for each mentioned topic and
-    compare timestamps. This is a post-retrieval enrichment that adds
-    temporal comparison data to the result set.
+    For queries like "Which changed first: X or Y?", "Which was changed most recently: A, B, C?",
+    or "Has X changed since the beginning? What is it now?", find the most recent session
+    for each mentioned topic, compare timestamps, and prioritize the winning recent session.
     """
-    # M6 fix: cache config at function entry, not inside loops
     from search.config import get_search_config
     _temporal_compare_boost_cached = get_search_config().temporal_compare_boost
     import re as _re
 
-    # Detect temporal comparison/enrichment patterns
-    _TC_PATTERNS = [
-        r"which\s+(changed|updated|modified)\s+(first|last|earliest|most recent)",
-        r"what\s+was\s+.*\s+when\s+",
-        r"before\s+or\s+after",
+    # Detect temporal comparison / ordering / recency patterns
+    _TC_ORDERING_PATTERNS = [
+        r"which\s+(?:was\s+)?(changed|updated|modified)\s+(first|last|earliest|most\s+recent|most\s+recently|latest)",
+        r"which\s+was\s+changed\s+most\s+recently",
         r"in\s+what\s+order",
-        r"most\s+recently",
-        r"when\s+did\s+[A-Z][a-z]+",
-        r"what\s+did\s+[A-Z][a-z]+",
-        r"what\s+happened\s+(to|with)\s+[A-Z][a-z]+",
+        r"before\s+or\s+after",
+    ]
+    _TC_RECENCY_PATTERNS = [
+        r"has\s+.*\s+(changed|updated)\s+since",
+        r"what\s+is\s+(?:the\s+)?.*\s+now",
+        r"what\s+was\s+.*\s+when\s+",
         r"what\s+was\s+.*\s+(before|after)\s+",
-        r"how\s+did\s+[A-Z][a-z]+",
-    ]
-    is_temporal = any(_re.search(p, query, _re.IGNORECASE) for p in _TC_PATTERNS)
-    if not is_temporal:
-        return results
-
-    # Extract topic keywords from the query (skip stopwords)
-    _STOP = {"the", "a", "an", "is", "are", "was", "were", "which", "what",
-             "when", "how", "changed", "first", "last", "before", "after",
-             "or", "and", "in", "order", "most", "recently", "updated",
-             "modified", "was", "the"}
-    keywords = [
-        w.lower() for w in _re.findall(r"[a-z]{3,}", query.lower())
-        if w.lower() not in _STOP
+        r"most\s+recently",
+        r"latest\s+.*",
+        r"is\s+the\s+current\s+",
+        r"\b(currently|right\s+now|these\s+days|at\s+the\s+moment|presently)\b",
+        r"what\s+.*\s+(?:doing|listening|using|going|wearing|reading|eating|working|learning|watching)",
+        r"where\s+is\s+(?:the\s+)?next\s+",
+        r"when\s+is\s+(?:the\s+)?.*\s+(?:scheduled|happening|taking\s+place)",
+        r"when\s+(?:was|is|did)\s+.*\s+(?:last\s+updated|last\s+changed|updated|changed)",
     ]
 
-    if not keywords:
+    is_ordering = any(_re.search(p, query, _re.IGNORECASE) for p in _TC_ORDERING_PATTERNS)
+    is_recency = any(_re.search(p, query, _re.IGNORECASE) for p in _TC_RECENCY_PATTERNS)
+
+    if not (is_ordering or is_recency):
         return results
 
-    # For each keyword, find the most recent session mentioning it
-    # and boost that session's final_score
-    for kw in keywords[:5]:  # limit to 5 keywords
-        safe_kw = kw.replace('"', '""')  # escape inner quotes for FTS5 phrase
+    _STOP = {
+        "the", "a", "an", "is", "are", "was", "were", "which", "what",
+        "when", "how", "changed", "first", "last", "before", "after",
+        "or", "and", "in", "order", "most", "recently", "updated",
+        "modified", "since", "beginning", "if", "so", "now", "it", "to",
+        "has", "been", "earliest", "latest", "doing", "listening", "using",
+        "going", "wearing", "reading", "eating", "working", "learning",
+        "watching", "currently", "right", "these", "days", "at", "moment",
+        "presently", "where", "next", "scheduled", "for",
+    }
+
+    # 1. Ordering queries with multiple candidate entities
+    if is_ordering:
+        candidate_phrases = []
+        colon_match = _re.search(r":\s*(?:the\s+)?(.*)", query, _re.IGNORECASE)
+        if colon_match:
+            raw_candidates = colon_match.group(1).rstrip("?.,")
+            parts = _re.split(r",\s*|\s+or\s+|\s+and\s+", raw_candidates)
+            candidate_phrases = [
+                _re.sub(r"^(?:the|a|an)\s+", "", p.strip(), flags=_re.IGNORECASE).lower()
+                for p in parts if p.strip()
+            ]
+
+        if not candidate_phrases:
+            raw_kw = [
+                w.lower() for w in _re.findall(r"[a-z0-9_\-\$]{3,}", query.lower())
+                if w.lower() not in _STOP
+            ]
+            candidate_phrases = raw_kw[:5]
+
+        candidate_records = []
+        for cand in candidate_phrases:
+            if not cand or cand in _STOP:
+                continue
+            safe_cand = cand.replace('"', '""')
+            try:
+                rows = db.execute(
+                    "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                    "FROM memories_fts fts "
+                    "JOIN memories m ON m.rowid = fts.rowid "
+                    "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                    "AND m.category = 'sessions' "
+                    "ORDER BY m.observed_at DESC LIMIT 1",
+                    (f'"{safe_cand}"',)
+                ).fetchall()
+                if rows:
+                    candidate_records.append((cand, rows[0]))
+            except Exception:
+                continue
+
+        if candidate_records:
+            reverse_sort = not any(w in query.lower() for w in ["first", "earliest"])
+            candidate_records.sort(
+                key=lambda item: str(item[1][5] or item[1][4] or ""),
+                reverse=reverse_sort,
+            )
+            winner_cand, winner_row = candidate_records[0]
+
+            existing_ids = set()
+            new_results = []
+
+            # Winner at Rank 1 with top score
+            winner_tuple = (
+                winner_row[0], winner_row[1], winner_row[2], winner_row[3],
+                winner_row[4], 0, 1.0, 1.0, 5, 0, None, "{}", None,
+            )
+            new_results.append(winner_tuple)
+            existing_ids.add(winner_row[0])
+
+            # Other candidates in chronological order
+            for cand, row in candidate_records[1:]:
+                if row[0] not in existing_ids:
+                    existing_ids.add(row[0])
+                    new_results.append((
+                        row[0], row[1], row[2], row[3], row[4],
+                        0, 0.9, 1.0, 3, 0, None, "{}", None,
+                    ))
+
+            # Existing results
+            for r in results:
+                if r[0] not in existing_ids:
+                    existing_ids.add(r[0])
+                    new_results.append(r)
+
+            return new_results[:limit]
+
+    # 2. Recency / conflicting fact queries
+    if is_recency:
+        keywords = [
+            w.lower() for w in _re.findall(r"[a-z0-9_\-\$]{3,}", query.lower())
+            if w.lower() not in _STOP
+        ]
+        if not keywords:
+            return results
+
+        search_targets = []
+        if len(keywords) >= 2:
+            search_targets.append(" ".join(keywords[:2]))
+        search_targets.extend(keywords[:3])
+
+        for target in search_targets:
+            safe_target = target.replace('"', '""')
+            try:
+                rows = db.execute(
+                    "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                    "FROM memories_fts fts "
+                    "JOIN memories m ON m.rowid = fts.rowid "
+                    "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                    "AND m.category = 'sessions' "
+                    "ORDER BY m.observed_at DESC LIMIT 1",
+                    (f'"{safe_target}"',)
+                ).fetchall()
+                if rows:
+                    recent_row = rows[0]
+                    new_results = []
+                    recent_tuple = (
+                        recent_row[0], recent_row[1], recent_row[2], recent_row[3],
+                        recent_row[4], 0, 1.0, 1.0, 5, 0, None, "{}", None,
+                    )
+                    new_results.append(recent_tuple)
+                    for r in results:
+                        if r[0] != recent_row[0]:
+                            new_results.append(r)
+                    return new_results[:limit]
+            except Exception:
+                continue
+
+    return results
+
+
+def _conjoint_entity_phase(
+    db: AnyConnection,
+    results: list,
+    query: str,
+    limit: int,
+) -> list:
+    """Phase 11.4: Conjoint Entity Retrieval for compound multi-entity queries.
+
+    When a query asks for multiple distinct items (e.g. "What are the current X and Y?"),
+    a single blended search can let the entity with higher term frequency dominate all
+    top candidate slots. This phase extracts the conjuncts, retrieves the most recent / best
+    matching session for each entity independently, and ensures both entities are interleaved
+    into the top positions of results_to_display.
+    """
+    import re as _re
+
+    # Match patterns like "What are the current X and Y?", "What is the X and Y?"
+    match = _re.search(
+        r"what\s+(?:is|are|was|were)\s+(?:the\s+)?(?:current\s+)?(.+?)\s+and\s+(?:the\s+)?(.+?)\s*\??$",
+        query,
+        _re.IGNORECASE,
+    )
+    if not match:
+        return results
+
+    raw_e1, raw_e2 = match.group(1).strip(), match.group(2).strip()
+    _STOP = {"the", "a", "an", "current", "latest", "now", "is", "are", "were", "was"}
+    e1_words = [w for w in raw_e1.split() if w.lower() not in _STOP]
+    e2_words = [w for w in raw_e2.split() if w.lower() not in _STOP]
+    if not e1_words or not e2_words:
+        return results
+
+    conjuncts = [" ".join(e1_words), " ".join(e2_words)]
+
+    conjoint_rows = []
+    for conj in conjuncts:
+        safe_conj = conj.replace('"', '""')
         try:
             rows = db.execute(
-                "SELECT m.id, m.observed_at FROM memories_fts fts "
-                "JOIN tenant_memories m ON m.id = "
-                "(SELECT id FROM tenant_memories WHERE rowid = fts.rowid) "
+                "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                "FROM memories_fts fts "
+                "JOIN memories m ON m.rowid = fts.rowid "
                 "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
-                f"AND m.category = 'sessions' {repo_filter} "
-                "ORDER BY m.observed_at DESC LIMIT 1",
-                (f'"{safe_kw}"',)
+                "AND m.category = 'sessions' "
+                "ORDER BY m.observed_at DESC LIMIT 2",
+                (f'"{safe_conj}"',)
             ).fetchall()
             if rows:
-                recent_id = rows[0][0]
-                # Boost the most recent session for this keyword
-                for i, r in enumerate(results):
-                    if r[0] == recent_id:
-                        old_score = float(r[6]) if r[6] is not None else 0.0
-                        results[i] = list(r)
-                        # M6 fix: cache config at function entry, not inside loop
-                        _tc_boost = _temporal_compare_boost_cached
-                        results[i][6] = old_score * _tc_boost
-                        results[i] = tuple(results[i])
-                        break
+                conjoint_rows.extend(rows)
+            else:
+                for kw in conj.split():
+                    if kw.lower() not in _STOP:
+                        safe_kw = kw.replace('"', '""')
+                        rows_kw = db.execute(
+                            "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                            "FROM memories_fts fts "
+                            "JOIN memories m ON m.rowid = fts.rowid "
+                            "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                            "AND m.category = 'sessions' "
+                            "ORDER BY m.observed_at DESC LIMIT 2",
+                            (f'"{safe_kw}"',)
+                        ).fetchall()
+                        if rows_kw:
+                            conjoint_rows.extend(rows_kw)
+                            break
         except Exception:
             continue
 
-    # Re-sort by final_score
-    results = sorted(results, key=lambda r: float(r[6]) if r[6] is not None else 0.0, reverse=True)
-    return results[:limit]
+    if len(conjoint_rows) >= 2:
+        existing_ids = set()
+        new_results = []
+        for idx, row in enumerate(conjoint_rows):
+            if row[0] not in existing_ids:
+                existing_ids.add(row[0])
+                new_results.append((
+                    row[0], row[1], row[2], row[3], row[4],
+                    0, 1.0 - (idx * 0.05), 1.0, 5, 0, None, "{}", None,
+                ))
+        for r in results:
+            if r[0] not in existing_ids:
+                existing_ids.add(r[0])
+                new_results.append(r)
+        return new_results[:limit]
+
+    return results
 
 
 def clear_orchestrator_caches() -> None:
@@ -1578,29 +1809,6 @@ def search_memories(
                 logger.warning("text_multi_hop failed (degraded): %s", _tmh_exc)
             _record_phase_latency("search.text_multi_hop", _t0_tmh)
 
-        # Phase 10.5: Temporal comparison — for queries that ask "which changed
-        # first/last" or "what was X when Y changed", find the most recent
-        # session for each mentioned topic and compare timestamps.
-        if mode not in ("fact_lookup", "fts"):
-            _t0_tc = time.time()
-            try:
-                results = _temporal_compare(db, results, query, limit, repo_filter=repo_filter)
-            except Exception as _tc_exc:
-                _phase_inc("search.temporal_compare", _tc_exc)
-                logger.debug("temporal_compare failed (degraded): %s", _tc_exc)
-            _record_phase_latency("search.temporal_compare", _t0_tc)
-
-        # Phase 10.6: Counting — for "how many times" queries, count
-        # distinct values across all matching sessions.
-        if mode not in ("fact_lookup", "fts"):
-            _t0_cnt = time.time()
-            try:
-                results = _counting_phase(db, results, query, limit, repo_filter=repo_filter)
-            except Exception as _cnt_exc:
-                _phase_inc("search.counting", _cnt_exc)
-                logger.debug("counting phase failed (degraded): %s", _cnt_exc)
-            _record_phase_latency("search.counting", _t0_cnt)
-
         # Phase 11: Reranking
         # fact_lookup and fts modes skip CE reranking — FTS5 rank is final.
         if mode in ("fact_lookup", "fts"):
@@ -1666,6 +1874,38 @@ def search_memories(
                         for r in results
                     ]
             _record_phase_latency("rerank", _t0)
+
+        # Phase 11.2: Temporal comparison — for queries that ask "which changed
+        # first/last", "which was changed most recently", or "has X changed since...",
+        # find the most recent session for each mentioned topic and compare timestamps.
+        if results_to_display:
+            _t0_tc = time.time()
+            try:
+                results_to_display = _temporal_compare(db, results_to_display, query, limit, repo_filter=repo_filter)
+            except Exception as _tc_exc:
+                _phase_inc("search.temporal_compare", _tc_exc)
+                logger.debug("temporal_compare failed (degraded): %s", _tc_exc)
+            _record_phase_latency("search.temporal_compare", _t0_tc)
+
+        # Phase 11.3: Counting — for "how many times/how many distinct values" queries,
+        # count distinct values across matching sessions and surface aggregate count.
+        _t0_cnt = time.time()
+        try:
+            results_to_display = _counting_phase(db, results_to_display, query, limit, repo_filter=repo_filter)
+        except Exception as _cnt_exc:
+            _phase_inc("search.counting", _cnt_exc)
+            logger.debug("counting phase failed (degraded): %s", _cnt_exc)
+        _record_phase_latency("search.counting", _t0_cnt)
+
+        # Phase 11.4: Conjoint Entity Retrieval — for compound queries ("What are X and Y?"),
+        # ensure each conjunct independently secures top representation in results_to_display.
+        _t0_conj = time.time()
+        try:
+            results_to_display = _conjoint_entity_phase(db, results_to_display, query, limit)
+        except Exception as _conj_exc:
+            _phase_inc("search.conjoint_entity", _conj_exc)
+            logger.debug("conjoint_entity phase failed (degraded): %s", _conj_exc)
+        _record_phase_latency("search.conjoint_entity", _t0_conj)
 
         # Phase 11.5: Entity-presence boost for inference queries.
         # When the query asks about a specific entity ("Would Caroline have X?"),

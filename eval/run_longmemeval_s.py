@@ -32,16 +32,22 @@ EVAL_ROOT = Path(__file__).resolve().parent
 RESULTS_PATH = EVAL_ROOT / "results" / "longmemeval-s-run.json"
 DATASET_PATH = EVAL_ROOT / "datasets" / "longmemeval_s_synth.jsonl"
 
-sys.path.insert(0, str(EVAL_ROOT.parent))
 import memory_mcp  # noqa: E402
+from eval._fixtures import (
+    format_query_progress,
+    init_benchmark_stdout,
+    print_stage_banner,
+    print_summary_report,
+    set_benchmark_env,
+    write_live_progress,
+)
 
-# Defensive guard: `memory_mcp` re-exports `safety_wiring` from the cache
-# module (memory_mcp.py:74). Older revisions referenced an undefined global
-# and crashed on every search call; that is fixed at source, but we keep the
-# guard so a future regression fails closed with a stable cache key instead
-# of a NameError.
+init_benchmark_stdout()
+set_benchmark_env()
+
 if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
+
 
 # -----------------------------------------------------------------------
 # Synthetic data — handcrafted to mimic LongMemEval_S style.
@@ -792,22 +798,47 @@ def score_relational(top_ids: list[str], gold_ids: list[str]) -> tuple[float, in
 
 
 def main():
+    print(f"\n{'='*80}", flush=True)
+    print("BENCHMARK SUITE: SYNTHETIC LONGMEMEVAL-S EVALUATION", flush=True)
+    print(f"{'='*80}", flush=True)
+
+    # Phase 1: Dataset Loading
+    print_stage_banner(1, "Dataset Loading", "Synthetic LongMemEval-S questions")
     questions = load_synthetic_dataset()
     if not DATASET_PATH.exists():
         DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(DATASET_PATH, "w", encoding="utf-8") as f:
             for entry in questions:
                 f.write(json.dumps({**entry, "source": "synthetic"}) + "\n")
-        print(f"Wrote {len(questions)} synthetic questions to {DATASET_PATH}")
+        print(f"✓ Wrote {len(questions)} synthetic questions to {DATASET_PATH}", flush=True)
     else:
-        print(f"Loaded {len(questions)} synthetic questions from {DATASET_PATH}")
+        print(f"✓ Loaded {len(questions)} synthetic questions from {DATASET_PATH}", flush=True)
 
-    # Per-question fresh DB + run
+    # Phase 2: Per-question DB & Setup
+    print_stage_banner(2, "Database Setup & Warmup", "Per-question isolated SQLite DBs")
     run_id = uuid.uuid4().hex[:8]
     run_dir = Path(f"/tmp/lmeval_run_{run_id}")
     run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Run dir: {run_dir}")
 
+    # Phase 3: Warmup
+    print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
+    if questions:
+        _warmup_db = run_dir / "_warmup.db"
+        bootstrap_db(_warmup_db)
+        insert_memory(_warmup_db, "warmup/1", "warmup query", ["warmup"], datetime.now(timezone.utc).isoformat())
+        try:
+            memory_mcp.search_memories(_warmup_db, "warmup", limit=1, hybrid=True, use_history=False)
+            print("✓ Encoders pre-warmed successfully.", flush=True)
+        except Exception:
+            pass
+        if _warmup_db.exists():
+            try:
+                _warmup_db.unlink()
+            except OSError:
+                pass
+
+    # Phase 4: Evaluation Execution Loop
+    print_stage_banner(4, "Evaluation Execution", f"{len(questions)} questions")
     per_question: list[dict] = []
     hybrid_hits = 0
     baseline_hits = 0
@@ -817,21 +848,11 @@ def main():
     baseline_relational_hits = 0.0
     relational_total = 0
     latencies_ms: list[float] = []
+    progress_file = RESULTS_PATH.parent / ".progress.json"
+    suite_progress_file = RESULTS_PATH.parent / ".progress_longmemeval_s_synth.json"
     t_start = time.perf_counter()
 
-    # H7 fix: warmup — trigger embedding model loading before timed runs
-    if questions:
-        _warmup_db = run_dir / "_warmup.db"
-        bootstrap_db(_warmup_db)
-        insert_memory(_warmup_db, "warmup/1", "warmup query", ["warmup"], datetime.now(timezone.utc).isoformat())
-        try:
-            memory_mcp.search_memories(_warmup_db, "warmup", limit=1, hybrid=True, use_history=False)
-        except Exception:
-            pass
-        if _warmup_db.exists():
-            _warmup_db.unlink()
-
-    for q in questions:
+    for q_idx, q in enumerate(questions, start=1):
         qid = q["question_id"]
         query = q["query"]
         answer = q["answer"]
@@ -841,7 +862,7 @@ def main():
         # Bootstrap fresh DB
         bootstrap_db(db_path)
 
-        # Write session content as memories. Use one memory per session paragraph.
+        # Write session content as memories
         now_iso = datetime.now(timezone.utc).isoformat()
         for i, paragraph in enumerate(sessions, 1):
             note_id = f"lmeval/{qid}-{i}"
@@ -882,8 +903,6 @@ def main():
         latencies_ms.append(t_baseline_ms)
 
         # Score
-        # Collect full top-k (limit=10) id + content lists so we can measure
-        # recall@k coverage and relational AND coverage, not just top-1.
         hybrid_results = r_hybrid.get("results") or []
         baseline_results = r_baseline.get("results") or []
         hybrid_ids = [r.get("id", "") for r in hybrid_results]
@@ -898,20 +917,19 @@ def main():
         hybrid_content = hybrid_contents[0] if hybrid_contents else ""
         baseline_content = baseline_contents[0] if baseline_contents else ""
 
-        # Top-1 precision (existing signal)
+        # Top-1 precision
         h_hit, h_matches = score_hit(hybrid_content, answer)
         b_hit, b_matches = score_hit(baseline_content, answer)
         hybrid_hits += h_hit
         baseline_hits += b_hit
 
-        # Recall@k (top-k coverage) — is the answer anywhere in the top-10?
+        # Recall@k
         h_recall, _ = score_hit_topk(hybrid_contents, answer)
         b_recall, _ = score_hit_topk(baseline_contents, answer)
         hybrid_recall_hits += h_recall
         baseline_recall_hits += b_recall
 
-        # Relational / multi-condition AND coverage (only for queries that
-        # declare a gold set spanning multiple memories).
+        # Relational coverage
         gold_ids = q.get("gold_ids", [])
         h_rel, h_rel_present = score_relational(hybrid_ids, gold_ids)
         b_rel, b_rel_present = score_relational(baseline_ids, gold_ids)
@@ -947,6 +965,38 @@ def main():
             }
         )
 
+        running_acc = hybrid_hits / q_idx
+        line_msg = format_query_progress(
+            q_num=q_idx,
+            total_q=len(questions),
+            score=float(h_hit),
+            latency_ms=t_hybrid_ms,
+            running_acc=running_acc,
+            category="synthetic",
+            query_text=query,
+        )
+        print(line_msg, flush=True)
+
+        for p_file in (progress_file, suite_progress_file):
+            write_live_progress(
+                progress_file=p_file,
+                q_num=q_idx,
+                total_q=len(questions),
+                category="synthetic",
+                question_text=query,
+                score=float(h_hit),
+                latency_ms=t_hybrid_ms,
+                running_overall=running_acc,
+                extra_fields={"benchmark": "LongMemEval-S-Synth", "qid": qid},
+            )
+
+        # Cleanup single DB
+        if db_path.exists():
+            try:
+                db_path.unlink()
+            except OSError:
+                pass
+
     wall_time_s = time.perf_counter() - t_start
     n = len(questions)
     hybrid_score = hybrid_hits / n
@@ -958,11 +1008,11 @@ def main():
     baseline_rel_score = (baseline_relational_hits / relational_total) if relational_total else None
 
     # Percentiles over all latencies (hybrid + baseline)
-    p50 = sorted(latencies_ms)[int(len(latencies_ms) * 0.5)]
-    p95 = sorted(latencies_ms)[
-        min(int(len(latencies_ms) * 0.95), len(latencies_ms) - 1)
-    ]
-    avg_latency_ms = (wall_time_s * 1000.0) / (n * 2)
+    from eval.bench.metrics import calculate_latency_stats
+    latency_stats = calculate_latency_stats(latencies_ms)
+
+    # Phase 5: Results Aggregation
+    print_stage_banner(5, "Results Aggregation & Verification", f"{n} questions analyzed")
 
     # Worst 5 hybrid misses
     misses = [r for r in per_question if r["hybrid_hit"] == 0]
@@ -986,20 +1036,8 @@ def main():
         "hybrid_relational_coverage": round(hybrid_rel_score, 4) if hybrid_rel_score is not None else None,
         "baseline_relational_coverage": round(baseline_rel_score, 4) if baseline_rel_score is not None else None,
         "wall_time_seconds": round(wall_time_s, 3),
-        "p50_p95_ms": [round(p50, 1), round(p95, 1)],
-        "avg_latency_ms_per_query": round(avg_latency_ms, 1),
+        "latency_ms": latency_stats,
         "per_question_results": per_question,
-        "comparison_to_sota": {
-            "emergence_86pct_at_5_65s": (
-                f"we are at {hybrid_score * 100:.1f}% at {wall_time_s / n:.2f}s/item "
-                f"(Emergence 86% at 5.65s/item)"
-            ),
-            "zep_plus_18_5pct_on_lme": (
-                f"we are at {hybrid_score * 100:.1f}% which is "
-                f"{'+' if lift >= 0 else ''}{lift * 100:.1f}% over our FTS5 baseline "
-                f"(Zep cites +18.5% on LongMemEval)"
-            ),
-        },
         "worst_5_misses": [
             {
                 "qid": r["qid"],
@@ -1010,36 +1048,36 @@ def main():
             }
             for r in worst_5
         ],
-        "notes": [
-            "SYNTHETIC data: HF xiaowu0162/LongMemEval returned 404; "
-            "xinrongzhang2022/LongMemEval not found on Hub. "
-            "60 handcrafted LongMemEval-style factoid questions written to "
-            "eval/datasets/longmemeval_s_synth.jsonl.",
-            "Baseline score uses search_memories(hybrid=False). "
-            "NOTE: hybrid=False still triggers the C2 embedding fallback "
-            "when FTS5 returns 0 results (per memory_mcp.py:1230-1271), "
-            "so the baseline is BM25+embedding-safety-net, not pure BM25.",
-            "Schema is a minimal copy of prod (memories, memories_fts, "
-            "backlinks, file_mtimes, the 3 FTS triggers, perf indexes). "
-            "Embedding model was loaded fresh per-process by memory_mcp.",
-            "Per-question fresh DB in /tmp/lmeval_run_<uuid>/.",
-        ],
     }
 
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
         json.dump(result, f, indent=2)
-    print("\n=== SUMMARY ===")
-    print(f"Questions: {n}")
-    print(f"Hybrid score: {hybrid_score * 100:.1f}%")
-    print(f"Baseline score: {baseline_score * 100:.1f}%")
-    print(f"Lift: {lift * 100:+.1f}%")
-    print(f"Wall time: {wall_time_s:.1f}s ({wall_time_s / n:.2f}s/item)")
-    print(f"p50 / p95 latency: {p50:.1f}ms / {p95:.1f}ms")
-    print(f"Wrote {RESULTS_PATH}")
 
-    # H14 fix: clean up temp DBs
+    retrieval_recalls = {
+        "Hybrid Top-1 Precision": hybrid_score,
+        "Baseline Top-1 Precision": baseline_score,
+        "Hybrid Recall@10": hybrid_recall,
+        "Baseline Recall@10": baseline_recall,
+    }
+    if hybrid_rel_score is not None:
+        retrieval_recalls["Hybrid Relational AND Coverage"] = hybrid_rel_score
+        retrieval_recalls["Baseline Relational AND Coverage"] = baseline_rel_score or 0.0
+
+    print_summary_report(
+        benchmark_name="LongMemEval-S (Synthetic)",
+        total_q=n,
+        wall_time_s=wall_time_s,
+        overall_metric=hybrid_score,
+        metric_name="Top-1 Precision (Hybrid)",
+        latency_stats=latency_stats,
+        retrieval_recalls=retrieval_recalls,
+        output_path=RESULTS_PATH,
+    )
+
     import shutil
+    shutil.rmtree(run_dir, ignore_errors=True)
+
     shutil.rmtree(run_dir, ignore_errors=True)
 
 

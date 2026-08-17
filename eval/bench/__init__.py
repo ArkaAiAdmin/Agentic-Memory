@@ -21,6 +21,14 @@ from .metrics import (
 from .db_manager import BenchmarkDBManager
 from .engine import BenchmarkHarness
 
+from .observability import (
+    init_benchmark_stdout,
+    print_stage_banner,
+    format_query_progress,
+    write_live_progress,
+    print_summary_report,
+)
+
 __all__ = [
     "BenchmarkSession",
     "BenchmarkQuestion",
@@ -32,4 +40,10 @@ __all__ = [
     "calculate_latency_stats",
     "BenchmarkDBManager",
     "BenchmarkHarness",
+    "init_benchmark_stdout",
+    "print_stage_banner",
+    "format_query_progress",
+    "write_live_progress",
+    "print_summary_report",
 ]
+

@@ -30,10 +30,21 @@ import memory_mcp  # noqa: E402
 if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
 
-from eval._fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
+from eval._fixtures import (  # noqa: E402
+    bootstrap_temp_db_clean,
+    format_query_progress,
+    init_benchmark_stdout,
+    populate_eval_memory_indexes_batch,
+    print_stage_banner,
+    print_summary_report,
+    set_benchmark_env,
+    write_live_progress,
+)
 from search.orchestrator import search_memories  # noqa: E402
 
+init_benchmark_stdout()
 set_benchmark_env()
+
 
 
 def generate_adversarial_dataset() -> list[dict]:
@@ -302,27 +313,40 @@ def score_adv_answer(question: dict, retrieved_content: str) -> float:
 
 
 def run_adversarial_eval() -> dict:
-    """Run the SOTA Adversarial & Multi-Hop Memory Benchmark."""
+    """Run the SOTA Adversarial & Multi-Hop Memory Benchmark with full observability."""
+    t_start_wall = time.time()
     db_path = RESULTS_DIR / "adv_eval.db"
     if db_path.exists():
-        db_path.unlink()
+        try:
+            db_path.unlink()
+        except OSError:
+            pass
 
     os.environ["MEMORY_DB_PATH"] = str(db_path)
-    # Benchmarks deliberately point MEMORY_DB_PATH at a throwaway DB;
-    # arm the config-drift escape hatch (audited, time-bounded).
     os.environ["MEMORY_ESCAPE_HATCH"] = (
         "ignore-stability;adversarial-benchmark-temp-db;adv_eval;14400;60"
     )
     bootstrap_temp_db_clean(db_path)
+
+    print(f"\n{'='*80}", flush=True)
+    print("BENCHMARK SUITE: SOTA ADVERSARIAL & MULTI-HOP MEMORY EVALUATION", flush=True)
+    print(f"{'='*80}", flush=True)
+
+    # Phase 1: Dataset Generation
+    print_stage_banner(1, "Dataset Generation", "Synthetic adversarial tracks")
+    t0 = time.time()
+    dataset = generate_adversarial_dataset()[0]
+    total_q = len(dataset["questions"])
+    print(f"✓ Generated {len(dataset['sessions'])} sessions across 4 tracks ({total_q} questions) in {time.time() - t0:.2f}s", flush=True)
+
+    # Phase 2: Ingestion & Multi-Index Building
+    print_stage_banner(2, "Database Ingestion & Multi-Index Building", f"db={db_path.name}")
     import sqlite3
     conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000")
-    dataset = generate_adversarial_dataset()[0]
+    conn.execute("PRAGMA journal_mode = WAL")
 
-    print("=== NEXT-GEN SOTA ADVERSARIAL MEMORY BENCHMARK ===")
-    print(f"Ingesting {len(dataset['sessions'])} session memories into {db_path.name}...")
-
-    # Ingest memories
+    batch_items = []
     for idx, (sess_date, text) in enumerate(dataset["sessions"]):
         memory_id = f"adv_sess_{idx:03d}"
         content_str = f"[Session Date: {sess_date}]\n{text}"
@@ -340,12 +364,24 @@ def run_adversarial_eval() -> dict:
             )
         except Exception as exc:
             logger.debug("FTS index insert failed for %s (non-fatal): %s", memory_id, exc)
-        populate_eval_memory_indexes(conn, memory_id, content_str, category="sessions")
+        batch_items.append((memory_id, content_str, "sessions", []))
 
+    populate_eval_memory_indexes_batch(conn, batch_items)
     conn.commit()
     conn.close()
 
-    print("Ingestion complete. Warming up search encoders...")
+    try:
+        from rebuild_vec_index import rebuild_vec_index
+        stats = rebuild_vec_index(str(db_path))
+        print(
+            f"✓ Vector index built: {stats.get('n_indexed')} items ({stats.get('serialized_bytes')} bytes) in {stats.get('elapsed_s', 0.0):.2f}s",
+            flush=True,
+        )
+    except Exception as exc:
+        logger.warning("vec index build failed (non-fatal): %s", exc)
+
+    # Phase 3: Encoder Warmup
+    print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
     try:
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -357,21 +393,27 @@ def run_adversarial_eval() -> dict:
                 category="sessions",
                 limit=1,
             ).result(timeout=30)
-    except FutureTimeout:
-        print("  ⚠ Search warmup timed out after 30s — continuing anyway", flush=True)
-    print("Warmup complete. Evaluating 4 hard tracks...\n")
+        print("✓ Encoders pre-warmed successfully.", flush=True)
+    except Exception as exc:
+        print(f"  ⚠ Warmup non-fatal notice: {exc}", flush=True)
+
+    # Phase 4: Evaluation Execution Loop
+    print_stage_banner(4, "Evaluation Execution", f"{total_q} questions across 4 adversarial tracks")
 
     results = []
     category_scores = {}
+    category_counts = {}
     latencies = []
+    progress_file = RESULTS_DIR / ".progress.json"
+    suite_progress_file = RESULTS_DIR / ".progress_adversarial.json"
 
-    for q in dataset["questions"]:
+    for q_idx, q in enumerate(dataset["questions"], start=1):
         qid = q["id"]
         qtext = q["question"]
         cat = q["category"]
         expected = q["expected"]
 
-        t0 = time.time()
+        t_q0 = time.time()
         search_res = search_memories(
             db_path=db_path,
             query=qtext,
@@ -379,7 +421,7 @@ def run_adversarial_eval() -> dict:
             category="sessions",
             limit=10,
         )
-        dt_ms = (time.time() - t0) * 1000
+        dt_ms = (time.time() - t_q0) * 1000
         latencies.append(dt_ms)
 
         results_list = search_res.get("results", []) if isinstance(search_res, dict) else search_res
@@ -409,34 +451,79 @@ def run_adversarial_eval() -> dict:
         })
 
         category_scores.setdefault(cat, []).append(score)
+        category_counts[cat] = category_counts.get(cat, 0) + 1
 
-        print(f"[{cat.upper()}] Q: '{qtext}'")
-        print(f"  -> Score: {score:.2f} | Latency: {dt_ms:.1f}ms")
+        running_acc = sum(r["score"] for r in results) / len(results)
+        running_per_type = {
+            c: sum(scores) / len(scores) for c, scores in category_scores.items() if scores
+        }
 
+        # Single-line query status logging
+        line_msg = format_query_progress(
+            q_num=q_idx,
+            total_q=total_q,
+            score=score,
+            latency_ms=dt_ms,
+            running_acc=running_acc,
+            category=cat,
+            query_text=qtext,
+        )
+        print(line_msg, flush=True)
+
+        # Atomic live progress writing
+        for p_file in (progress_file, suite_progress_file):
+            write_live_progress(
+                progress_file=p_file,
+                q_num=q_idx,
+                total_q=total_q,
+                category=cat,
+                question_text=qtext,
+                score=score,
+                latency_ms=dt_ms,
+                running_overall=running_acc,
+                running_per_type=running_per_type,
+                extra_fields={"benchmark": "Adversarial"},
+            )
+
+    wall_time = time.time() - t_start_wall
     overall_acc = sum(r["score"] for r in results) / len(results) if results else 0
     avg_latency = sum(latencies) / len(latencies) if latencies else 0
 
-    print(f"\n{'='*60}")
-    print(f"ADVERSARIAL MEMORY BENCHMARK OVERALL ACCURACY: {overall_acc:.4f}")
-    print(f"AVERAGE SEARCH LATENCY: {avg_latency:.2f}ms")
-    print(f"{'='*60}")
-    for c, s in category_scores.items():
-        acc = sum(s) / len(s) if s else 0
-        print(f"  {c}: {acc:.4f} ({len(s)} questions)")
+    # Phase 5: Results Aggregation & Verification
+    print_stage_banner(5, "Results Aggregation & Verification", f"{len(results)} questions analyzed")
+
+    from eval.bench.metrics import calculate_latency_stats
+    lat_stats = calculate_latency_stats(latencies)
+
+    cat_acc_map = {c: round(sum(s) / len(s), 4) for c, s in category_scores.items()}
 
     report = {
         "benchmark": "Adversarial-Agentic-Memory-v1",
         "overall_accuracy": round(overall_acc, 4),
-        "avg_latency_ms": round(avg_latency, 2),
-        "category_accuracy": {c: round(sum(s)/len(s), 4) for c, s in category_scores.items()},
+        "wall_time_seconds": round(wall_time, 2),
+        "latency_ms": lat_stats,
+        "category_accuracy": cat_acc_map,
+        "category_counts": category_counts,
         "results": results,
     }
 
+    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
         json.dump(report, f, indent=2)
 
-    print(f"\nSaved detailed benchmark report to {RESULTS_PATH}")
+    print_summary_report(
+        benchmark_name="Adversarial & Multi-Hop Memory",
+        total_q=total_q,
+        wall_time_s=wall_time,
+        overall_metric=overall_acc,
+        metric_name="Overall Accuracy",
+        category_scores=cat_acc_map,
+        category_counts=category_counts,
+        latency_stats=lat_stats,
+        output_path=RESULTS_PATH,
+    )
     return report
+
 
 
 if __name__ == "__main__":

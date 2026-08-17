@@ -48,11 +48,17 @@ import memory_mcp  # noqa: E402
 from infra.memory_common import open_db  # noqa: E402
 from _fixtures import (  # noqa: E402
     bootstrap_temp_db_clean,
+    format_query_progress,
+    init_benchmark_stdout,
     populate_eval_memory_indexes,
     populate_eval_memory_indexes_batch,
+    print_stage_banner,
+    print_summary_report,
     set_benchmark_env,
+    write_live_progress,
 )
 
+init_benchmark_stdout()
 set_benchmark_env()
 os.environ["MEMORY_WRITE_QUEUE_TIMEOUT"] = "120.0"
 os.environ["MEMORY_LLM_EXTRACTION"] = "false"
@@ -62,6 +68,7 @@ os.environ["MEMORY_LLM_EXTRACTION"] = "false"
 os.environ["MEMORY_ESCAPE_HATCH"] = (
     "ignore-stability;locomo-benchmark-temp-db;locomo_eval;14400;60"
 )
+
 
 
 CATEGORY_MAP = {
@@ -183,7 +190,19 @@ def ingest_all_conversations(
         populate_eval_memory_indexes_batch(db, batch_items)
         db.commit()
 
+    if batch_items:
+        try:
+            from rebuild_vec_index import rebuild_vec_index
+            stats = rebuild_vec_index(str(db_path))
+            print(
+                f"✓ Vector index built: {stats.get('n_indexed')} items ({stats.get('serialized_bytes')} bytes) in {stats.get('elapsed_s', 0.0):.2f}s",
+                flush=True,
+            )
+        except Exception as exc:
+            logger.warning("vec index build failed (non-fatal): %s", exc)
+
     return all_session_maps
+
 
 
 def ingest_conversation(
@@ -241,20 +260,16 @@ def evaluate(
     use_cache_db: bool = True,
     rebuild: bool = False,
 ) -> dict:
-    """Run the full LoCoMo evaluation.
-
-    Args:
-        max_questions: Cap on total questions (None = all).
-        conversation_filter: Only evaluate one conversation (by sample_id).
-        k_values: Which k values to measure recall@k at.
-        output_path: Where to write results JSON.
-        use_cache_db: If True and full dataset, reuse cached prebuilt DB.
-        rebuild: Force rebuild DB even if cached.
-
-    Returns:
-        Results dict with per-category and overall metrics.
-    """
+    """Run the full LoCoMo evaluation with complete phase observability."""
     k_vals = k_values or K_VALUES
+
+    print(f"\n{'='*80}", flush=True)
+    print("BENCHMARK SUITE: LOCOMO LONG-CONVERSATION MEMORY EVALUATION", flush=True)
+    print(f"{'='*80}", flush=True)
+
+    # Phase 1: Dataset Loading
+    print_stage_banner(1, "Dataset Loading", "LoCoMo Dataset")
+    t_load = time.time()
     data = ensure_dataset()
 
     if conversation_filter:
@@ -262,17 +277,20 @@ def evaluate(
         if not data:
             raise ValueError(f"Conversation '{conversation_filter}' not found")
 
+    print(f"✓ Loaded {len(data)} conversations ({sum(len(s['qa']) for s in data)} QA pairs) in {time.time() - t_load:.2f}s", flush=True)
+
     wall_start = time.time()
     cleanup_tmp = False
 
-    # Check for cached full DB
+    # Phase 2: Database Preparation & Indexing
+    print_stage_banner(2, "Database Ingestion & Multi-Index Building", f"cache={use_cache_db}, rebuild={rebuild}")
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_db_path = CACHE_DIR / "locomo_full.db"
 
     if use_cache_db and not conversation_filter and cache_db_path.exists() and not rebuild:
         db_path = cache_db_path
         os.environ["MEMORY_DB_PATH"] = str(db_path)
-        print(f"Using cached LoCoMo database: {db_path}")
+        print(f"✓ Using cached LoCoMo database: {db_path}", flush=True)
         ingest_time = 0.0
         total_sessions = sum(
             len([k for k in s["conversation"].keys() if k.startswith("session_") and "_" not in k[8:]])
@@ -298,8 +316,7 @@ def evaluate(
         all_session_maps = ingest_all_conversations(db_path, data)
         ingest_time = time.time() - ingest_start
         total_sessions = sum(len(m) for m in all_session_maps.values())
-        print(f"Ingested {total_sessions} sessions from {len(data)} conversations "
-              f"in {ingest_time:.1f}s")
+        print(f"✓ Ingested {total_sessions} sessions from {len(data)} conversations in {ingest_time:.1f}s", flush=True)
 
     # Collect all questions
     questions = []
@@ -322,7 +339,16 @@ def evaluate(
     if max_questions:
         questions = questions[:max_questions]
 
-    print(f"Evaluating {len(questions)} questions ...")
+    # Phase 3: Warmup
+    print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
+    try:
+        _ = run_search(db_path, "warmup query", limit=1)
+        print("✓ Encoders pre-warmed successfully.", flush=True)
+    except Exception as exc:
+        print(f"  ⚠ Warmup non-fatal notice: {exc}", flush=True)
+
+    # Phase 4: Evaluation Execution
+    print_stage_banner(4, "Evaluation Execution", f"{len(questions)} questions across {len(data)} conversations")
 
     # Initialize metrics
     metrics: dict[int, dict[str, dict]] = {}
@@ -342,14 +368,11 @@ def evaluate(
 
     latencies: list[float] = []
     per_question: list[dict] = []
+    per_category_hits: dict[str, list[float]] = {}
+    progress_file = RESULTS_DIR / ".progress.json"
+    suite_progress_file = RESULTS_DIR / ".progress_locomo.json"
 
-    for i, q in enumerate(questions):
-        if (i + 1) % 25 == 0 or i == 0 or i == len(questions) - 1:
-            _elapsed = time.time() - wall_start
-            _rate = (i + 1) / _elapsed if _elapsed > 0 else 0
-            print(f"  [{i+1}/{len(questions)}] {_elapsed:.0f}s elapsed, {_rate:.1f} q/s")
-
-        # Clear search cache between questions to prevent leakage
+    for i, q in enumerate(questions, start=1):
         if hasattr(memory_mcp, "_search_cache"):
             memory_mcp._search_cache.clear()
 
@@ -360,12 +383,13 @@ def evaluate(
 
         # Exact gold memory IDs for this specific conversation
         gold_mem_ids = {session_to_memory_id(q["sample_id"], f"session_{n}") for n in q["gold_sessions"]}
+        hit_10 = bool(set(retrieved[:10]) & gold_mem_ids)
+        cat = q["category"]
 
         # Check hits at each k against exact gold memory IDs
         for k in k_vals:
             top_k_ids = set(retrieved[:k])
             hit = bool(top_k_ids & gold_mem_ids)
-            cat = q["category"]
 
             metrics[k][cat]["total"] += 1
             metrics[k]["__overall__"]["total"] += 1
@@ -373,13 +397,54 @@ def evaluate(
                 metrics[k][cat]["session_hits"] += 1
                 metrics[k]["__overall__"]["session_hits"] += 1
 
+        score_val = 1.0 if hit_10 else 0.0
+        per_category_hits.setdefault(cat, []).append(score_val)
+
         per_question.append({
             "question": q["question"][:100],
             "category": q["category"],
             "sample_id": q["sample_id"],
             "gold_mem_ids": sorted(gold_mem_ids),
             "retrieved_top5": retrieved[:5],
+            "hit_top10": hit_10,
+            "latency_ms": round(latency_ms, 1),
         })
+
+        running_acc = metrics[10]["__overall__"]["session_hits"] / max(1, metrics[10]["__overall__"]["total"])
+        running_per_type = {
+            c: sum(scores) / len(scores) for c, scores in per_category_hits.items() if scores
+        }
+
+        # Single-line live query stream
+        line_msg = format_query_progress(
+            q_num=i,
+            total_q=len(questions),
+            score=score_val,
+            latency_ms=latency_ms,
+            running_acc=running_acc,
+            category=cat,
+            query_text=q["question"],
+            extra_metric_label="Rec@10",
+        )
+        print(line_msg, flush=True)
+
+        # Atomic live progress writer
+        for p_file in (progress_file, suite_progress_file):
+            write_live_progress(
+                progress_file=p_file,
+                q_num=i,
+                total_q=len(questions),
+                category=cat,
+                question_text=q["question"],
+                score=score_val,
+                latency_ms=latency_ms,
+                running_overall=running_acc,
+                running_per_type=running_per_type,
+                extra_fields={
+                    "benchmark": "LoCoMo",
+                    "conversation_sample_id": q["sample_id"],
+                },
+            )
 
     # Compute recall@k
     for k in k_vals:
@@ -391,19 +456,19 @@ def evaluate(
                 )
 
     # Latency stats
-    latencies.sort()
-    n_lat = len(latencies) or 1
-    latency_stats = {
-        "mean": round(sum(latencies) / n_lat, 2),
-        "p50": round(latencies[n_lat // 2], 2),
-        "p95": round(latencies[int(n_lat * 0.95)], 2),
-        "max": round(latencies[-1], 2),
-    }
+    from eval.bench.metrics import calculate_latency_stats
+    latency_stats = calculate_latency_stats(latencies)
+    wall_time = time.time() - wall_start
+
+    # Phase 5: Results Aggregation & Verification
+    print_stage_banner(5, "Results Aggregation & Verification", f"{len(questions)} questions analyzed")
 
     results = {
+        "benchmark": "LoCoMo-10",
         "n_questions_total": len(questions),
         "n_conversations": len(data),
         "n_sessions_ingested": total_sessions,
+        "wall_time_seconds": round(wall_time, 2),
         "latency_ms": latency_stats,
         "ingest_time_seconds": round(ingest_time, 2),
         "metrics": {
@@ -416,6 +481,7 @@ def evaluate(
             "conversation_filter": conversation_filter,
             "cached_db": not cleanup_tmp,
         },
+        "per_question": per_question,
     }
 
     # Write results
@@ -428,29 +494,40 @@ def evaluate(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"\nResults written to {output_path}")
 
-    # Print summary
-    print("\n=== LoCoMo Evaluation Results ===")
-    print(f"Conversations: {len(data)}, Sessions: {total_sessions}, "
-          f"Questions: {len(questions)}")
-    print(f"Ingest time: {ingest_time:.1f}s, "
-          f"Mean search latency: {latency_stats['mean']}ms")
-    for k in k_vals:
-        overall = metrics[k]["__overall__"]
-        print(f"\n  Recall@{k} (overall): {overall['session_recall_at_k']:.4f} "
-              f"({overall['session_hits']}/{overall['total']})")
-        for cat in ["single-hop", "multi-hop", "temporal", "open-domain", "adversarial"]:
-            d = metrics[k][cat]
-            if d["total"] > 0:
-                print(f"    {cat:15s}: {d['session_recall_at_k']:.4f} "
-                      f"({d['session_hits']}/{d['total']})")
+    cat_rec10 = {
+        cat: metrics[10][cat]["session_recall_at_k"]
+        for cat in CATEGORY_MAP.values() if metrics[10][cat]["total"] > 0
+    }
+    cat_counts = {
+        cat: metrics[10][cat]["total"]
+        for cat in CATEGORY_MAP.values() if metrics[10][cat]["total"] > 0
+    }
+    retrieval_recalls = {
+        f"Recall@{k}": metrics[k]["__overall__"]["session_recall_at_k"]
+        for k in k_vals
+    }
+    overall_r10 = metrics[10]["__overall__"]["session_recall_at_k"]
+
+    print_summary_report(
+        benchmark_name="LoCoMo",
+        total_q=len(questions),
+        wall_time_s=wall_time,
+        overall_metric=overall_r10,
+        metric_name="Recall@10 (overall)",
+        category_scores=cat_rec10,
+        category_counts=cat_counts,
+        latency_stats=latency_stats,
+        retrieval_recalls=retrieval_recalls,
+        output_path=output_path,
+    )
 
     # Cleanup
     if cleanup_tmp:
         shutil.rmtree(db_path.parent, ignore_errors=True)
 
     return results
+
 
 
 # ---------------------------------------------------------------------------

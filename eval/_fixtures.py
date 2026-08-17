@@ -115,6 +115,9 @@ def set_benchmark_env() -> None:
     os.environ["MEMORY_DB_FLOCK"] = "0"
     os.environ["MEMORY_AUTO_SAVE_DISABLED"] = "1"
     os.environ["MEMORY_AGENT_ID"] = "beam"
+    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 
 def populate_eval_memory_indexes(
@@ -303,5 +306,15 @@ def populate_eval_memory_indexes_batch(
         conn.commit()
     except Exception:
         pass
+
+
+from eval.bench.observability import (
+    init_benchmark_stdout,
+    print_stage_banner,
+    format_query_progress,
+    write_live_progress,
+    print_summary_report,
+)
+
 
 
