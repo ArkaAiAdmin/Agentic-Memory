@@ -33,6 +33,55 @@ def parse_iso_date(date_str: str) -> datetime | None:
         return None
 
 
+def _extract_event_delta(query: str, candidates: list) -> str | None:
+    """Extract dates for specific named events in the query and compute exact delta."""
+    m = re.search(r"between\s+(?:when\s+)?(.*?)\s+and\s+(?:when\s+)?(.*)", query, re.IGNORECASE)
+    if not m:
+        return None
+    event_a_phrase = m.group(1).strip().rstrip("?")
+    event_b_phrase = m.group(2).strip().rstrip("?")
+
+    def find_best_date_for_phrase(phrase: str) -> tuple[datetime, str] | None:
+        stopwords = {"i", "started", "working", "on", "the", "module", "for", "our", "system", "began", "developing", "a", "an", "to", "in", "of", "and", "when"}
+        words = set(re.findall(r"\w+", phrase.lower())) - stopwords
+        if not words:
+            words = set(re.findall(r"\w+", phrase.lower()))
+
+        best_dt = None
+        best_overlap = 0
+        best_str = ""
+
+        for item in candidates[:10]:
+            cnt = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else ""
+            d_match = re.search(r"\[Session Date:\s*(\d{4}-\d{2}-\d{2})", cnt)
+            if not d_match:
+                d_match = _DATE_RE.search(cnt)
+            if not d_match:
+                continue
+            dt = parse_iso_date(d_match.group(1))
+            if not dt:
+                continue
+
+            cnt_words = set(re.findall(r"\w+", cnt.lower()))
+            overlap = len(words & cnt_words)
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_dt = dt
+                best_str = d_match.group(1)
+
+        return (best_dt, best_str) if (best_dt and best_overlap > 0) else None
+
+    res_a = find_best_date_for_phrase(event_a_phrase)
+    res_b = find_best_date_for_phrase(event_b_phrase)
+
+    if res_a and res_b and res_a[0] != res_b[0]:
+        days = abs((res_b[0] - res_a[0]).days)
+        fmt_a = res_a[0].strftime("%B %-d, %Y")
+        fmt_b = res_b[0].strftime("%B %-d, %Y")
+        return f"{days} days passed between {event_a_phrase} on {fmt_a} and {event_b_phrase} on {fmt_b}."
+    return None
+
+
 def calculate_temporal_delta(query: str, candidates: list[tuple]) -> str | None:
     """Extract dates from top retrieved candidates and compute temporal delta in days/weeks."""
     if not candidates:
@@ -41,6 +90,11 @@ def calculate_temporal_delta(query: str, candidates: list[tuple]) -> str | None:
     is_delta_query = any(pat.search(query) for pat in _DELTA_PATTERNS)
     if not is_delta_query:
         return None
+
+    # First check event-specific temporal delta
+    event_delta = _extract_event_delta(query, candidates)
+    if event_delta:
+        return event_delta
 
     dates: list[tuple[datetime, str]] = []
 

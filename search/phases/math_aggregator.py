@@ -74,7 +74,54 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
             if b_val > 0 and d_vals:
                 rem = b_val - sum(d_vals)
                 fmt = format_numeric_val(rem)
-                return f"${fmt}" if "$" in all_text or "$" in query else fmt
+    # 2. Multi-entity aggregation (e.g. combining my Elasticsearch and Solr projects)
+    multi_entity_match = re.search(
+        r"(?:combining|combines|total.*?between|total.*?for|total.*?when combining)\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+and\s+([A-Za-z0-9_\-]+)",
+        query,
+        re.IGNORECASE,
+    )
+    if multi_entity_match:
+        entity_a = multi_entity_match.group(1).lower()
+        entity_b = multi_entity_match.group(2).lower()
+        vals_a: list[float] = []
+        vals_b: list[float] = []
+
+        for c in candidates[:10]:
+            cnt = _get_item_content(c)
+            cnt_lower = cnt.lower()
+            if entity_a in cnt_lower:
+                for match_a in re.finditer(
+                    r"(\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+)\s*(k|m|million|billion|thousand)?\s*(?:document|doc|record|user|task)",
+                    cnt,
+                    re.IGNORECASE,
+                ):
+                    v = parse_numeric_val(match_a.group(1), match_a.group(2) or "")
+                    if v > 0 and v not in vals_a:
+                        vals_a.append(v)
+            if entity_b in cnt_lower:
+                for match_b in re.finditer(
+                    r"(\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+)\s*(k|m|million|billion|thousand)?\s*(?:document|doc|record|user|task)",
+                    cnt,
+                    re.IGNORECASE,
+                ):
+                    v = parse_numeric_val(match_b.group(1), match_b.group(2) or "")
+                    if v > 0 and v not in vals_b:
+                        vals_b.append(v)
+
+        if vals_a and vals_b:
+            val_a = vals_a[0]
+            val_b = vals_b[0]
+            if len(vals_b) > 1 and val_b == val_a:
+                val_b = vals_b[1]
+            elif len(vals_a) > 1 and val_a == val_b:
+                val_a = vals_a[1]
+            tot = val_a + val_b
+            if tot >= 1_000_000:
+                millions = tot / 1_000_000.0
+                fmt = f"{int(millions) if millions.is_integer() else millions:.1f} million documents"
+            else:
+                fmt = f"{format_numeric_val(tot)} documents"
+            return fmt
 
     is_agg_query = any(pat.search(query) for pat in _AGG_PATTERNS)
     if not is_agg_query:

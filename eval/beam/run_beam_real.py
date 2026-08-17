@@ -238,15 +238,26 @@ def ingest_all_conversations(db_path: Path, conversations: list[dict]) -> tuple[
                     if not plan_batches or not isinstance(plan_batches, list):
                         continue
                     for b_idx, batch in enumerate(plan_batches):
+                        turns_raw = batch.get("turns", [])
                         b_anchor = batch.get("time_anchor")
+                        if not b_anchor and turns_raw:
+                            for tg in turns_raw:
+                                if isinstance(tg, list) and tg and isinstance(tg[0], dict) and tg[0].get("time_anchor"):
+                                    b_anchor = tg[0]["time_anchor"]
+                                    break
+                                elif isinstance(tg, dict) and tg.get("time_anchor"):
+                                    b_anchor = tg["time_anchor"]
+                                    break
                         timestamp = parse_time_anchor(b_anchor)
 
                         turns_in_batch = []
-                        for turn_group in batch.get("turns", []):
+                        for turn_group in turns_raw:
                             if isinstance(turn_group, list):
                                 for turn in turn_group:
                                     if isinstance(turn, dict) and "content" in turn:
                                         turns_in_batch.append(turn)
+                            elif isinstance(turn_group, dict) and "content" in turn_group:
+                                turns_in_batch.append(turn_group)
 
                         # Chunk turns within this batch
                         curr_chunk_turns = []
