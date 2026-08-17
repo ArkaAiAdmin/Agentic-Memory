@@ -268,7 +268,7 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
             text = _cache_text(content)
             chash = _content_hash(text)
             entry = cached.get(_mid)
-            if entry is not None and entry[0] == chash and entry[1] is not None:
+            if entry is not None and entry[1] is not None:
                 try:
                     vec = np.frombuffer(entry[1], dtype=np.float32)
                     if vec.size == dim:
@@ -464,7 +464,7 @@ def rebuild_chunk_vec_index(db_path, *, force: bool = False) -> dict:
             text = _chunk_cache_text(content)
             chash = _chunk_content_hash(text)
             entry = cached.get(chunk_id)
-            if entry is not None and entry[0] == chash and entry[1] is not None:
+            if entry is not None and entry[1] is not None:
                 try:
                     vec = np.frombuffer(entry[1], dtype=np.float32)
                     if vec.size == dim:

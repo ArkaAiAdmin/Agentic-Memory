@@ -757,7 +757,11 @@ class EmbeddingSearch:
                     texts.append(_cache_text(content))
 
             chashes = [_content_hash(t) for t in texts]
-            vecs = self.model.encode(texts)
+            batch_size = int(os.environ.get("MEMORY_EMBED_BATCH_SIZE", "128"))
+            try:
+                vecs = self.model.encode(texts, batch_size=batch_size, show_progress_bar=len(texts) > 50)
+            except TypeError:
+                vecs = self.model.encode(texts)
             rows = [
                 (
                     mid,
