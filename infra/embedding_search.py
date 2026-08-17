@@ -514,6 +514,16 @@ class EmbeddingSearch:
                         self.model = _TransformerModelWrapper(tokenizer, model)
                         self.is_transformer = True
                         self._model_revision = model_id  # transformers backstop: model_id is the authority
+            if self.is_transformer and self.model is not None:
+                use_fp16 = os.environ.get("MEMORY_EMBEDDING_FP16", "1") == "1"
+                if use_fp16 and hasattr(self.model, "half"):
+                    dev = getattr(self.model, "device", None)
+                    if dev is not None and getattr(dev, "type", "") in ("mps", "cuda"):
+                        try:
+                            self.model.half()
+                            logger.info("Enabled FP16 half-precision on %s for embedding model", dev.type)
+                        except Exception as fp16_err:
+                            logger.debug("FP16 conversion skipped: %s", fp16_err)
             self._model_loaded = True
         except Exception as e:
             # C3 fix: bounded retry — only permanently fail after max attempts
@@ -766,7 +776,7 @@ class EmbeddingSearch:
                 (
                     mid,
                     ch,
-                    vec.tobytes(),
+                    np.asarray(vec, dtype=np.float32).tobytes(),
                     getattr(self, "_model_revision", MODEL_REVISION),
                     int(self.model.dim),
                     time.time(),

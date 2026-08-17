@@ -299,4 +299,9 @@ def populate_eval_memory_indexes_batch(
     except Exception:
         pass
 
+    try:
+        conn.commit()
+    except Exception:
+        pass
+
 
