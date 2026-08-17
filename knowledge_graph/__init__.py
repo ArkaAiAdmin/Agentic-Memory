@@ -13,6 +13,7 @@ from knowledge_graph.kg_db import (  # noqa: F401
     _upsert_entity,
     get_active_edges_for_entity,
     index_kg_for_memory,
+    index_kg_for_memory_batch,
     invalidate_edge,
 )
 from knowledge_graph.kg_extract import (
@@ -39,6 +40,7 @@ __all__ = [
     "extract_entities",
     "extract_relations",
     "index_kg_for_memory",
+    "index_kg_for_memory_batch",
     "graph_search",
     "graph_stats",
     "graph_search_db",

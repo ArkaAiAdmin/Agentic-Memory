@@ -680,7 +680,9 @@ def _extract_urls(text: str) -> list[tuple[str, str]]:
     return entities
 
 
-def extract_entities(text: str, min_occurrences: int = 2) -> list[tuple[str, str]]:
+def extract_entities(
+    text: str, min_occurrences: int = 2, use_spacy: bool = True
+) -> list[tuple[str, str]]:
     """Extract entities from text using pattern-based NER.
 
     Returns list of (name, entity_type) tuples.
@@ -774,7 +776,7 @@ def extract_entities(text: str, min_occurrences: int = 2) -> list[tuple[str, str
     # PRODUCT/FAC entities when MEMORY_NER_SPACY=1.
     try:
         from infra._lazy_imports import get_config
-        if get_config().ner_spacy_enabled:
+        if use_spacy and get_config().ner_spacy_enabled:
             from knowledge_graph.ner_spacy import augment_entities
             unique = unique + augment_entities(cleaned, unique)
     except Exception as e:

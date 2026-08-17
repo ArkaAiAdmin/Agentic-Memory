@@ -263,15 +263,15 @@ def populate_eval_memory_indexes_batch(
 
     kg_items = items[:max_kg_facts] if max_kg_facts is not None else items
 
-    # 5. Knowledge Graph
+    # 5. Knowledge Graph (Batched)
     try:
-        from knowledge_graph import ensure_kg_schema, index_kg_for_memory
+        from knowledge_graph import ensure_kg_schema, index_kg_for_memory_batch
 
         ensure_kg_schema(conn)
-        print(f"\n[5/6] Extracting Knowledge Graph Entities ({len(kg_items)} items)...", flush=True)
-        for memory_id, content, _, _ in tqdm(kg_items, desc="Knowledge Graph Entities", disable=len(kg_items) < 50):
-            if content and content.strip():
-                index_kg_for_memory(conn, memory_id, content)
+        kg_inputs = [(mid, cnt) for mid, cnt, _, _ in kg_items if cnt and cnt.strip()]
+        if kg_inputs:
+            print(f"\n[5/6] Extracting Knowledge Graph Entities ({len(kg_inputs)} items)...", flush=True)
+            index_kg_for_memory_batch(conn, kg_inputs)
     except Exception:
         pass
 
