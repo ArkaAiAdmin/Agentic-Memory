@@ -641,6 +641,12 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                         if v not in extracted_vals:
                             extracted_vals.append(v)
 
+                # Also extract spelled-out numbers attached to target units
+                for w_word, w_val in WORD_TO_NUM.items():
+                    if re.search(rf"\b{w_word}\s+(?:days?|weeks?|months?|years?|hours?|projects?|books?|trips?|dishes|recipes?|items?|miles?|times?)\b", content_line_lower):
+                        if w_val > 0 and w_val not in extracted_vals:
+                            extracted_vals.append(w_val)
+
         if len(extracted_vals) >= 2:
             total_sum = sum(extracted_vals)
             formatted_sum = format_numeric_val(total_sum)

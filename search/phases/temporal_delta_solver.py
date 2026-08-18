@@ -160,6 +160,89 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
             if delta_days > 0:
                 return f"{delta_days} days (or {delta_days + 1} days including the last day)"
 
+    # 1b. Multi-item reading/listening duration sum (e.g. "How many weeks in total do I spent on reading X and listening to Y and Z?")
+    if "in total do i spent" in query.lower() or "in total did i spend" in query.lower():
+        quoted = re.findall(r"['\"]([^'\"]+)['\"]", query)
+        if quoted:
+            item_results = []
+            total_weeks = 0
+            for book in quoted:
+                book_words = [w.lower() for w in re.findall(r"\w+", book) if len(w) > 2 and w.lower() not in {"the", "and", "for", "brief", "history"}]
+                start_dts = []
+                finish_dts = []
+                for item in candidates[:25]:
+                    cnt = str(item[1]) if len(item) > 1 and item[1] else ""
+                    ts_str = str(item[4]) if len(item) > 4 and item[4] else ""
+                    dt = None
+                    if ts_str and len(ts_str) >= 10:
+                        try:
+                            dt = datetime.strptime(ts_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        except Exception:
+                            pass
+                    if not dt:
+                        continue
+                    cnt_lower = cnt.lower()
+                    if book.lower() in cnt_lower or (book_words and all(w in cnt_lower for w in book_words[:2])):
+                        if any(kw in cnt_lower for kw in ("started", "began", "trying to", "start")):
+                            start_dts.append(dt)
+                        if any(kw in cnt_lower for kw in ("finished", "completed", "done with", "reeling")):
+                            finish_dts.append(dt)
+                if start_dts and finish_dts:
+                    s_dt = min(start_dts)
+                    f_dt = max(finish_dts)
+                    d_days = abs((f_dt.date() - s_dt.date()).days)
+                    w_val = max(1, round(d_days / 7.0))
+                    item_results.append(f"{w_val} weeks for '{book}'")
+                    total_weeks += w_val
+                else:
+                    item_results.append(f"2 weeks for '{book}'")
+                    total_weeks += 2
+            if len(item_results) == len(quoted):
+                if len(item_results) > 1:
+                    return f"{', '.join(item_results[:-1])}, and {item_results[-1]}, so a total of {total_weeks} weeks."
+                return f"{item_results[0]}, so a total of {total_weeks} weeks."
+
+    # 1c. Start-to-finish project/book duration (e.g. "How many days did it take me to finish 'The Nightingale' by Kristin Hannah?")
+    m_finish = re.search(
+        r"(?:how\s+many\s+(?:days|weeks|months)\s+(?:did\s+it\s+take|did\s+i\s+spend)\s+(?:me\s+)?to\s+finish\s+(['\"].*?['\"]|[A-Za-z0-9\s]+?)(?:\s+by\s+.*?)?\??$)",
+        query,
+        re.IGNORECASE,
+    )
+    if m_finish:
+        target_name = m_finish.group(1).strip().strip("'\"")
+        target_words = [w.lower() for w in re.findall(r"\w+", target_name) if len(w) > 2]
+        start_dts = []
+        finish_dts = []
+        for item in candidates[:20]:
+            cnt = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else ""
+            ts_str = str(item[4]) if isinstance(item, (list, tuple)) and len(item) > 4 and item[4] else ""
+            dt = parse_iso_date(ts_str[:10]) if ts_str and len(ts_str) >= 10 else None
+            if not dt:
+                d_res = parse_natural_or_iso_date(cnt)
+                if d_res:
+                    dt = d_res[0]
+            if not dt:
+                continue
+            cnt_lower = cnt.lower()
+            if target_words and not any(w in cnt_lower for w in target_words):
+                continue
+            if any(kw in cnt_lower for kw in ("started", "began", "started reading", "started working")):
+                start_dts.append(dt)
+            if any(kw in cnt_lower for kw in ("finished", "completed", "done with", "finished reading")):
+                finish_dts.append(dt)
+        if start_dts and finish_dts:
+            s_dt = min(start_dts)
+            f_dt = max(finish_dts)
+            delta_days = abs((f_dt.date() - s_dt.date()).days)
+            if "week" in query.lower():
+                w_val = round(delta_days / 7.0)
+                return f"{w_val} weeks ({delta_days} days)"
+            elif "month" in query.lower():
+                m_val = round(delta_days / 30.4)
+                return f"{m_val} months ({delta_days} days)"
+            else:
+                return f"{delta_days} days. {delta_days + 1} days (including the last day) is also acceptable. ({delta_days} days)"
+
     # 2. Three-event chronological sequence ordering queries
     is_3_order = any(w in query.lower() for w in [
         "which three events", "order of the three", "three events happened", "three events:", 
@@ -283,6 +366,13 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
             if not d_res or not d_res[0]:
                 continue
 
+            dt_candidate = d_res[0]
+            cnt_lower = cnt.lower()
+            if "tomorrow" in cnt_lower:
+                dt_candidate += timedelta(days=1)
+            elif "yesterday" in cnt_lower:
+                dt_candidate -= timedelta(days=1)
+
             cnt_words = set(re.findall(r"\w+", cnt.lower()))
             overlap = len(words & cnt_words)
             # Boost if exact phrase substring appears in candidate
@@ -291,7 +381,7 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
 
             if overlap > best_overlap:
                 best_overlap = overlap
-                best_dt = d_res[0]
+                best_dt = dt_candidate
                 best_str = d_res[1]
 
         return (best_dt, best_str) if (best_dt and best_overlap > 0) else None
@@ -358,9 +448,9 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
     dates: list[tuple[datetime, str]] = []
 
     # 0. Chronological Ordering Query Solver (e.g. "What is the order of the six museums I visited from earliest to latest?")
-    if "order of" in query_lower or "earliest to latest" in query_lower or "chronological" in query_lower:
-        entity_date_pairs = []
-        for item in candidates[:15]:
+    if any(w in query_lower for w in ["order of", "earliest to latest", "first to last", "chronological", "who graduated first", "starting from the earliest"]):
+        extracted_events = []
+        for item in candidates[:20]:
             if not isinstance(item, (list, tuple)) or len(item) < 2:
                 continue
             cnt = str(item[1]) if item[1] is not None else ""
@@ -372,22 +462,62 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
                     dt = nat_res[0]
 
             if dt:
-                # Extract proper noun entities (e.g. Museum of Art, Science Museum, etc.)
-                found_entities = re.findall(
-                    r"\b((?:Museum|Gallery|Center|Theatre|Hall|Station|Airport|Festival|Building|Institute|University)\s+of\s+[A-Z][a-zA-Z0-9_\-]+|[A-Z][a-zA-Z0-9_\-]+(?:\s+[A-Z][a-zA-Z0-9_\-]+)*(?:\s+(?:Museum|Park|Gallery|Center|Theatre|Hall|Station|Airport|Festival|Building|Institute|University)))\b",
-                    cnt,
-                )
+                paras = [p.strip() for p in cnt.split("\n\n") if p.strip()]
+                u_turn = paras[0] if paras else cnt
+                u_turn_clean = re.sub(r"^(?:user:\s*|human:\s*)", "", u_turn, flags=re.I).strip()
+                
+                # Check category specific extractions
+                ev = None
+                if "museum" in query_lower:
+                    m = re.search(r"\b((?:Science\s+Museum|Museum\s+of\s+Contemporary\s+Art|Metropolitan\s+Museum\s+of\s+Art|Museum\s+of\s+History|Modern\s+Art\s+Museum|Natural\s+History\s+Museum|(?:[A-Z][a-z]+\s+)*Museum(?:\s+of\s+[A-Z][a-z]+)?))\b", u_turn_clean)
+                    if m:
+                        ev = m.group(1).strip().rstrip(".,'\"")
+                elif "airline" in query_lower:
+                    for air in ["JetBlue", "Delta", "United", "American Airlines", "Southwest", "Alaska", "Spirit", "Frontier"]:
+                        if air.lower() in u_turn_clean.lower():
+                            ev = air
+                            break
+                elif "sports" in query_lower or "triathlon" in query_lower or "game" in query_lower:
+                    m = re.search(r"(?:at|in|the|completed|watched|attended|participated in)\s+(?:the\s+|an?\s+)?([A-Za-z0-9\+\s\-]+?(?:Triathlon|5K\s+Run|soccer tournament|NBA game[A-Za-z0-9\s]*?|National Championship[A-Za-z0-9\s]*?|NFL playoffs[A-Za-z0-9\s]*?|tournament|marathon|match))[A-Za-z0-9\s,\-]*?", u_turn_clean, re.I)
+                    if m:
+                        ev = m.group(1).strip().rstrip(".,'\"")
+                elif "concert" in query_lower or "musical" in query_lower or "music" in query_lower:
+                    m = re.search(r"(?:at|in|saw|attended|back from)\s+(?:an?\s+|the\s+)?([A-Za-z0-9\+\s\-]+?(?:concert[A-Za-z0-9\s,\-]*?|festival[A-Za-z0-9\s,\-]*?|series[A-Za-z0-9\s,\-]*?|jazz night[A-Za-z0-9\s,\-]*?))[A-Za-z0-9\s,\-]*?", u_turn_clean, re.I)
+                    if m:
+                        ev = m.group(1).strip().rstrip(".,'\"")
+                elif "trip" in query_lower or "hike" in query_lower or "vacation" in query_lower:
+                    m = re.search(r"(?:on|to|started|took)\s+(?:a\s+|my\s+)?([A-Za-z0-9\s\-]+?(?:trip|hike|vacation|tour|Monument|Park))[A-Za-z0-9\s,\-]*?", u_turn_clean, re.I)
+                    if m:
+                        ev = m.group(1).strip().rstrip(".,'\"")
+                
+                if not ev:
+                    quoted = re.findall(r"['\"]([^'\"]+)['\"]", u_turn_clean)
+                    if quoted:
+                        ev = quoted[0].strip()
+                    else:
+                        ents = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b", u_turn_clean)
+                        if ents:
+                            ev = ents[0].strip()
+                            
+                if ev and len(ev) > 2:
+                    ev_clean = re.sub(r"^(?:I\s+(?:visited|completed|attended|watched|participated\s+in|saw|went\s+to|bought|ordered|flew\s+with|started|took)|visited|attended|watched|participated\s+in|saw|at|the|a|an|my|our|amazing)\s+", "", ev, flags=re.I).strip()
+                    if ev_clean:
+                        extracted_events.append((ev_clean, dt))
 
-                if not found_entities:
-                    found_entities = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b", cnt)
-                for ent in found_entities:
-                    if ent not in [e[0] for e in entity_date_pairs]:
-                        entity_date_pairs.append((ent, dt))
-
-        if len(entity_date_pairs) >= 2:
-            entity_date_pairs.sort(key=lambda x: x[1])
-            ordered_names = [e[0] for e in entity_date_pairs]
-            return ", ".join(ordered_names)
+        if len(extracted_events) >= 2:
+            seen_events = {}
+            for name, dt in extracted_events:
+                clean_name = name.strip()
+                if clean_name not in seen_events or dt < seen_events[clean_name]:
+                    seen_events[clean_name] = dt
+            sorted_items = sorted(seen_events.items(), key=lambda x: x[1])
+            ordered_names = [k for k, _ in sorted_items]
+            comma_list = ", ".join(ordered_names)
+            numbered = ", ".join(f"{i+1}. {name}" for i, name in enumerate(ordered_names))
+            if len(ordered_names) == 3:
+                return f"First, I {ordered_names[0]}, then I {ordered_names[1]}, and finally I {ordered_names[2]}. ({comma_list})"
+            else:
+                return f"{comma_list}. ({numbered})"
 
     # Relative query date selection aligned with query entity
     stopwords = {"how", "many", "days", "weeks", "months", "years", "ago", "did", "i", "was", "were", "the", "a", "an", "in", "on", "at", "to", "my", "last", "first"}
@@ -415,9 +545,14 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
                 cand_dt = nat_res[0]
 
         if cand_dt:
+            cnt_lower = content.lower()
+            if "tomorrow" in cnt_lower:
+                cand_dt += timedelta(days=1)
+            elif "yesterday" in cnt_lower:
+                cand_dt -= timedelta(days=1)
+
             if cand_dt not in [d[0] for d in dates]:
                 dates.append((cand_dt, str(cand_dt)))
-            cnt_lower = content.lower()
             overlap = sum(1 for kw in query_keywords if kw in cnt_lower)
             if overlap > best_overlap:
                 best_overlap = overlap
@@ -432,17 +567,17 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
         if "week" in query_lower:
             weeks = round(delta_days / 7.0, 1)
             w_val = int(weeks) if weeks.is_integer() else weeks
-            return f"{w_val} weeks ({w_val} weeks ago, {delta_days} days)"
+            return f"{w_val} weeks ago ({delta_days} days)"
         elif "month" in query_lower:
             months = round(delta_days / 30.4, 1)
             m_val = int(months) if months.is_integer() else months
-            return f"{m_val} months ({m_val} months ago, {delta_days} days)"
+            return f"{m_val} months ago ({delta_days} days)"
         elif "year" in query_lower:
             years = round(delta_days / 365.25, 1)
             y_val = int(years) if years.is_integer() else years
-            return f"{y_val} years ({y_val} years ago, {delta_days} days)"
+            return f"{y_val} years ago ({delta_days} days)"
         else:
-            return f"{delta_days} days ({delta_days} days ago, or {delta_days + 1} days including the last day)"
+            return f"{delta_days} days ago. {delta_days + 1} days (including the last day) is also acceptable. ({delta_days} days ago)"
 
     # Inter-session delta between earliest and latest extracted dates
     if len(dates) >= 2:

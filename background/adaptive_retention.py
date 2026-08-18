@@ -143,8 +143,8 @@ def record_access(
         )
         # Do NOT commit here — let the caller manage the transaction.
         # Explicit commits break the Saga coordinator's rollback semantics.
-    except sqlite3.OperationalError:
-        pass  # table may not exist yet
+    except (sqlite3.OperationalError, sqlite3.IntegrityError):
+        pass  # table may not exist yet or note_id is a synthetic/virtual result
 
 
 def compute_adaptive_halflife(

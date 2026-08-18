@@ -410,7 +410,7 @@ _CE_CHUNK_MODEL_ERROR = None  # timestamp of last failed load attempt
 _CE_CHUNK_RETRY_COOLDOWN = 60.0  # seconds before retrying after failure
 _CE_CHUNK_SIZE = 150
 _CE_CHUNK_OVERLAP = 30
-_CE_MAX_SCORED_CHUNKS = 8
+_CE_MAX_SCORED_CHUNKS = 2
 
 
 def _chunk_text(text: str, chunk_size: int = _CE_CHUNK_SIZE, overlap: int = _CE_CHUNK_OVERLAP) -> list[str]:
@@ -463,20 +463,22 @@ def _max_over_chunk_scores(raw_scores, counts: list, start: int = 0) -> tuple[li
 
 
 def _get_best_device() -> str:
-    """Determine the best hardware accelerator available for PyTorch."""
+    """Return the best available PyTorch device for CE inference."""
     try:
         import torch
+
         if torch.cuda.is_available():
             return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
+        if torch.backends.mps.is_available():
+            # MPS has high per-call overhead for tiny batches; CPU is faster for <20 pairs
+            return "cpu"
     except Exception:
         pass
     return "cpu"
 
 
 def _get_ce_chunk_model():
-    """Lazily load the cross-encoder model for chunk-level reranking.
+    """Load and cache the chunk-level CrossEncoder model.
 
     Uses ms-marco-MiniLM-L-12-v2 — 33M params, accurate for
     the current pipeline. bge-reranker-v2-m3 was tested but is 11x slower
@@ -557,10 +559,8 @@ def _apply_ce_chunk_rerank(
         logger.warning("_apply_ce_chunk_rerank: CE model unavailable, skipping")
         return scored_results
 
-    # --- REDUCE CANDIDATES: only rerank top-50 (not top-300) ---
-    # The CE model is the bottleneck (7s for 300 candidates). Limiting to 50
-    # reduces latency ~6x while keeping the gold result in the rerank pool.
-    effective_top_k = min(top_k, 50)
+    # --- REDUCE CANDIDATES: only rerank top-15 with fast inference ---
+    effective_top_k = min(top_k, 15)
     head = scored_results[:effective_top_k]
     tail = scored_results[effective_top_k:]
     logger.debug("_apply_ce_chunk_rerank: scoring %d candidates (of %d total)", len(head), len(scored_results))

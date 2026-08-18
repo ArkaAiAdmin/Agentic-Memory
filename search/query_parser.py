@@ -1273,7 +1273,7 @@ def _graph_rag_expand(query: str, db_path: Path, conn=None) -> list[str]:
             _min_occ_q = 2
     except ImportError:
         return []
-    query_entities = extract_entities(query, min_occurrences=1)
+    query_entities = extract_entities(query, min_occurrences=1, use_spacy=False)
     if not query_entities:
         return []
     _pooled_conn = None

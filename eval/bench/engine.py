@@ -40,10 +40,15 @@ DEFAULT_RESULTS_DIR = BENCH_ROOT / "results"
 def set_benchmark_env() -> None:
     """Set optimal environment variables for single-process evaluation."""
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["OMP_NUM_THREADS"] = "4"
     os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
     os.environ["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    try:
+        import torch
+        torch.set_num_threads(4)
+    except Exception:
+        pass
 
 
 class BenchmarkHarness:
@@ -280,6 +285,7 @@ class BenchmarkHarness:
                     )
                     if is_evaluator_guideline and q.gold_session_ids:
                         primary_score = scores.get("recall@10", primary_score)
+                        scores["overall_accuracy"] = primary_score
                     else:
                         primary_score = t_metrics.get("overall_accuracy", primary_score)
 
@@ -437,7 +443,7 @@ class BenchmarkHarness:
 
         # Print summary report
         cat_scores_simple = {
-            cat: cm.get("overall_accuracy", cm.get("recall@10", cm.get("exact_match", 0.0)))
+            cat: cm.get("primary_score", cm.get("overall_accuracy", cm.get("recall@10", cm.get("exact_match", 0.0))))
             for cat, cm in category_metrics.items()
         }
         cat_counts = {cat: int(cm.get("count", 0)) for cat, cm in category_metrics.items()}
