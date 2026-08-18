@@ -1106,10 +1106,17 @@ def _top_recent_tags(db_path, limit: int = 5, tenant_id: str = "default") -> lis
         conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
         try:
             rows = conn.execute(
-                "\n                SELECT tags, MAX(observed_at) as latest\n                FROM tenant_memories\n                WHERE tags != '[]' AND tags IS NOT NULL\n                GROUP BY tags\n                ORDER BY latest DESC\n                LIMIT ?\n            ",
+                """
+                SELECT tags, MAX(observed_at) as latest
+                FROM tenant_memories
+                WHERE tags != '[]' AND tags IS NOT NULL
+                GROUP BY tags
+                ORDER BY latest DESC
+                LIMIT ?
+            """,
                 (limit,),
             ).fetchall()
-            return [{"tag": r[0], "latest_observed_at": r[1]} for r in rows]
+            return [{"tag": r[0], "latest_observed_at": r[1] if len(r) > 1 else ""} for r in rows]
         finally:
             safe_close_db(conn)
     except (sqlite3.OperationalError, sqlite3.DatabaseError):

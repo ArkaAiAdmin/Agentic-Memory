@@ -33,11 +33,15 @@ def _fts_search(
     prefilter_ids: set[str] | None = None,
     recency_order: bool = False,
     tenant_id: str | None = None,
+    include_global: bool = True,
 ) -> list:
     _base_filter = repo_filter + tag_filter_sql
     _tenant_params = ()
     if tenant_id:
-        _base_filter = _base_filter + " AND m.tenant_id = ?"
+        if include_global:
+            _base_filter = _base_filter + " AND (m.tenant_id = ? OR m.tenant_id = 'default')"
+        else:
+            _base_filter = _base_filter + " AND m.tenant_id = ?"
         _tenant_params = (tenant_id,)
 
     if prefilter_ids:

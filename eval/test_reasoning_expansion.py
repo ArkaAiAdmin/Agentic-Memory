@@ -158,9 +158,8 @@ class TestReasoningExpandInFts:
 
         captured_fts_queries = []
 
-        def _capture_fts_search(db, fts_query, limit, has_fitness, repo_filter="",
-                                tag_filter_sql="", tag_filter_params=(), category=None,
-                                prefilter_ids=None):
+        def _capture_fts_search(*args, **kwargs):
+            fts_query = args[1] if len(args) > 1 else kwargs.get("fts_query", "")
             captured_fts_queries.append(fts_query)
             return []
 

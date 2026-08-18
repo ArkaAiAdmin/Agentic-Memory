@@ -247,8 +247,8 @@ def _entity_name_to_memory_id(
     found: list[str] = []
     if not entity_name:
         return found
+    # 1. Fast indexed join through kg_facts (0.01ms)
     try:
-        # 1. Fast indexed join through kg_facts (0.01ms)
         rows = db.execute(
             """
             SELECT f.source_memory 
@@ -265,10 +265,20 @@ def _entity_name_to_memory_id(
                 found.append(mid)
                 if len(found) >= 3:
                     return found
+    except Exception:
+        pass
 
-        # 2. Fast exact slug lookup fallback
-        if not found:
-            exact_slugs = [f"sessions/{entity_name}", f"notes/{entity_name}", entity_name]
+    # 2. Fast exact slug lookup fallback
+    if not found:
+        try:
+            exact_slugs = [
+                f"lessons/{entity_name}",
+                f"decisions/{entity_name}",
+                f"projects/{entity_name}",
+                f"sessions/{entity_name}",
+                f"notes/{entity_name}",
+                entity_name,
+            ]
             ph = ",".join("?" for _ in exact_slugs)
             exact_rows = db.execute(
                 f"SELECT id FROM memories WHERE id IN ({ph}) AND deleted_at IS NULL LIMIT 3",
@@ -278,8 +288,22 @@ def _entity_name_to_memory_id(
                 mid = row[0] if not isinstance(row, sqlite3.Row) else row["id"]
                 if mid and mid not in seen_ids and mid not in found:
                     found.append(mid)
-    except sqlite3.Error:
-        pass
+        except Exception:
+            pass
+
+    # 3. Prefix slug lookup fallback (e.g. lessons/sqlite-guide for entity 'sqlite')
+    if not found:
+        try:
+            prefix_rows = db.execute(
+                f"SELECT id FROM memories WHERE (id LIKE ? OR id LIKE ?) AND deleted_at IS NULL LIMIT 3",
+                (f"%/{entity_name}-%", f"%/{entity_name}_%"),
+            ).fetchall()
+            for row in prefix_rows:
+                mid = row[0] if not isinstance(row, sqlite3.Row) else row["id"]
+                if mid and mid not in seen_ids and mid not in found:
+                    found.append(mid)
+        except Exception:
+            pass
     return found
 
 
@@ -340,7 +364,16 @@ def _text_multi_hop_traversal(
                     "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL LIMIT ?",
                     (f'"{clean}"', limit),
                 ).fetchall()
-                return fts_rows or []
+                if fts_rows:
+                    return fts_rows
+            except Exception:
+                pass
+            try:
+                like_rows = db.execute(
+                    f"SELECT id, content FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT ?",
+                    (f"%{clean}%", limit),
+                ).fetchall()
+                return like_rows or []
             except Exception:
                 return []
 

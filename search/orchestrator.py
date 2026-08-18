@@ -1909,6 +1909,7 @@ def search_memories(
                             category=category or None,
                             prefilter_ids=None,
                             tenant_id=tenant_id,
+                            include_global=include_global,
                         )
                     except Exception as _fts_exc:
                         _phase_inc("search.fts", _fts_exc)
@@ -1949,6 +1950,7 @@ def search_memories(
                     category=category or None,
                     prefilter_ids=None,
                     tenant_id=tenant_id,
+                    include_global=include_global,
                 )
                 _record_phase_latency("search.fts", _t0)
 
@@ -2028,7 +2030,10 @@ def search_memories(
         # Phase 8: Temporal filtering
         if not include_invalid or as_of is not None:
             if "valid_to" in cols:
-                tenant_clause = " AND tenant_id = ?" if tenant_id else ""
+                if tenant_id:
+                    tenant_clause = " AND (tenant_id = ? OR tenant_id = 'default')" if include_global else " AND tenant_id = ?"
+                else:
+                    tenant_clause = ""
                 if as_of is not None:
                     if isinstance(as_of, str):
                         as_of_iso = as_of[:19].replace("Z", "")

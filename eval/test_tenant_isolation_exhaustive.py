@@ -133,6 +133,14 @@ def _insert(
             "VALUES (?, ?, ?, ?, '[]', ?, ?, ?, 3, '{}', ?)",
             (note_id, source_file, content, category, now, now, now, tenant_id),
         )
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO memories_fts (rowid, id, content, tags) "
+                "VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, '[]')",
+                (note_id, note_id, content),
+            )
+        except Exception:
+            pass
         conn.commit()
 
 
@@ -263,11 +271,12 @@ class TestSearchIsolation:
 
     def test_global_true_returns_default(self, db_path: Path):
         _insert(db_path, "lessons/global-tip", "Global best practice", tenant_id="default")
-        _insert(db_path, "lessons/priv-b", "Private B", tenant_id="agent-b")
+        _insert(db_path, "lessons/priv-b", "Private B best practice", tenant_id="agent-b")
         _set_agent("agent-b")
         try:
             r = search_memories(db_path=db_path, query="best practice",
-                                limit=20, include_global=True, light=True)
+                                limit=20, include_global=True, light=True,
+                                tenant_id="agent-b")
             cts = [x.get("content", "") for x in r.get("results", [])]
             sfs = [x.get("source_file", "") for x in r.get("results", [])]
             assert any("Global best practice" in c for c in cts)
