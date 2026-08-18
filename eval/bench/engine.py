@@ -199,7 +199,7 @@ class BenchmarkHarness:
                 retrieved_ids = [r["id"] for r in retrieved_items]
 
                 # Safe ID-to-content lookup avoiding zip misalignment
-                top_context_ids = retrieved_ids[:15]
+                top_context_ids = retrieved_ids[:25]
                 top10_ids = retrieved_ids[:10]
                 id_to_content = {}
                 id_to_created = {}
@@ -303,11 +303,12 @@ class BenchmarkHarness:
                     phase_latencies=phase_latencies,
                     phase_errors=phase_errors,
                 )
+                scores["primary_score"] = primary_score
                 results.append(res)
                 per_category_scores.setdefault(q.category, []).append(scores)
                 per_category_acc.setdefault(q.category, []).append(primary_score)
 
-                running_overall = sum(r.scores.get("overall_accuracy", r.scores.get("recall@10", 0.0)) for r in results) / len(results)
+                running_overall = sum(sum(scs) for scs in per_category_acc.values()) / len(results)
                 running_type_acc = {
                     cat: sum(scs) / len(scs) if scs else 0.0
                     for cat, scs in per_category_acc.items()

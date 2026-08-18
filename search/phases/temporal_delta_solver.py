@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 # Query patterns asking for time deltas and chronological order
 _DELTA_PATTERNS = [
     re.compile(r"\b(how\s+many\s+(days|weeks|months|years)\s+(?:did\s+it\s+take|did\s+i|have\s+i|was\s+i|passed|between|elapsed|from|ago|before|after|to\s+receive|to\s+arrive))\b", re.IGNORECASE),
-    re.compile(r"\b(time\s+difference|time\s+gap|duration|how\s+long\s+after|how\s+long\s+between|how\s+long\s+ago|how\s+long\s+have\s+i|how\s+long\s+did\s+i)\b", re.IGNORECASE),
-    re.compile(r"\b(how\s+long\s+(?:did\s+i|have\s+i|was\s+i|did\s+it\s+take|have\s+i\s+been|was\s+the|will\s+it))\b", re.IGNORECASE),
-    re.compile(r"\b(how\s+many\s+days\s+(?:did\s+it\s+take|for.*?to\s+arrive|to\s+receive))\b", re.IGNORECASE),
+    re.compile(r"\b(time\s+difference|time\s+gap|duration|how\s+long\s+after|how\s+long\s+between|how\s+long\s+ago|how\s+long\s+have\s+i|how\s+long\s+did\s+i|how\s+long\s+had\s+i)\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+long\s+(?:did\s+i|have\s+i|had\s+i|was\s+i|did\s+it\s+take|have\s+i\s+been|had\s+i\s+been|was\s+the|will\s+it))\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+many\s+days\s+(?:did\s+it\s+take|for.*?to\s+arrive|to\s+receive|had\s+passed|before))\b", re.IGNORECASE),
     re.compile(r"\b(how\s+much\s+(?:earlier|later))\b", re.IGNORECASE),
-    re.compile(r"\b(days|weeks|months|years)\s+(passed|ago|elapsed|prior)\b", re.IGNORECASE),
-    re.compile(r"\b(order\s+of|chronological|earliest\s+to\s+latest|first\s+to\s+last)\b", re.IGNORECASE),
+    re.compile(r"\b(days|weeks|months|years)\s+(passed|ago|elapsed|prior|before|since)\b", re.IGNORECASE),
+    re.compile(r"\b(order\s+of|chronological|earliest\s+to\s+latest|first\s+to\s+last|which\s+.*?first|which\s+.*?earlier)\b", re.IGNORECASE),
 ]
 
 
@@ -116,21 +116,42 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
         )
 
     if m_transit:
+        m_item = re.search(r"take\s+for\s+(?:me\s+to\s+receive\s+)?(?:the\s+|my\s+|a\s+)?(.*?)\s+(?:to\s+arrive|after)", query, re.I)
+        item_raw = m_item.group(1).strip() if m_item else ""
+        item_words = [w.lower() for w in re.findall(r"\w+", item_raw) if len(w) > 2 and w.lower() not in {"new", "the", "my", "for", "me", "to", "receive", "take", "days"}]
+        
         order_dates = []
         arrival_dates = []
-        for item in candidates[:15]:
+        for item in candidates[:20]:
             cnt = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else ""
             cnt_lower = cnt.lower()
             ts_str = str(item[4]) if isinstance(item, (list, tuple)) and len(item) > 4 and item[4] else ""
-            d_res = parse_natural_or_iso_date(cnt)
-            if not d_res and ts_str:
-                d_res = (parse_iso_date(ts_str[:10]), ts_str[:10])
+            
+            sentences = re.split(r"(?<=[.!?\n])\s+", cnt)
+            for s in sentences:
+                s_lower = s.lower()
+                if item_words and not any(w in s_lower for w in item_words):
+                    continue
+                d_res = parse_natural_or_iso_date(s) or (parse_iso_date(ts_str[:10]), ts_str[:10]) if ts_str else None
+                if d_res and d_res[0]:
+                    if any(kw in s_lower for kw in ("ordered", "bought", "purchased", "order placed")):
+                        order_dates.append(d_res[0])
+                    if any(kw in s_lower for kw in ("arrived", "received", "delivered", "arrival", "got it")):
+                        arrival_dates.append(d_res[0])
 
-            if d_res and d_res[0]:
-                if any(kw in cnt_lower for kw in ("ordered", "bought", "purchased", "order placed")):
-                    order_dates.append(d_res[0])
-                if any(kw in cnt_lower for kw in ("arrived", "received", "delivered", "arrival")):
-                    arrival_dates.append(d_res[0])
+        if not order_dates or not arrival_dates:
+            for item in candidates[:15]:
+                cnt = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else ""
+                cnt_lower = cnt.lower()
+                ts_str = str(item[4]) if isinstance(item, (list, tuple)) and len(item) > 4 and item[4] else ""
+                d_res = parse_natural_or_iso_date(cnt)
+                if not d_res and ts_str:
+                    d_res = (parse_iso_date(ts_str[:10]), ts_str[:10])
+                if d_res and d_res[0]:
+                    if any(kw in cnt_lower for kw in ("ordered", "bought", "purchased", "order placed")):
+                        order_dates.append(d_res[0])
+                    if any(kw in cnt_lower for kw in ("arrived", "received", "delivered", "arrival", "got it")):
+                        arrival_dates.append(d_res[0])
 
         if order_dates and arrival_dates:
             order_dt = min(order_dates)
@@ -139,19 +160,44 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
             if delta_days > 0:
                 return f"{delta_days} days (or {delta_days + 1} days including the last day)"
 
-    m = re.search(r"between\s+(?:when\s+)?(.*?)\s+and\s+(?:when\s+)?(.*)", query, re.IGNORECASE)
-    if not m:
-        m = re.search(r"(?:passed\s+between|time\s+between)\s+(.*?)\s+and\s+(.*)", query, re.IGNORECASE)
-    if not m:
+    # 2. Binary precedence queries ("Which event happened first, A or B?" / "Which did I join first, A or B?")
+    m_prec = re.search(r"which\s+(?:event\s+)?(?:happened|did\s+i\s+(?:join|read|finish|take|attend|visit))\s+first[,\s]+(?:the\s+|my\s+)?(.*?)\s+or\s+(?:the\s+|my\s+)?(.*?)\??$", query, re.IGNORECASE)
+    if not m_prec:
+        m_prec = re.search(r"which\s+(?:one\s+)?(?:did\s+i|happened)\s+(?:first|earlier)[,\s]+(.*)\s+or\s+(.*)\??$", query, re.IGNORECASE)
+
+    # 3. Inter-event interval queries
+    m = None
+    event_a_phrase = ""
+    event_b_phrase = ""
+
+    if m_prec:
+        event_a_phrase = m_prec.group(1).strip().rstrip("?")
+        event_b_phrase = m_prec.group(2).strip().rstrip("?")
+    else:
+        # Check various inter-event phrasings
+        patterns = [
+            re.compile(r"(?:passed\s+between|time\s+between|between)\s+(?:the\s+time\s+|the\s+day\s+|when\s+)?(.*?)\s+and\s+(?:the\s+time\s+|the\s+day\s+|when\s+)?(.*)", re.I),
+            re.compile(r"(?:passed\s+since|time\s+since|since)\s+(.*?)\s+when\s+(.*)", re.I),
+            re.compile(r"(?:days|weeks|months|time)\s+before\s+(.*?)\s+(?:did\s+i|i)\s+(.*)", re.I),
+            re.compile(r"how\s+long\s+(?:did\s+i|had\s+i\s+been|was\s+i)\s+(.*?)\s+before\s+(.*)", re.I),
+            re.compile(r"how\s+long\s+(?:did\s+i|had\s+i\s+been|was\s+i)\s+(.*?)\s+when\s+(.*)", re.I),
+        ]
+        for pat in patterns:
+            m_cand = pat.search(query)
+            if m_cand:
+                event_a_phrase = m_cand.group(1).strip().rstrip("?")
+                event_b_phrase = m_cand.group(2).strip().rstrip("?")
+                m = m_cand
+                break
+
+    if not event_a_phrase or not event_b_phrase:
         return None
-    event_a_phrase = m.group(1).strip().rstrip("?")
-    event_b_phrase = m.group(2).strip().rstrip("?")
 
     def find_best_date_for_phrase(phrase: str) -> tuple[datetime, str] | None:
         stopwords = {
             "i", "started", "working", "on", "the", "module", "for", "our", "system",
             "began", "developing", "a", "an", "to", "in", "of", "and", "when", "day",
-            "visit", "my", "at", "first", "last", "was"
+            "visit", "my", "at", "first", "last", "was", "did", "event", "time"
         }
         words = set(re.findall(r"\w+", phrase.lower())) - stopwords
         if not words:
@@ -161,7 +207,7 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
         best_overlap = 0
         best_str = ""
 
-        for item in candidates[:10]:
+        for item in candidates[:15]:
             cnt = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else ""
             ts_str = str(item[4]) if isinstance(item, (list, tuple)) and len(item) > 4 and item[4] else ""
 
@@ -180,6 +226,10 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
 
             cnt_words = set(re.findall(r"\w+", cnt.lower()))
             overlap = len(words & cnt_words)
+            # Boost if exact phrase substring appears in candidate
+            if phrase.lower() in cnt.lower():
+                overlap += 10
+
             if overlap > best_overlap:
                 best_overlap = overlap
                 best_dt = d_res[0]
@@ -191,6 +241,13 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
     res_b = find_best_date_for_phrase(event_b_phrase)
 
     if res_a and res_b and res_a[0] != res_b[0]:
+        # Handle binary precedence formatting
+        if m_prec:
+            if res_a[0] < res_b[0]:
+                return f"{event_a_phrase.capitalize()} happened first (on {res_a[0].strftime('%B %-d, %Y')}, before {event_b_phrase} on {res_b[0].strftime('%B %-d, %Y')})."
+            else:
+                return f"{event_b_phrase.capitalize()} happened first (on {res_b[0].strftime('%B %-d, %Y')}, before {event_a_phrase} on {res_a[0].strftime('%B %-d, %Y')})."
+
         delta_days = abs((res_b[0] - res_a[0]).days)
         fmt_a = res_a[0].strftime("%B %-d, %Y")
         fmt_b = res_b[0].strftime("%B %-d, %Y")
@@ -221,7 +278,9 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
     as_of_dt = None
     if as_of is not None:
         try:
-            if isinstance(as_of, (int, float)):
+            if isinstance(as_of, datetime):
+                as_of_dt = as_of if as_of.tzinfo else as_of.replace(tzinfo=timezone.utc)
+            elif isinstance(as_of, (int, float)):
                 as_of_dt = datetime.fromtimestamp(as_of, tz=timezone.utc)
             elif isinstance(as_of, str):
                 as_of_dt = parse_iso_date(as_of)

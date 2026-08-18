@@ -41,19 +41,20 @@ def _fts_search(
         _params = tuple(prefilter_ids)
     else:
         _params = ()
+    try:
+        db.execute("SELECT 1 FROM tenant_memories LIMIT 0")
+        _target_table = "tenant_memories"
+    except Exception:
+        _target_table = "memories"
+
     _order = "m.observed_at DESC" if recency_order else "fts.rank"
     params = (fts_query,) + tag_filter_params + _params
-    # M5 fix: select 13 columns matching the canonical tuple shape
-    # (id, content, source_file, tags, created, rank, fitness, importance,
-    #  pinned, last_accessed, metadata, access_count, score).
-    # Removed m.supersedes — accessed defensively at r[13] but always None
-    # for FTS results; canonical 13-col form already handles it.
     res = db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
         "             m.score\n"
         "      FROM memories_fts fts\n"
-        "      JOIN tenant_memories m ON m.id = fts.id\n"
+        f"      JOIN {_target_table} m ON m.id = fts.id\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
         f"      ORDER BY {_order}\n"
         "      LIMIT ?",
@@ -67,7 +68,7 @@ def _fts_search(
             f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
             "             m.score\n"
             "      FROM memories_fts fts\n"
-            "      JOIN tenant_memories m ON m.id = fts.id\n"
+            f"      JOIN {_target_table} m ON m.id = fts.id\n"
             f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter_fallback}\n"
             f"      ORDER BY {_order}\n"
             "      LIMIT ?",

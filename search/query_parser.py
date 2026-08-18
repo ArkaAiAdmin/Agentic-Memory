@@ -77,7 +77,8 @@ _STOP_WORDS = frozenset({
     'just', 'because', 'as', 'until', 'while', 'about', 'between',
     'through', 'during', 'before', 'after', 'above', 'below', 'up',
     'down', 'out', 'off', 'over', 'under', 'again', 'further', 'once',
-    'here', 'there', 'any', 'also',
+    'here', 'there', 'any', 'also', 'many', 'much', 'spend', 'spent',
+    'total', 'combined', 'different', 'since', 'start', 'take', 'took',
     # Removed: type, kind, sort, want, looking, tell, show, about
     # These are query-intent words that matter for search memory queries.
     # "what type of database" needs "type" to work.
@@ -88,6 +89,9 @@ _STOP_WORDS = frozenset({
 # E.g. "container" and "containerize" have different porter stems, but
 # we want queries containing either to match documents containing either.
 _WORD_FORM_EXPANSIONS: dict[str, list[str]] = {
+    'doctor': ['doctor', 'doctors', 'physician', 'physicians', 'specialist', 'specialists', 'dermatologist', 'ent', 'dr', 'appointment', 'clinic'],
+    'bike': ['bike', 'bikes', 'cycling', 'bicycle', 'bicycles', 'cyclist', 'tune-up', 'pedal', 'helmet'],
+    'camp': ['camping', 'camp', 'campground', 'campsite', 'hike', 'hiking', 'backpacking'],
     'container': ['container', 'containers', 'containerize', 'containerized', 'containerizing', 'containerization'],
     'deploy': ['deploy', 'deploys', 'deployed', 'deploying', 'deployment', 'deployments'],
     'orchestrat': ['orchestrate', 'orchestrates', 'orchestrated', 'orchestrating', 'orchestration', 'orchestrator', 'orchestrators'],

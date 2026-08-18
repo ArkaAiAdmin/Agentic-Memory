@@ -37,6 +37,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple, Optional, cast
 
@@ -788,6 +789,8 @@ def _temporal_compare(
     query: str,
     limit: int,
     repo_filter: str = "",
+    as_of: float | str | None = None,
+    tenant_id: str | None = None,
 ) -> list:
     """Phase 10.5: Temporal comparison for ordering, recency, and conflicting queries.
 
@@ -798,6 +801,84 @@ def _temporal_compare(
     from search.config import get_search_config
     _temporal_compare_boost_cached = get_search_config().temporal_compare_boost
     import re as _re
+    from datetime import datetime, timezone, timedelta
+
+    # Relative past date anchor check (e.g. "What did I buy 10 days ago?", "milestone 4 weeks ago")
+    if as_of is not None:
+        as_of_dt = None
+        try:
+            if isinstance(as_of, (int, float)):
+                as_of_dt = datetime.fromtimestamp(as_of, tz=timezone.utc)
+            elif isinstance(as_of, str):
+                as_of_dt = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+        if as_of_dt:
+            m_num_days = _re.search(r"(\d+)\s+days?\s+ago", query, _re.I)
+            m_num_weeks = _re.search(r"(\d+)\s+weeks?\s+ago", query, _re.I)
+            target_dt = None
+            tolerance = 2
+
+            if m_num_days:
+                target_dt = as_of_dt - timedelta(days=int(m_num_days.group(1)))
+                tolerance = 2
+            elif m_num_weeks:
+                target_dt = as_of_dt - timedelta(days=int(m_num_weeks.group(1)) * 7)
+                tolerance = 3
+            else:
+                word_to_num = {"a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "couple of": 2, "couple": 2}
+                for word, n in word_to_num.items():
+                    if f"{word} weeks ago" in query.lower() or f"{word} week ago" in query.lower():
+                        target_dt = as_of_dt - timedelta(days=n * 7)
+                        tolerance = 3
+                        break
+                    if f"{word} days ago" in query.lower() or f"{word} day ago" in query.lower():
+                        target_dt = as_of_dt - timedelta(days=n)
+                        tolerance = 2
+                        break
+
+            if target_dt:
+                d_start = (target_dt - timedelta(days=tolerance)).strftime("%Y-%m-%d")
+                d_end = (target_dt + timedelta(days=tolerance)).strftime("%Y-%m-%d")
+                q_keywords = [
+                    w.lower() for w in _re.findall(r"[a-z0-9_\-\$]{3,}", query.lower())
+                    if w.lower() not in {"what", "which", "where", "when", "how", "did", "buy", "bought", "mention", "mentioned", "ago", "days", "weeks", "the", "for"}
+                ]
+                sql_params: list[Any] = [d_start, d_end]
+                tenant_clause = ""
+                if tenant_id:
+                    tenant_clause = "AND m.tenant_id = ? "
+                    sql_params.append(tenant_id)
+
+                kw_clauses = []
+                for kw in q_keywords[:3]:
+                    kw_clauses.append("m.content LIKE ?")
+                    sql_params.append(f"%{kw}%")
+
+                kw_sql = f"AND ({' OR '.join(kw_clauses)})" if kw_clauses else ""
+                try:
+                    time_rows = db.execute(
+                        f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                        f"FROM memories m "
+                        f"WHERE m.deleted_at IS NULL AND m.category = 'sessions' "
+                        f"AND DATE(m.created_at) BETWEEN ? AND ? {tenant_clause}{kw_sql} "
+                        f"ORDER BY m.created_at DESC LIMIT 5",
+                        tuple(sql_params),
+                    ).fetchall()
+                    if time_rows:
+                        new_res = []
+                        for tr in time_rows:
+                            new_res.append((
+                                tr[0], tr[1], tr[2], tr[3], tr[4],
+                                0, 1.0, 1.0, 5, 0, None, "{}", None,
+                            ))
+                        for r in results:
+                            if not any(r[0] == nr[0] for nr in new_res):
+                                new_res.append(r)
+                        return new_res[:limit]
+                except Exception:
+                    pass
 
     # Detect temporal comparison / ordering / recency patterns
     _TC_ORDERING_PATTERNS = [
@@ -1622,12 +1703,19 @@ def search_memories(
             repo_filter = f"{repo_filter} AND m.category = ?"
             _tag_filter_params.append(category)
         else:
-            # Detect session-related queries and include sessions
-            _session_keywords = {"session", "sprint", "incident", "retrospective",
-                                 "retro", "debug", "review", "pair", "planning",
-                                 "today", "yesterday", "last week", "this week"}
-            _q_lower = normalized_query.lower()
-            _is_session_query = any(kw in _q_lower for kw in _session_keywords)
+            # Detect episodic/conversational queries and tenant-isolated searches and include sessions
+            _session_keywords = {
+                "session", "sprint", "incident", "retrospective",
+                "retro", "debug", "review", "pair", "planning",
+                "today", "yesterday", "last week", "this week",
+                " i ", " my ", " me ", " we ", " our ", "did i",
+                "have i", "how many", "how much", "how long",
+                "what did", "where did", "when did", "who did",
+                "which", "what is", "what was", "what were", "where is",
+                "when is", "who is", "who was", "order of", "before", "after"
+            }
+            _q_padded = f" {normalized_query.lower()} "
+            _is_session_query = bool(tenant_id) or any(kw in _q_padded for kw in _session_keywords)
             if _is_session_query:
                 pass  # No filter — sessions are included
             else:
@@ -1888,37 +1976,56 @@ def search_memories(
         # Phase 8: Temporal filtering
         if not include_invalid or as_of is not None:
             if "valid_to" in cols:
+                tenant_clause = " AND tenant_id = ?" if tenant_id else ""
                 if as_of is not None:
-                    as_of_iso = time.strftime(
-                        "%Y-%m-%dT%H:%M:%S", time.gmtime(as_of)
-                    )
+                    if isinstance(as_of, str):
+                        as_of_iso = as_of[:19].replace("Z", "")
+                    elif isinstance(as_of, datetime):
+                        as_of_iso = as_of.strftime("%Y-%m-%dT%H:%M:%S")
+                    else:
+                        try:
+                            as_of_iso = time.strftime(
+                                "%Y-%m-%dT%H:%M:%S", time.gmtime(float(as_of))
+                            )
+                        except Exception:
+                            as_of_iso = str(as_of)[:19]
+
                     if "valid_from" in cols:
+                        sql_params = [as_of_iso, as_of_iso]
+                        if tenant_id: sql_params.append(tenant_id)
                         valid_ids = {
                             row[0]
                             for row in db.execute(
-                                "SELECT id FROM tenant_memories "
-                                "WHERE (valid_from IS NULL OR valid_from = '' OR valid_from <= ?) "
-                                "AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?)"
+                                "SELECT id FROM memories "
+                                "WHERE deleted_at IS NULL "
+                                "AND (valid_from IS NULL OR valid_from = '' OR valid_from <= ?) "
+                                f"AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?){tenant_clause}"
                                 " LIMIT 10000",
-                                (as_of_iso, as_of_iso),
+                                tuple(sql_params),
                             ).fetchall()
                         }
                     else:
+                        sql_params = [as_of_iso]
+                        if tenant_id: sql_params.append(tenant_id)
                         valid_ids = {
                             row[0]
                             for row in db.execute(
-                                "SELECT id FROM tenant_memories "
-                                "WHERE valid_to IS NULL OR valid_to = '' OR valid_to > ?"
+                                "SELECT id FROM memories "
+                                "WHERE deleted_at IS NULL "
+                                f"AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?){tenant_clause}"
                                 " LIMIT 10000",
-                                (as_of_iso,),
+                                tuple(sql_params),
                             ).fetchall()
                         }
                 else:
+                    sql_params = [tenant_id] if tenant_id else []
                     valid_ids = {
                         row[0]
                         for row in db.execute(
-                            "SELECT id FROM tenant_memories WHERE valid_to IS NULL OR valid_to = ''"
-                            " LIMIT 10000"
+                            "SELECT id FROM memories WHERE deleted_at IS NULL "
+                            f"AND (valid_to IS NULL OR valid_to = ''){tenant_clause}"
+                            " LIMIT 10000",
+                            tuple(sql_params),
                         ).fetchall()
                     }
                 if not valid_ids:
@@ -2064,7 +2171,7 @@ def search_memories(
         if results_to_display:
             _t0_tc = time.time()
             try:
-                results_to_display = _temporal_compare(db, results_to_display, query, limit, repo_filter=repo_filter)
+                results_to_display = _temporal_compare(db, results_to_display, query, limit, repo_filter=repo_filter, as_of=as_of, tenant_id=tenant_id)
             except Exception as _tc_exc:
                 _phase_inc("search.temporal_compare", _tc_exc)
                 logger.debug("temporal_compare failed (degraded): %s", _tc_exc)
@@ -2356,7 +2463,7 @@ def search_memories(
         return result
     except Exception as e:
         _phase_inc("search.orchestrator", e)
-        logger.warning("search_memories failed: %s", e)
+        logger.exception("search_memories failed: %s", e)
         return {
             "results": [],
             "count": 0,

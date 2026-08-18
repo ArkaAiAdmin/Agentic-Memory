@@ -61,6 +61,23 @@ def extract_entity_attribute(query: str, candidates: list[tuple]) -> str | None:
                         matched_attrs.append(extracted)
                     break
 
+    # Platform / Entity Superlative (e.g. which social media platform did I gain the most followers on)
+    if "which" in query_lower and ("most" in query_lower or "highest" in query_lower or "best" in query_lower):
+        if "platform" in query_lower or "social media" in query_lower:
+            platform_counts = {}
+            for item in candidates[:15]:
+                content = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 and item[1] is not None else str(item)
+                for s in re.split(r"(?<=[.!?])\s+", content):
+                    s_lower = s.lower()
+                    for p in ["tiktok", "instagram", "twitter", "facebook", "youtube", "linkedin"]:
+                        if p in s_lower and "follower" in s_lower:
+                            m = re.search(r"(\d+(?:,\d+)?)\s+followers?", s, re.I)
+                            if m:
+                                count = float(m.group(1).replace(",", ""))
+                                platform_counts[p.capitalize() if p != "tiktok" else "TikTok"] = count
+            if platform_counts:
+                return max(platform_counts.items(), key=lambda x: x[1])[0]
+
     if len(matched_attrs) > 1:
         return " and ".join(matched_attrs)
     elif len(matched_attrs) == 1:
