@@ -820,6 +820,7 @@ def _temporal_compare(
         if as_of_dt:
             m_num_days = _re.search(r"(\d+)\s+days?\s+ago", query, _re.I)
             m_num_weeks = _re.search(r"(\d+)\s+weeks?\s+ago", query, _re.I)
+            m_num_months = _re.search(r"(\d+)\s+months?\s+ago", query, _re.I)
             target_dt = None
             tolerance = 2
 
@@ -829,9 +830,16 @@ def _temporal_compare(
             elif m_num_weeks:
                 target_dt = as_of_dt - timedelta(days=int(m_num_weeks.group(1)) * 7)
                 tolerance = 3
+            elif m_num_months:
+                target_dt = as_of_dt - timedelta(days=int(m_num_months.group(1)) * 30)
+                tolerance = 8
             else:
                 word_to_num = {"a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "couple of": 2, "couple": 2}
                 for word, n in word_to_num.items():
+                    if f"{word} months ago" in query.lower() or f"{word} month ago" in query.lower():
+                        target_dt = as_of_dt - timedelta(days=n * 30)
+                        tolerance = 8
+                        break
                     if f"{word} weeks ago" in query.lower() or f"{word} week ago" in query.lower():
                         target_dt = as_of_dt - timedelta(days=n * 7)
                         tolerance = 3
@@ -854,19 +862,13 @@ def _temporal_compare(
                     tenant_clause = "AND m.tenant_id = ? "
                     sql_params.append(tenant_id)
 
-                kw_clauses = []
-                for kw in q_keywords[:3]:
-                    kw_clauses.append("m.content LIKE ?")
-                    sql_params.append(f"%{kw}%")
-
-                kw_sql = f"AND ({' OR '.join(kw_clauses)})" if kw_clauses else ""
                 try:
                     time_rows = db.execute(
                         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
                         f"FROM memories m "
                         f"WHERE m.deleted_at IS NULL AND m.category = 'sessions' "
-                        f"AND DATE(m.created_at) BETWEEN ? AND ? {tenant_clause}{kw_sql} "
-                        f"ORDER BY m.created_at DESC LIMIT 5",
+                        f"AND DATE(m.created_at) BETWEEN ? AND ? {tenant_clause}"
+                        f"ORDER BY m.created_at DESC LIMIT 10",
                         tuple(sql_params),
                     ).fetchall()
                     if time_rows:

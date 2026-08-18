@@ -26,6 +26,7 @@ from __future__ import annotations
 from search.phases.attribute_extractor import extract_entity_attribute
 from search.phases.contradiction_engine import resolve_candidate_contradictions
 from search.phases.math_aggregator import extract_and_aggregate_quantities
+from search.phases.sequence_solver import solve_sequence_order
 from search.phases.temporal_delta_solver import calculate_temporal_delta
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "extract_and_aggregate_quantities",
     "calculate_temporal_delta",
     "extract_entity_attribute",
+    "solve_sequence_order",
 ]

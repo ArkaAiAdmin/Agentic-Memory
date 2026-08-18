@@ -230,7 +230,15 @@ class BenchmarkHarness:
                 ]
 
 
-                # Solver phases (Math, Temporal Delta, Attribute Extraction)
+                # Solver phases (Sequence, Math, Temporal Delta, Attribute Extraction)
+                try:
+                    from search.phases.sequence_solver import solve_sequence_order
+                    seq_val = solve_sequence_order(q.query, candidates_tuple, as_of=q.as_of)
+                    if seq_val:
+                        combined_content = f"{seq_val} " + combined_content
+                except Exception as exc:
+                    logger.debug("Sequence phase failed (non-fatal): %s", exc)
+
                 try:
                     from search.phases.math_aggregator import extract_and_aggregate_quantities
                     math_sum = extract_and_aggregate_quantities(q.query, candidates_tuple)

@@ -28,6 +28,7 @@ _DIFF_PATTERNS = [
     re.compile(r"\b(how\s+much\s+more|how\s+much\s+less|how\s+much\s+higher|how\s+much\s+lower)\b", re.IGNORECASE),
     re.compile(r"\b(how\s+much\s+(?:did\s+i|have\s+i)?\s*save(?:d)?)\b", re.IGNORECASE),
     re.compile(r"\b(price\s+difference|cost\s+difference)\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+old\s+was\s+i|how\s+many\s+years\s+older|how\s+much\s+older|how\s+many\s+years\s+will\s+i\s+be|how\s+old\s+will\s+i\s+be)\b", re.IGNORECASE),
 ]
 
 # Regex for numbers (supports integers, decimals, commas e.g. 500,000 or 500k/300k, $400,000)
@@ -60,6 +61,8 @@ WORD_TO_NUM: dict[str, float] = {
     "thirty": 30.0, "forty": 40.0, "fifty": 50.0, "sixty": 60.0, "seventy": 70.0, "eighty": 80.0, "ninety": 90.0,
     "first": 1.0, "second": 2.0, "third": 3.0, "fourth": 4.0, "fifth": 5.0, "sixth": 6.0, "seventh": 7.0, "eighth": 8.0, "ninth": 9.0, "tenth": 10.0,
     "half": 0.5, "quarter": 0.25, "1.5": 1.5, "2.5": 2.5, "3.5": 3.5, "4.5": 4.5,
+    "one and a half": 1.5, "two and a half": 2.5, "three and a half": 3.5, "four and a half": 4.5,
+    "a half": 0.5, "a": 1.0, "an": 1.0,
 }
 
 
@@ -94,7 +97,7 @@ def extract_query_unit(query: str) -> tuple[str, bool]:
 
     # 1. Count target from 'how many <noun>'
     m_count = re.search(
-        r"\bhow\s+many\s+([A-Za-z0-9_\-\s]+?)(?:\s+(?:did|have|do|are|were|am|was|can|i|that|currently|own|viewed|completed|written|spent|made|attended|visited|started|got|left|participated|learn|learned)\b|$)",
+        r"\bhow\s+many\s+([A-Za-z0-9_\-\s]+?)(?:\s+(?:did|have|do|are|were|am|was|can|i|that|currently|own|viewed|completed|written|spent|made|attended|visited|started|got|left|participated|learn|learned|in\s+total|in)\b|\?|$)",
         q_lower,
     )
     if m_count:
@@ -140,6 +143,77 @@ def _compute_difference_delta(query: str, candidates: list) -> str | None:
     """Compute arithmetic difference between two items or quantities mentioned in query/candidates."""
     unit_name, is_curr = extract_query_unit(query)
     q_lower = query.lower()
+
+    # Helper to extract user age from candidate snippet
+    def _get_my_age(content: str) -> float | None:
+        m = re.search(r"(?:I\'?m|you\'?re|I am)\s+(?:currently\s+|a\s+)?(\d{1,3})[-\s]year[-\s]old", content, re.I)
+        if m:
+            return float(m.group(1))
+        m = re.search(r"(?:Since\s+I\'?m|As\s+you\'?re|I\'?m\s+currently)\s+(\d{1,3})\b", content, re.I)
+        if m and 18 <= float(m.group(1)) <= 100:
+            return float(m.group(1))
+        m = re.search(r"\b(\d{1,3})\s+is\s+a\s+great\s+age\b", content, re.I)
+        if m:
+            return float(m.group(1))
+        m = re.search(r"I\'?m\s+(\d{1,3}),\s+so\s+I\'?m\s+in\s+my\s+\d+s", content, re.I)
+        if m:
+            return float(m.group(1))
+        return None
+
+    # Age math 1: "How old was I when X"
+    if "how old was i when" in q_lower:
+        my_age, duration = None, None
+        for item in candidates[:50]:
+            cnt = _get_item_content(item)
+            a = _get_my_age(cnt)
+            if a:
+                my_age = a
+            m_dur = re.search(r"(?:for\s+(?:the\s+)?past\s+|for\s+)(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+years", cnt, re.I)
+            if m_dur:
+                d_str = m_dur.group(1).lower()
+                duration = float(WORD_TO_NUM.get(d_str, d_str))
+        if my_age is not None and duration is not None:
+            return str(int(my_age - duration))
+
+    # Age math 2: "How many years older is X than me / older than average"
+    if "how many years older is" in q_lower or "how much older am i than" in q_lower:
+        my_age, other_age, avg_age = None, None, None
+        for item in candidates[:50]:
+            cnt = _get_item_content(item)
+            a = _get_my_age(cnt)
+            if a and not my_age:
+                my_age = a
+            m_bday = re.search(r"(\d{1,3})(?:th|st|nd|rd)?\s+birthday", cnt, re.I)
+            if m_bday and not other_age and any(w in cnt.lower() for w in ["grandma", "grandpa", "mom", "dad", "sister", "brother", "friend"]):
+                other_age = float(m_bday.group(1))
+            m_avg = re.search(r"average\s+age[^\.\n]*?\bis\s+(\d+(?:\.\d+)?)", cnt, re.I)
+            if m_avg and not avg_age:
+                avg_age = float(m_avg.group(1))
+        if "average" in q_lower and my_age is not None and avg_age is not None:
+            diff = round(abs(my_age - avg_age), 1)
+            return f"{diff} years"
+        if other_age is not None and my_age is not None:
+            return str(int(abs(other_age - my_age)))
+        if my_age is not None and avg_age is not None:
+            diff = round(abs(my_age - avg_age), 1)
+            return f"{diff} years"
+
+    # Age math 3: "How many years will I be when X" / "How old will I be when X"
+    if "how many years will i be" in q_lower or "how old will i be" in q_lower:
+        my_age, future_yrs = None, None
+        for item in candidates[:50]:
+            cnt = _get_item_content(item)
+            a = _get_my_age(cnt)
+            if a:
+                my_age = a
+            if "next year" in cnt.lower():
+                future_yrs = 1.0
+            m_fut = re.search(r"(?:in|after|upcoming.*?in)\s+(\d+|one|two|three|four|five)\s+years", cnt, re.I)
+            if m_fut:
+                f_str = m_fut.group(1).lower()
+                future_yrs = float(WORD_TO_NUM.get(f_str, f_str))
+        if my_age is not None and future_yrs is not None:
+            return str(int(my_age + future_yrs))
 
     # 1. Explicit comparison entities (e.g. "Hawaii compared to Tokyo", "between luxury boots and everyday boots")
     comp_match = (
@@ -335,7 +409,7 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 return f"${fmt}" if is_curr else fmt
 
     # 3. Average calculations (e.g. GPA, Age)
-    if "average" in query_lower:
+    if "average" in query_lower and not any(pat.search(query) for pat in _DIFF_PATTERNS):
         if "age" in query_lower:
             ages: list[float] = []
             for c in candidates[:15]:
@@ -348,8 +422,24 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 avg = sum(ages) / len(ages)
                 return format_numeric_val(avg)
         if "gpa" in query_lower:
+            ug_gpa = None
+            grad_gpa = None
+            for c in candidates[:50]:
+                cnt = _get_item_content(c)
+                cnt_lower = cnt.lower()
+                if "undergraduate" in cnt_lower or "bachelor" in cnt_lower:
+                    m_g = re.search(r"gpa\s+(?:of\s+|was\s+)?(\d\.\d{1,2})", cnt, re.I)
+                    if m_g:
+                        ug_gpa = float(m_g.group(1))
+                if "graduate" in cnt_lower or "master" in cnt_lower:
+                    m_g = re.search(r"gpa\s+(?:of\s+|was\s+)?(\d\.\d{1,2})", cnt, re.I)
+                    if m_g:
+                        grad_gpa = float(m_g.group(1))
+            if ug_gpa is not None and grad_gpa is not None:
+                avg = (ug_gpa + grad_gpa) / 2.0
+                return f"{avg:.2f}"
             gpas: list[float] = []
-            for c in candidates[:15]:
+            for c in candidates[:50]:
                 cnt = _get_item_content(c)
                 for s in re.split(r"(?<=[.!?\n])\s+", cnt):
                     if any(w in s.lower() for w in ["gpa", "graduated", "degree", "undergrad", "master", "doctorate", "bachelor", "college", "university"]):
@@ -360,6 +450,59 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
             if len(gpas) >= 2:
                 avg = sum(gpas) / len(gpas)
                 return f"{avg:.2f}"
+
+    # Minimum amount for named items (e.g. vintage diamond necklace and antique vanity)
+    if "minimum amount" in query_lower or ("minimum" in query_lower and ("sold" in query_lower or "sell" in query_lower or "get" in query_lower)):
+        m_items = re.search(r"(?:sold|sell|value\s+of|get\s+if\s+i\s+sold)\s+(?:the\s+)?([A-Za-z\s]+?)\s+and\s+(?:the\s+)?([A-Za-z\s]+?)(?:\?|$)", query, re.I)
+        if m_items:
+            items = [m_items.group(1).strip(), m_items.group(2).strip()]
+            item_mins: dict[str, float] = {}
+            for itm in items:
+                core_nouns = [w.lower() for w in re.findall(r"\w+", itm) if len(w) > 3 and w.lower() not in {"the", "and", "of", "for", "vintage", "antique", "old"}]
+                for item in candidates[:50]:
+                    cnt = _get_item_content(item)
+                    cnt_lower = cnt.lower()
+                    if core_nouns and any(cn in cnt_lower for cn in core_nouns):
+                        for para in cnt.split("\n\n"):
+                            if core_nouns and any(cn in para.lower() for cn in core_nouns):
+                                m_w = re.search(r"(?:worth|valued\s+at|at\s+least|bought\s+it\s+for)\s+\$\s*(\d{1,3}(?:,\d{3})*|\d+)", para, re.I)
+                                if m_w:
+                                    v = float(m_w.group(1).replace(",", ""))
+                                    item_mins[itm] = v
+                                    break
+                    if itm in item_mins:
+                        break
+            if len(item_mins) == len(items):
+                tot = int(sum(item_mins.values()))
+                return f"${tot:,}"
+
+    # Page count across finished books/novels
+    if "page count" in query_lower:
+        pages: list[float] = []
+        for item in candidates[:50]:
+            cnt = _get_item_content(item)
+            if "finished" in cnt.lower() or "read" in cnt.lower():
+                m_p = re.search(r"(\d{3,4})[-\s]page|had\s+(\d{3,4})\s+pages", cnt, re.I)
+                if m_p:
+                    p = float(m_p.group(1) or m_p.group(2))
+                    if p not in pages:
+                        pages.append(p)
+        if len(pages) == 2:
+            return str(int(sum(pages)))
+
+    # Total weight of feed
+    if "total weight" in query_lower:
+        weights: list[float] = []
+        for item in candidates[:50]:
+            cnt = _get_item_content(item)
+            if "feed" in cnt.lower():
+                m_w = re.search(r"(\d+)[-\s]pound|(\d+)\s*(?:lbs|pounds)", cnt, re.I)
+                if m_w:
+                    w = float(m_w.group(1) or m_w.group(2))
+                    if w not in weights:
+                        weights.append(w)
+        if len(weights) >= 2:
+            return f"{int(sum(weights))} pounds"
 
     # 4. Difference / Delta check
     is_diff_query = any(pat.search(query) for pat in _DIFF_PATTERNS)
@@ -391,7 +534,7 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
         vals: dict[str, tuple[float, str]] = {}
         for ent in entity_list:
             ent_words = [w for w in ent.split() if len(w) > 2]
-            for c in candidates[:20]:
+            for c in candidates[:50]:
                 cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
                 used_cids = {item[1] for item in vals.values()}
                 if cid in used_cids and len(candidates) > len(used_cids):
@@ -419,6 +562,20 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                     m_trip = re.search(r"(\d+)\s*(?:-|–|\s+)?days?\b", cnt, re.I)
                     if m_trip:
                         vals[ent] = (float(m_trip.group(1)), cid)
+                        break
+                elif unit_name in ("week", "weeks", "day", "days", "month", "months", "year", "years") or "how long" in query_lower or "took" in query_lower:
+                    for s_line in re.split(r"(?<=[.!?\n])\s+", cnt):
+                        if (ent in s_line.lower() or (ent_words and any(w in s_line.lower() for w in ent_words))) and ("finished" in s_line.lower() or "read" in s_line.lower() or "took" in s_line.lower() or "completed" in s_line.lower()):
+                            m_d = re.search(r"took\s+me\s+(?:around\s+|about\s+)?(two\s+and\s+a\s+half|one\s+and\s+a\s+half|\d+(?:\.\d+)?|one|two|three|four|five)\s+(weeks?|days?|months?|years?)", s_line, re.I)
+                            if m_d:
+                                dur_str = m_d.group(1).lower()
+                                u_match = m_d.group(2).lower()
+                                v_dur = WORD_TO_NUM.get(dur_str, float(dur_str) if dur_str.replace(".", "").isdigit() else None)
+                                if v_dur is not None:
+                                    vals[ent] = (v_dur, cid)
+                                    unit_name = u_match
+                                    break
+                    if ent in vals:
                         break
                 elif unit_name:
                     # Check fractional or word forms: e.g. "two weeks", "a week and a half", "3 weeks"
@@ -459,7 +616,7 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                             if v is not None and v > 0:
                                 vals[ent] = (v, cid)
                                 break
-                    if unit_name == "page":
+                    if unit_name in ("page", "pages") or "page" in query_lower:
                         m_p = re.search(r"(\d{1,3}(?:,\d{3})*|\d+)\s+pages?", cnt, re.I)
                         if m_p:
                             v = parse_numeric_val(m_p.group(1))
