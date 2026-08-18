@@ -139,3 +139,47 @@ def test_chronological_ordering_solver():
     res = calculate_temporal_delta(query, candidates)
     assert res is not None
     assert "Science Museum, Museum of History, Modern Art Museum" in res
+
+
+def test_comparative_entity_difference():
+    candidates = [
+        ("mem1", "I booked a luxurious resort in Maui that costs over $300 per night.", "", "", ""),
+        ("mem2", "I stayed in a hostel in Tokyo that cost around $30 per night.", "", "", ""),
+    ]
+    query = "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?"
+    res = extract_and_aggregate_quantities(query, candidates)
+    assert res is not None
+    assert "$270" in res
+
+
+def test_multi_entity_weeks_duration():
+    candidates = [
+        ("mem1", "I watched all 22 Marvel Cinematic Universe movies in two weeks.", "", "", ""),
+        ("mem2", "I watched all main Star Wars films in 1.5 weeks.", "", "", ""),
+    ]
+    query = "How many weeks did it take me to watch all the Marvel Cinematic Universe movies and the main Star Wars films?"
+    res = extract_and_aggregate_quantities(query, candidates)
+    assert res is not None
+    assert "3.5 weeks" in res
+
+
+def test_open_charity_and_market_sales_accumulation():
+    charity_candidates = [
+        ("mem1", "I recently participated in a charity walk and managed to raise $250 through sponsors.", "", "", ""),
+        ("mem2", "I recently participated in a Bike-a-Thon for Cancer Research and my team managed to raise $5,000!", "", "", ""),
+        ("mem3", "I just helped organize a charity yoga event that raised $600 for a local animal shelter.", "", "", ""),
+    ]
+    charity_query = "How much money did I raise in total through all the charity events I participated in?"
+    res_charity = extract_and_aggregate_quantities(charity_query, charity_candidates)
+    assert res_charity is not None
+    assert "$5,850" in res_charity
+
+    market_candidates = [
+        ("mem1", "I sold 12 bunches of fresh organic herbs at the farmers' market, earning a total of $120.", "", "", ""),
+        ("mem2", "I sold 15 jars of homemade jam at the Homemade Market, earning $225.", "", "", ""),
+        ("mem3", "I sold 20 potted herb plants at the Summer Solstice Market for $7.5 each.", "", "", ""),
+    ]
+    market_query = "What is the total amount of money I earned from selling my products at the markets?"
+    res_market = extract_and_aggregate_quantities(market_query, market_candidates)
+    assert res_market is not None
+    assert "$495" in res_market

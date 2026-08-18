@@ -124,6 +124,8 @@ def compute_text_metrics(
             gold_len + 1,
             gold_len + 2,
             min(len(pred_tokens), gold_len * 2),
+            min(len(pred_tokens), gold_len * 3),
+            min(len(pred_tokens), gold_len * 4),
         ]
         seen_win_sizes = sorted(set(w for w in candidate_window_sizes if w <= len(pred_tokens)))
         for window_size in seen_win_sizes:

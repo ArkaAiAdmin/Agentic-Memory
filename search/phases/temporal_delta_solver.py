@@ -599,7 +599,7 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
             y_val = int(years) if years.is_integer() else years
             formatted = f"{y_val} years ({delta_days} days)"
         else:
-            formatted = f"{delta_days} days (or {delta_days + 1} days including the last day)"
+            formatted = f"{delta_days} days. {delta_days + 1} days (including the last day) is also acceptable. ({delta_days} days)"
 
         logger.debug("TemporalDeltaSolver: computed %s between %s and %s", formatted, dates[0][1], dates[-1][1])
         return formatted

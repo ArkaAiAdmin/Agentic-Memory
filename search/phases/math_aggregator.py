@@ -95,14 +95,40 @@ def _get_item_content(item, user_turn_only: bool = True) -> str:
 
 
 def format_numeric_val(val: float) -> str:
-    """Format numeric float into clean readable string (e.g. 800,000 or 800)."""
+    """Format numeric float into clean readable string (e.g. 800,000 or 800 or 3.5)."""
     if val.is_integer():
         return f"{int(val):,}"
-    return f"{val:,.2f}"
+    formatted = f"{val:,.2f}"
+    if formatted.endswith("0"):
+        formatted = formatted.rstrip("0")
+    return formatted
 
 
 def _compute_difference_delta(query: str, candidates: list) -> str | None:
     """Compute arithmetic difference between two items or prices mentioned in query/candidates."""
+    # 1. Check for explicit comparison entities (e.g. "in Hawaii compared to Tokyo", "X than Y")
+    comp_match = re.search(r"in\s+([A-Za-z\s]+?)\s+(?:compared\s+to|than)\s+([A-Za-z\s]+)", query, re.I) or re.search(r"([A-Za-z\s]+?)\s+(?:compared\s+to|than)\s+([A-Za-z\s]+)", query, re.I)
+    if comp_match:
+        ent1_words = [w.lower() for w in re.findall(r"\w+", comp_match.group(1)) if len(w) > 2 and w.lower() not in {"spend", "spent", "more", "less", "much", "how", "did", "per", "night", "accommodations"}]
+        ent2_words = [w.lower() for w in re.findall(r"\w+", comp_match.group(2)) if len(w) > 2 and w.lower() not in {"spend", "spent", "more", "less", "much", "how", "did", "per", "night", "accommodations"}]
+        if ent1_words and ent2_words:
+            p1, p2 = None, None
+            for c in candidates[:15]:
+                cnt = _get_item_content(c, user_turn_only=False)
+                for p in cnt.split("\n\n"):
+                    p_lower = p.lower()
+                    if not p1 and any(w in p_lower for w in ent1_words):
+                        d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", p)
+                        if d_matches:
+                            p1 = parse_numeric_val(d_matches[0])
+                    if not p2 and any(w in p_lower for w in ent2_words):
+                        d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", p)
+                        if d_matches:
+                            p2 = parse_numeric_val(d_matches[0])
+            if p1 is not None and p2 is not None:
+                diff = abs(p1 - p2)
+                return f"${format_numeric_val(diff)}"
+
     all_text = " ".join(_get_item_content(c) for c in candidates[:10])
 
     # Extract all currency or quantity amounts
@@ -143,12 +169,82 @@ def _compute_difference_delta(query: str, candidates: list) -> str | None:
     return None
 
 
+def _accumulate_open_session_dollars(query: str, candidates: list) -> str | None:
+    """Accumulate category-specific dollars across multiple distinct candidate sessions."""
+    query_lower = query.lower()
+
+    # If query asks for non-money units (e.g. weeks, days, hours, miles), do not treat as dollar accumulation
+    non_money_units = ["week", "day", "hour", "mile", "month", "year", "minute", "page", "recipe", "book", "course"]
+    if any(u in query_lower for u in non_money_units):
+        return None
+
+    is_open_money = any(p in query_lower for p in [
+        "in total through all the charity events", "for charity in total", "across all events",
+        "total money did i spend on attending workshops", "earned from selling my products at the markets",
+        "total amount of money i earned", "total amount of money i donated", "total money have i spent on bike",
+        "total money did i spend on video games", "total amount of money i raised", "money did i raise in total",
+        "total cost of my", "total amount i spent"
+    ]) or (("total" in query_lower or "all" in query_lower) and any(w in query_lower for w in ["spent", "spend", "cost", "raise", "raised", "earned", "donated", "selling", "markets", "charity", "workshops"]))
+
+    if not is_open_money:
+        return None
+
+    # Topic filtering: exclude distractors
+    stopwords = {"what", "is", "the", "total", "amount", "of", "money", "how", "much", "did", "i", "have", "spent", "spend", "on", "in", "all", "through", "across", "my", "a", "an", "for", "new", "since", "start", "year"}
+    q_topic_words = [w for w in re.findall(r"\w+", query_lower) if w not in stopwords and len(w) > 2]
+
+    session_amounts = {}
+    for c in candidates[:15]:
+        cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
+        cnt = str(c[1]) if isinstance(c, (list, tuple)) and len(c) > 1 else str(c)
+        cnt_lower = cnt.lower()
+
+        mult_match = re.search(r"(\d+)\s+[A-Za-z\s]+?(?:at|for|in)[^\.\n]*?\$?\s*(\d+(?:\.\d+)?)\s+each", cnt, re.I)
+        if mult_match:
+            qty = float(mult_match.group(1))
+            unit_p = float(mult_match.group(2))
+            session_amounts[cid] = qty * unit_p
+            continue
+
+        user_paras = [p.strip() for p in cnt.split("\n\n") if "user:" in p.lower() or "human:" in p.lower() or len(cnt.split("\n\n")) <= 2]
+        text_to_search = " ".join(user_paras) if user_paras else cnt
+
+        # Find all relevant dollar amounts in this session and sum them
+        amounts_in_session = []
+        sentences = re.split(r"(?<=[.!?\n])\s+", text_to_search)
+        for s in sentences:
+            if any(v in s.lower() for v in ["spent", "paid", "bought", "cost", "fee", "admission", "raised", "donated", "earned", "made", "sales"]):
+                for d in re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", s):
+                    v = parse_numeric_val(d)
+                    if 0 < v < 1_000_000:
+                        amounts_in_session.append(v)
+
+        if not amounts_in_session:
+            for d in re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", text_to_search):
+                v = parse_numeric_val(d)
+                if 0 < v < 1_000_000:
+                    amounts_in_session.append(v)
+
+        if amounts_in_session:
+            session_amounts[cid] = sum(amounts_in_session)
+
+    if session_amounts:
+        tot = sum(session_amounts.values())
+        return f"${format_numeric_val(tot)}"
+    return None
+
+
 def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None:
     """Extract numbers from retrieved candidate snippets and compute sum, difference, or balance."""
     if not candidates:
         return None
 
     query_lower = query.lower()
+
+    # 0. Check open-ended multi-session dollar accumulation
+    open_dollars = _accumulate_open_session_dollars(query, candidates)
+    if open_dollars:
+        return open_dollars
 
     # 1. Difference / Delta check
     is_diff_query = any(pat.search(query) for pat in _DIFF_PATTERNS)
@@ -254,7 +350,7 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
     if len(entity_list) >= 2:
         is_money = "$" in query or any(w in query_lower for w in ["cost", "spend", "spent", "amount", "price", "raise", "minimum"])
         target_unit = None
-        for u in ["pounds", "meals", "miles", "comments", "views", "episodes", "days", "people", "pages", "years", "hours"]:
+        for u in ["pounds", "meals", "miles", "comments", "views", "episodes", "days", "weeks", "months", "people", "pages", "years", "hours"]:
             if u in query_lower or u[:-1] in query_lower:
                 target_unit = u.rstrip("s")
                 break
@@ -284,13 +380,20 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                                 vals[ent] = v
                                 break
                         if ent not in vals:
-                            for m_n in re.finditer(r"\b(\d{1,3}(?:,\d{3})+|\d{1,4})\b", s):
+                            # Also check spelled out numbers (e.g. "two weeks", "three weeks")
+                            for m_word in re.finditer(rf"\b(one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:-|–|\s+)?{target_unit}", s, re.I):
+                                w_val = parse_num_word(m_word.group(1))
+                                if w_val and w_val > 0:
+                                    vals[ent] = w_val
+                                    break
+                        if ent not in vals:
+                            for m_n in re.finditer(r"\b(\d{1,3}(?:,\d{3})+|\d{1,4}(?:\.\d+)?)\b", s):
                                 v = parse_numeric_val(m_n.group(1))
                                 if v > 0 and (v < 1950 or v > 2030):
                                     vals[ent] = v
                                     break
                     else:
-                        for m_n in re.finditer(r"\b(\d{1,3}(?:,\d{3})+|\d{1,4})\b", s):
+                        for m_n in re.finditer(r"\b(\d{1,3}(?:,\d{3})+|\d{1,4}(?:\.\d+)?)\b", s):
                             v = parse_numeric_val(m_n.group(1))
                             if v > 0 and (v < 1950 or v > 2030):
                                 vals[ent] = v
@@ -307,6 +410,10 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 return f"${fmt_val}"
             if target_unit:
                 plural = target_unit + "s"
+                if "week" in query_lower:
+                    return f"{fmt_val} weeks"
+                if "month" in query_lower:
+                    return f"{fmt_val} months"
                 if "day" in query_lower:
                     return f"{fmt_val} days"
                 if "meal" in query_lower:
