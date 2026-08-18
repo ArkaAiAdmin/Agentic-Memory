@@ -29,10 +29,8 @@ if str(REPO_ROOT) not in sys.path:
 if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
-from _fixtures import set_benchmark_env
+from bench.engine import BenchmarkHarness, set_benchmark_env
 set_benchmark_env()
-
-from bench.engine import BenchmarkHarness
 from bench.adapters import ADAPTERS
 
 SUITES = list(ADAPTERS.keys())

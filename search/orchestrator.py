@@ -565,6 +565,7 @@ def _counting_phase(
     query: str,
     limit: int,
     repo_filter: str = "",
+    tenant_id: str | None = None,
 ) -> list:
     """Counting phase: for 'how many times/how often/how many distinct' queries,
     count distinct values across matching sessions and return both the aggregate
@@ -651,15 +652,17 @@ def _counting_phase(
 
         safe_target = target.replace('"', '""')
         try:
+            tenant_clause = " AND m.tenant_id = ?" if tenant_id else ""
+            params = (f'"{safe_target}"', tenant_id) if tenant_id else (f'"{safe_target}"',)
             # Query all sessions matching the target
             rows = db.execute(
                 "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
                 "FROM memories_fts fts "
                 "JOIN memories m ON m.rowid = fts.rowid "
-                "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                f"WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{tenant_clause} "
                 "AND m.category = 'sessions' "
                 "ORDER BY m.observed_at ASC",
-                (f'"{safe_target}"',)
+                params
             ).fetchall()
 
             if not rows:
@@ -960,14 +963,16 @@ def _temporal_compare(
                 continue
             safe_cand = cand.replace('"', '""')
             try:
+                tenant_clause = " AND m.tenant_id = ?" if tenant_id else ""
+                params = (f'"{safe_cand}"', tenant_id) if tenant_id else (f'"{safe_cand}"',)
                 rows = db.execute(
                     "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
                     "FROM memories_fts fts "
                     "JOIN memories m ON m.rowid = fts.rowid "
-                    "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                    f"WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{tenant_clause} "
                     "AND m.category = 'sessions' "
                     "ORDER BY m.observed_at DESC LIMIT 1",
-                    (f'"{safe_cand}"',)
+                    params
                 ).fetchall()
                 if rows:
                     candidate_records.append((cand, rows[0]))
@@ -1163,10 +1168,40 @@ def _conjoint_entity_phase(
             if c1_words and c2_words:
                 conjuncts = [" ".join(c1_words), " ".join(c2_words)]
 
+    # Pattern 5: Generalized "A and B" conjunction split
+    if not conjuncts and " and " in query.lower():
+        cleaned_q = query.rstrip("?. ").strip()
+        parts = _re.split(r"\s+and\s+", cleaned_q, flags=_re.IGNORECASE)
+        if len(parts) == 2:
+            p1, p2 = parts[0].strip(), parts[1].strip()
+            _LEADING_STOP = r"^(?:what|how|which|can|could|is|are|was|were|total|number|amount|cost|weight|time|minimum|average|distance|page\s+count|difference|more|less|gpa|did|do|have|i|spend|spent|get|got|if|sold|bought|purchased|finish|finished|take|takes|in|on|of|from|between|for|the|my|a|an|two|three|all|items?|meals?|novels?|comments?|feed|trip|trips?|events?|days?|weeks?|months?|years?|lunch\s+meals?\s+i\s+got\s+from|comments\s+on\s+my\s+recent|novels\s+i\s+finished\s+in|days\s+i\s+spent\s+in|it\s+takes\s+i\s+to|money\s+i\s+spent\s+on)\s+"
+            p1_clean = p1
+            for _ in range(5):
+                next_p1 = _re.sub(_LEADING_STOP, "", p1_clean, flags=_re.IGNORECASE).strip()
+                if next_p1 == p1_clean:
+                    break
+                p1_clean = next_p1
+
+            p2_clean = _re.sub(r"\s+(?:i\s+(?:purchased|bought|attended|visited|listened|watched|spent|got|finished|inherited|read)|combined|in\s+total|studies|last\s+year|this\s+year|together)$", "", p2, flags=_re.IGNORECASE).strip()
+            p2_clean = _re.sub(r"^(?:the\s+|my\s+|a\s+|an\s+)", "", p2_clean, flags=_re.IGNORECASE).strip()
+
+            if len(p1_clean) >= 2 and len(p2_clean) >= 2:
+                conjuncts = [p1_clean, p2_clean]
+
+    # Pattern 6: "X than Y" comparative queries
+    if not conjuncts:
+        m_than = _re.search(
+            r"\b(?:more|less|greater|higher)\s+(?:was|did|is|have)?\s+(?:the\s+)?([A-Za-z0-9_\-\$ ]+?)\s+than\s+(?:the\s+)?([A-Za-z0-9_\-\$ ]+?)(?:\?|$)",
+            query,
+            _re.IGNORECASE
+        )
+        if m_than:
+            conjuncts = [m_than.group(1).strip(), m_than.group(2).strip()]
+
     if not conjuncts:
         return results
 
-    _STOP_WORDS = {"the", "a", "an", "my", "our", "all", "in", "to", "for", "of", "and"}
+    _STOP_WORDS = {"the", "a", "an", "my", "our", "all", "in", "to", "for", "of", "and", "from", "on", "with", "by", "at", "is", "was", "were", "are", "i", "did", "do", "what", "how", "total", "amount", "number"}
     conjoint_rows = []
     for conj in conjuncts:
         clean_conj = " ".join(w for w in conj.split() if w.lower() not in _STOP_WORDS)
@@ -1185,35 +1220,45 @@ def _conjoint_entity_phase(
                 f"FROM memories_fts fts "
                 f"JOIN memories m ON m.rowid = fts.rowid "
                 f"WHERE {where_sql} "
-                f"ORDER BY m.observed_at DESC LIMIT 3",
+                f"ORDER BY fts.rank LIMIT 2",
                 tuple(params)
             ).fetchall()
             if rows:
                 conjoint_rows.extend(rows)
             else:
-                for kw in clean_conj.split():
-                    if kw.lower() not in _STOP_WORDS and len(kw) >= 3:
-                        safe_kw = kw.replace('"', '""')
-                        kw_where = "memories_fts MATCH ? AND m.deleted_at IS NULL"
-                        kw_params: list[Any] = [f'"{safe_kw}"']
+                kw_terms = [f'"{w}"' for w in clean_conj.split() if w.lower() not in _STOP_WORDS and len(w) >= 3]
+                if kw_terms:
+                    kw_where = "memories_fts MATCH ? AND m.deleted_at IS NULL"
+                    kw_params: list[Any] = [" AND ".join(kw_terms)]
+                    if tenant_id:
+                        kw_where += " AND m.tenant_id = ?"
+                        kw_params.append(tenant_id)
+                    rows_kw = db.execute(
+                        f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                        f"FROM memories_fts fts "
+                        f"JOIN memories m ON m.rowid = fts.rowid "
+                        f"WHERE {kw_where} "
+                        f"ORDER BY fts.rank LIMIT 2",
+                        tuple(kw_params)
+                    ).fetchall()
+                    if not rows_kw:
+                        kw_params_or: list[Any] = [" OR ".join(kw_terms)]
                         if tenant_id:
-                            kw_where += " AND m.tenant_id = ?"
-                            kw_params.append(tenant_id)
+                            kw_params_or.append(tenant_id)
                         rows_kw = db.execute(
                             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
                             f"FROM memories_fts fts "
                             f"JOIN memories m ON m.rowid = fts.rowid "
                             f"WHERE {kw_where} "
-                            f"ORDER BY m.observed_at DESC LIMIT 2",
-                            tuple(kw_params)
+                            f"ORDER BY fts.rank LIMIT 2",
+                            tuple(kw_params_or)
                         ).fetchall()
-                        if rows_kw:
-                            conjoint_rows.extend(rows_kw)
-                            break
+                    if rows_kw:
+                        conjoint_rows.extend(rows_kw)
         except Exception:
             continue
 
-    if len(conjoint_rows) >= 2:
+    if conjoint_rows:
         existing_ids = set()
         new_results = []
         for idx, row in enumerate(conjoint_rows):
@@ -1770,6 +1815,7 @@ def search_memories(
                 tag_filter_sql=_tag_filter_sql,
                 tag_filter_params=tuple(_tag_filter_params),
                 category=category or None,
+                tenant_id=tenant_id,
             )
             _record_phase_latency("search.fts", _t0)
             hybrid = False
@@ -1789,6 +1835,7 @@ def search_memories(
                 tag_filter_params=tuple(_tag_filter_params),
                 category=category or None,
                 recency_order=True,
+                tenant_id=tenant_id,
             )
             _record_phase_latency("search.fts", _t0)
             hybrid = False
@@ -1859,6 +1906,7 @@ def search_memories(
                             tag_filter_params=tuple(_tag_filter_params),
                             category=category or None,
                             prefilter_ids=None,
+                            tenant_id=tenant_id,
                         )
                     except Exception as _fts_exc:
                         _phase_inc("search.fts", _fts_exc)
@@ -1898,6 +1946,7 @@ def search_memories(
                     tag_filter_params=tuple(_tag_filter_params),
                     category=category or None,
                     prefilter_ids=None,
+                    tenant_id=tenant_id,
                 )
                 _record_phase_latency("search.fts", _t0)
 
@@ -1968,6 +2017,7 @@ def search_memories(
                 db, results, normalized_query, fts_query, db_path, limit, repo_filter, category=category or None,
                 chunk_hits_out=_fusion_chunk_hits,
                 embedding_weight_override=_fusion_emb_override,
+                tenant_id=tenant_id,
             )
             _record_phase_latency("search.hybrid_fusion", _t0)
             if _fusion_chunk_hits:
@@ -2181,7 +2231,7 @@ def search_memories(
         # count distinct values across matching sessions and surface aggregate count.
         _t0_cnt = time.time()
         try:
-            results_to_display = _counting_phase(db, results_to_display, query, limit, repo_filter=repo_filter)
+            results_to_display = _counting_phase(db, results_to_display, query, limit, repo_filter=repo_filter, tenant_id=tenant_id)
         except Exception as _cnt_exc:
             _phase_inc("search.counting", _cnt_exc)
             logger.debug("counting phase failed (degraded): %s", _cnt_exc)

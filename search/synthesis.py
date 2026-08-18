@@ -285,6 +285,56 @@ def _bb1_synthesize(
     if solver_answers:
         answer_text = " | ".join(solver_answers) + "\n\n" + answer_text
 
+    # Grounded SLM/LLM Synthesis Pass (Phase 14): When local LLM provider is available,
+    # generate an exact multi-session factual synthesis from the top retrieved passages.
+    try:
+        import os
+        from infra._lazy_imports import get_config
+        cfg = get_config()
+        if getattr(cfg, "llm_extraction", False) or os.environ.get("MEMORY_LLM_EXTRACTION", "0") in ("1", "true", "True"):
+            from fact.llm_providers import get_provider
+            provider = get_provider()
+            if provider and provider.is_available():
+                user_facts = []
+                for r in results[:5]:
+                    cnt = r[1] if len(r) > 1 else ""
+                    lines = [
+                        l.strip()
+                        for l in cnt.splitlines()
+                        if any(
+                            pr in l.lower()
+                            for pr in [
+                                "i ", "my ", "we ", "our ", "bought", "got",
+                                "finished", "started", "working", "went",
+                                "visited", "attended", "paid", "spent",
+                            ]
+                        )
+                    ]
+                    if lines:
+                        user_facts.append(f"Memory [{r[0]}]: " + " ".join(lines[:4]))
+                    elif cnt:
+                        user_facts.append(f"Memory [{r[0]}]: " + cnt[:300])
+
+                if user_facts:
+                    context = "\n".join(user_facts)
+                    prompt = (
+                        f"<|im_start|>system\n"
+                        f"You are an extractive memory question-answering assistant.\n"
+                        f"Answer the question directly, factually, and completely using ONLY the user memory statements below.\n"
+                        f"State the exact count or computed total clearly if requested, and list all relevant items.\n"
+                        f"<|im_end|>\n"
+                        f"<|im_start|>user\n"
+                        f"User Statements:\n{context}\n\n"
+                        f"Question: {query}\n"
+                        f"<|im_end|>\n"
+                        f"<|im_start|>assistant\n"
+                    )
+                    llm_ans = provider.generate(prompt, max_tokens=150, temperature=0.0)
+                    if llm_ans and len(llm_ans.strip()) > 5:
+                        answer_text = llm_ans.strip() + "\n\n" + answer_text
+    except Exception as _llm_synth_exc:
+        logger.debug("LLM synthesis pass skipped or failed: %s", _llm_synth_exc)
+
     return {
         "answer": answer_text,
         "sentences": sentences_out,

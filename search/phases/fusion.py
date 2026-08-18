@@ -99,6 +99,7 @@ def _hybrid_fusion(
     category: str | None = None,
     chunk_hits_out: list | None = None,
     embedding_weight_override: float | None = None,
+    tenant_id: str | None = None,
 ) -> list:
     """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF.
 
@@ -151,7 +152,7 @@ def _hybrid_fusion(
 
         def _do_vector() -> list:
             try:
-                res = _es.search(normalized_query, db_path, limit=limit * _overfetch)
+                res = _es.search(normalized_query, db_path, limit=limit * _overfetch, tenant_id=tenant_id)
                 return res if isinstance(res, list) else []
             except Exception:
                 return []

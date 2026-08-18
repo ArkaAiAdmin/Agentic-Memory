@@ -127,6 +127,14 @@ class TestSearchMemoriesSynthesis(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="bb1_e2e_")
         self.db_path = Path(self.tmp) / "memory.db"
+        import os
+        os.environ.pop("MEMORY_AGENT_ID", None)
+        from agent_context import clear_agent
+        clear_agent()
+        from infra.cache import _search_cache
+        from infra.db import connection_pool
+        _search_cache.clear()
+        connection_pool.clear()
         # H21: use full prod schema (incl. FTS5 + triggers) instead of
         # inline minimal schema
         bootstrap_temp_db_clean(self.db_path)
@@ -147,6 +155,8 @@ class TestSearchMemoriesSynthesis(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
     def test_12_synthesis_included(self):
+        from infra.cache import _search_cache
+        _search_cache.clear()
         memory_mcp._search_cache.clear()
         result = memory_mcp.search_memories(
             self.db_path, "database migration", limit=5,
@@ -159,6 +169,8 @@ class TestSearchMemoriesSynthesis(unittest.TestCase):
         # Should NOT include the unrelated "other" note
         self.assertNotIn("lessons/other", result["synthesis"]["sources"])
     def test_13_no_synthesis_by_default(self):
+        from infra.cache import _search_cache
+        _search_cache.clear()
         memory_mcp._search_cache.clear()
         result = memory_mcp.search_memories(
             self.db_path, "database migration", limit=5,

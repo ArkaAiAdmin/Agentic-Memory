@@ -427,24 +427,31 @@ def _chunk_text(text: str, chunk_size: int = _CE_CHUNK_SIZE, overlap: int = _CE_
 
 
 def _build_content_chunk_pairs(query: str, contents: list[str]) -> tuple[list, list]:
-    """Build ``(query, chunk)`` pairs scoring the FULL content of each doc.
+    """Build ``(query, chunk)`` pairs scoring the most relevant chunks of each doc.
 
-    Fixes the LoCoMo truncation bug: the old weak pass scored only
-    ``content[:512]`` and the chunk pass only the top-2 chunks by query-word
-    overlap, so answers buried deep in long dialogue sessions were never
-    scored and gold sessions were demoted below rank 30 despite correct
-    channel scores. Scoring every chunk (capped at ``_CE_MAX_SCORED_CHUNKS``)
-    lets the CE see the whole document.
+    Fixes long-dialogue truncation: when a document has many chunks, we rank
+    chunks by query-word overlap so the most relevant passages throughout the
+    entire dialogue (not just the start) are evaluated by the neural CrossEncoder.
 
     Returns ``(all_pairs, counts)`` where ``counts[i]`` is the number of
     chunks emitted for ``contents[i]`` (1 for empty/short content).
     """
     all_pairs: list = []
     counts: list = []
+    q_words = {w.lower() for w in re.findall(r"\w+", query) if len(w) > 2}
     for content in contents:
         chunks = _chunk_text(content or "")
         if len(chunks) > _CE_MAX_SCORED_CHUNKS:
-            chunks = chunks[:_CE_MAX_SCORED_CHUNKS]
+            if q_words:
+                def chunk_overlap(c: str) -> int:
+                    c_words = {w.lower() for w in re.findall(r"\w+", c)}
+                    return len(q_words & c_words)
+                # Sort chunks by query term overlap descending, keeping stable order for ties
+                scored_chunks = sorted(enumerate(chunks), key=lambda x: chunk_overlap(x[1]), reverse=True)
+                top_indices = sorted(i for i, _ in scored_chunks[:_CE_MAX_SCORED_CHUNKS])
+                chunks = [chunks[i] for i in top_indices]
+            else:
+                chunks = chunks[:_CE_MAX_SCORED_CHUNKS]
         all_pairs.extend((query, c) for c in chunks)
         counts.append(len(chunks))
     return all_pairs, counts

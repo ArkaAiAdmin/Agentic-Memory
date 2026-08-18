@@ -32,8 +32,13 @@ def _fts_search(
     category: str | None = None,
     prefilter_ids: set[str] | None = None,
     recency_order: bool = False,
+    tenant_id: str | None = None,
 ) -> list:
     _base_filter = repo_filter + tag_filter_sql
+    _tenant_params = ()
+    if tenant_id:
+        _base_filter = _base_filter + " AND m.tenant_id = ?"
+        _tenant_params = (tenant_id,)
 
     if prefilter_ids:
         _id_list = ",".join("?" for _ in prefilter_ids)
@@ -48,7 +53,7 @@ def _fts_search(
         _target_table = "memories"
 
     _order = "m.observed_at DESC" if recency_order else "fts.rank"
-    params = (fts_query,) + tag_filter_params + _params
+    params = (fts_query,) + tag_filter_params + _tenant_params + _params
     res = db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
@@ -62,7 +67,9 @@ def _fts_search(
     ).fetchall()
     if not res and tag_filter_sql:
         _base_filter_fallback = repo_filter + (f" AND m.id IN ({','.join('?' for _ in prefilter_ids)})" if prefilter_ids else "")
-        _params_fallback = (fts_query,) + _params
+        if tenant_id:
+            _base_filter_fallback += " AND m.tenant_id = ?"
+        _params_fallback = (fts_query,) + _tenant_params + _params
         res = db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"

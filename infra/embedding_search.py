@@ -935,7 +935,7 @@ class EmbeddingSearch:
         self._vec_index_cache[cache_key] = (idx, meta)
         return idx, meta
 
-    def _search_via_index(self, idx, meta, db, query, limit, category="", tags=None, source_file="") -> str | list[dict] | None:
+    def _search_via_index(self, idx, meta, db, query, limit, category="", tags=None, source_file="", tenant_id=None) -> str | list[dict] | None:
         """ANN top-K + FP32 rerank. Returns list[dict] like _search_full_scan,
         or None if the indexed path should fall back (any error inside).
 
@@ -991,32 +991,23 @@ class EmbeddingSearch:
         # hasn't been followed by a rebuild, the new row exists in
         # `memories` but not in `memory_vec_keys` — without this merge
         # step it would be invisible to search.
-        #
-        # Anti-join via NOT EXISTS uses the UNIQUE INDEX on
-        # memory_vec_keys.memory_id, so SQLite only walks the
-        # unindexed side (typically near-empty). The earlier LEFT JOIN
-        # version scanned the full memories table — O(N) per search.
-        # Capped at UNINDEXED_SAFETY_NET_LIMIT; covers the
-        # "added a few hundred memories since last rebuild" case.
-        # If a user has truly added more, `rebuild_vec_index` is
-        # the right answer (1.9s on 10K, 13s on 100K).
         tbl = _get_memories_table(db)
         try:
+            unindexed_tenant = " AND m.tenant_id = ?" if tenant_id else ""
+            unindexed_params = (tenant_id, UNINDEXED_SAFETY_NET_LIMIT) if tenant_id else (UNINDEXED_SAFETY_NET_LIMIT,)
             unindexed = db.execute(
                 f"SELECT m.id FROM {tbl} m "
-                f"WHERE m.deleted_at IS NULL "
+                f"WHERE m.deleted_at IS NULL{unindexed_tenant} "
                 f"AND NOT EXISTS "
                 f"  (SELECT 1 FROM memory_vec_keys k WHERE k.memory_id = m.id) "
                 f"LIMIT ?",
-                (UNINDEXED_SAFETY_NET_LIMIT,),
+                unindexed_params,
             ).fetchall()
         except sqlite3.OperationalError:
             unindexed = []
         unindexed_ids = [r[0] for r in unindexed]
 
         # Combine: ANN candidates (in order) + unindexed (appended).
-        # Duplicates are fine — the rerank is keyed by memory_id and
-        # will just use whichever entry it sees first.
         candidate_mids: list = []
         seen: set = set()
         for k in candidate_keys:
@@ -1035,10 +1026,14 @@ class EmbeddingSearch:
         # Fetch memory rows for the candidate set.
         placeholders = ",".join("?" for _ in candidate_mids)
         try:
+            tenant_filter = " AND tenant_id = ?" if tenant_id else ""
+            fetch_params = list(candidate_mids)
+            if tenant_id:
+                fetch_params.append(tenant_id)
             mem_rows = db.execute(
                 f"SELECT id, content, source_file, tags FROM {tbl} "
-                f"WHERE id IN ({placeholders}) AND deleted_at IS NULL",
-                candidate_mids,
+                f"WHERE id IN ({placeholders}) AND deleted_at IS NULL{tenant_filter}",
+                fetch_params,
             ).fetchall()
         except sqlite3.OperationalError:
             return []
@@ -1166,7 +1161,7 @@ class EmbeddingSearch:
             )
         return results
 
-    def _search_full_scan(self, db, query, limit, category="", tags=None, source_file="") -> str | list[dict]:
+    def _search_full_scan(self, db, query, limit, category="", tags=None, source_file="", tenant_id=None) -> str | list[dict]:
         """The pre-Sprint-4 search path: encode every memory and dot-product.
 
         Used as the fallback whenever the index is absent, corrupt, or
@@ -1177,9 +1172,15 @@ class EmbeddingSearch:
             return "Embedding model not loaded."
         # Get all memories (the candidate set).
         tbl = _get_memories_table(db)
-        rows = db.execute(
-            f"SELECT id, content, source_file, tags FROM {tbl} WHERE deleted_at IS NULL"
-        ).fetchall()
+        if tenant_id:
+            rows = db.execute(
+                f"SELECT id, content, source_file, tags FROM {tbl} WHERE deleted_at IS NULL AND tenant_id = ?",
+                (tenant_id,)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                f"SELECT id, content, source_file, tags FROM {tbl} WHERE deleted_at IS NULL"
+            ).fetchall()
         if not rows:
             return "No memories found."
 
@@ -1444,7 +1445,7 @@ class EmbeddingSearch:
             results.append({"id": mid, "score": sim, "preview": ""})
         return results
 
-    def search(self, query, db_path, limit=5, category="", tags=None, source_file="") -> str | list[dict]:
+    def search(self, query, db_path, limit=5, category="", tags=None, source_file="", tenant_id=None) -> str | list[dict]:
         if not self._ensure_model():
             return "Embedding search unavailable. Install model2vec: pip install model2vec numpy"
 
@@ -1454,7 +1455,7 @@ class EmbeddingSearch:
         # O(N) over all embeddings; caching helps when an agent issues
         # the same query many times in a loop. TTL is short (30s) so
         # newly-added memories are reflected quickly.
-        _cache_extras = (category, tuple(tags or []), source_file)
+        _cache_extras = (category, tuple(tags or []), source_file, tenant_id)
         cache_key = (str(db_path), query, limit, _cache_extras)
         cached = _vec_cache_get(cache_key)
         if cached is not None:
@@ -1472,7 +1473,7 @@ class EmbeddingSearch:
             idx, meta = self._load_vec_index(db_path, db)
             if idx is not None and meta is not None and meta.get("n_vectors", 0) > 0:
                 try:
-                    indexed_result = self._search_via_index(idx, meta, db, query, limit, category=category, tags=tags, source_file=source_file)
+                    indexed_result = self._search_via_index(idx, meta, db, query, limit, category=category, tags=tags, source_file=source_file, tenant_id=tenant_id)
                     if indexed_result is not None:
                         # P0 fix #4: record each non-empty result as a
                         # recent hit on the T1/T2 side of ARC, so the
@@ -1486,7 +1487,7 @@ class EmbeddingSearch:
                     logger.warning(
                         "indexed search failed, falling back to full scan: %s", e
                     )
-            result = self._search_full_scan(db, query, limit, category=category, tags=tags, source_file=source_file)
+            result = self._search_full_scan(db, query, limit, category=category, tags=tags, source_file=source_file, tenant_id=tenant_id)
             if isinstance(result, list):
                 self._arc_track_hits(result, db_path)
             _vec_cache_put(cache_key, result)

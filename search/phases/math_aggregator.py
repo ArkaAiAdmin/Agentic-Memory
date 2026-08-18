@@ -14,14 +14,19 @@ logger = logging.getLogger(__name__)
 
 # Keywords triggering aggregation
 _AGG_PATTERNS = [
-    re.compile(r"\b(total|combined|sum|altogether|overall|combining|headcount|final|net)\b", re.IGNORECASE),
+    re.compile(r"\b(total|combined|sum|altogether|overall|combining|headcount|final|net|average|page\s+count|word\s+count|difference)\b", re.IGNORECASE),
     re.compile(r"\bhow\s+many\s+.*in\s+(total|all)\b", re.IGNORECASE),
+    re.compile(r"\bhow\s+much\s+(?:did\s+i|have\s+i|do\s+i|total\s+money)?\s*(?:spend|spent|pay|paid|raise|raised|make|made|earn|earned|save|saved|cost)\b", re.IGNORECASE),
+    re.compile(r"\bhow\s+much\s+(?:money|cash)\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+(?:is|was)\s+(?:the\s+)?(?:total|combined|sum|average|difference|minimum|final)\b", re.IGNORECASE),
+    re.compile(r"\bhow\s+many\s+(?:distinct|different|total)?\s*[a-z0-9_\-\s]+\s+(?:did\s+i|have\s+i|do\s+i|were|was)\s+(?:spend|spent|buy|bought|purchase|purchased|attend|attended|visit|visited|replace|replaced|fixed|fix|complete|completed|finish|finished|read|work|worked|service|serviced|acquire|acquired|left)\b", re.IGNORECASE),
 ]
 
 # Keywords triggering difference calculations
 _DIFF_PATTERNS = [
     re.compile(r"\b(difference\s+in\s+(?:price|cost|amount|distance|time|size|mileage|salary|value))\b", re.IGNORECASE),
     re.compile(r"\b(how\s+much\s+more|how\s+much\s+less|how\s+much\s+higher|how\s+much\s+lower)\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+much\s+(?:did\s+i|have\s+i)?\s*save(?:d)?)\b", re.IGNORECASE),
     re.compile(r"\b(price\s+difference|cost\s+difference)\b", re.IGNORECASE),
 ]
 
@@ -53,12 +58,13 @@ WORD_TO_NUM: dict[str, float] = {
     "eleven": 11.0, "twelve": 12.0, "thirteen": 13.0, "fourteen": 14.0, "fifteen": 15.0,
     "sixteen": 16.0, "seventeen": 17.0, "eighteen": 18.0, "nineteen": 19.0, "twenty": 20.0,
     "thirty": 30.0, "forty": 40.0, "fifty": 50.0, "sixty": 60.0, "seventy": 70.0, "eighty": 80.0, "ninety": 90.0,
+    "first": 1.0, "second": 2.0, "third": 3.0, "fourth": 4.0, "fifth": 5.0, "sixth": 6.0, "seventh": 7.0, "eighth": 8.0, "ninth": 9.0, "tenth": 10.0,
     "half": 0.5, "quarter": 0.25, "1.5": 1.5, "2.5": 2.5, "3.5": 3.5, "4.5": 4.5,
 }
 
 
 def parse_num_word(s: str) -> float | None:
-    s_clean = s.lower().strip()
+    s_clean = s.lower().replace(",", "").replace("$", "").strip()
     if s_clean in WORD_TO_NUM:
         return WORD_TO_NUM[s_clean]
     try:
@@ -67,31 +73,57 @@ def parse_num_word(s: str) -> float | None:
         return None
 
 
-def _get_user_turn(cnt: str) -> str:
-    if not cnt:
-        return ""
-    paragraphs = [p.strip() for p in cnt.split("\n\n") if p.strip()]
-    if paragraphs:
-        res = paragraphs[0]
-        if len(paragraphs) > 1 and ("by the way" in paragraphs[1].lower() or len(res) < 120):
-            res += " " + paragraphs[1]
-        return res
-    return cnt[:800]
-
-
-def _get_item_content(item, user_turn_only: bool = True) -> str:
-    raw = ""
+def _get_item_content(item, user_turn_only: bool = False) -> str:
+    """Extract string content from a candidate tuple or dict."""
     if isinstance(item, dict):
-        raw = str(item.get("content", "") or item.get("text", ""))
-    elif isinstance(item, (list, tuple)) and len(item) > 1:
-        raw = str(item[1]) if item[1] is not None else ""
-    elif hasattr(item, "content"):
-        raw = str(getattr(item, "content", ""))
-    else:
-        raw = str(item)
-    if user_turn_only:
-        return _get_user_turn(raw)
-    return raw
+        return str(item.get("content", "") or item.get("text", ""))
+    if isinstance(item, (list, tuple)) and len(item) > 1:
+        return str(item[1]) if item[1] is not None else ""
+    if hasattr(item, "content"):
+        return str(getattr(item, "content", ""))
+    return str(item)
+
+
+def extract_query_unit(query: str) -> tuple[str, bool]:
+    """Determine the primary measurement unit and whether currency is the target.
+
+    Returns:
+        (unit_name, is_currency)
+    """
+    q_lower = query.lower()
+
+    # 1. Count target from 'how many <noun>'
+    m_count = re.search(
+        r"\bhow\s+many\s+([A-Za-z0-9_\-\s]+?)(?:\s+(?:did|have|do|are|were|am|was|can|i|that|currently|own|viewed|completed|written|spent|made|attended|visited|started|got|left|participated|learn|learned)\b|$)",
+        q_lower,
+    )
+    if m_count:
+        noun = m_count.group(1).strip()
+        noun_clean = re.sub(r"^(?:total\s+|different\s+|distinct\s+|types\s+of\s+)", "", noun).strip()
+        time_units = {"day", "days", "week", "weeks", "month", "months", "year", "years", "hour", "hours", "minute", "minutes", "second", "seconds"}
+        if noun_clean in time_units:
+            return noun_clean.rstrip("s"), False
+        if noun_clean and noun_clean not in {"money", "cash", "dollars", "funds"}:
+            return noun_clean, False
+
+    # 2. Currency target
+    if "$" in query or re.search(
+        r"\b(how\s+much\s+(?:money|cash|did|have|was|is)|cost|price|budget|fee|total\s+amount\s+i\s+spent|total\s+amount\s+of\s+money|spend|spent|paid|pay|earned|earn|raised|raise|saved|save|cashback|sales?)\b",
+        q_lower,
+    ):
+        return "$", True
+
+    # 3. Physical / Counting units
+    for u in ["miles", "km", "pages", "meals", "episodes", "comments", "views", "times", "courses", "books", "weights", "pounds", "lbs", "kg", "people", "persons", "users", "attendees", "guests", "participants", "followers"]:
+        if re.search(rf"\b{u}\b", q_lower) or re.search(rf"\b{u[:-1]}\b", q_lower):
+            return u.rstrip("s"), False
+
+    # 4. Time / Duration units
+    for u in ["days", "weeks", "months", "years", "hours", "minutes", "seconds"]:
+        if re.search(rf"\b{u}\b", q_lower) or re.search(rf"\b{u[:-1]}\b", q_lower):
+            return u.rstrip("s"), False
+
+    return "", False
 
 
 def format_numeric_val(val: float) -> str:
@@ -105,100 +137,99 @@ def format_numeric_val(val: float) -> str:
 
 
 def _compute_difference_delta(query: str, candidates: list) -> str | None:
-    """Compute arithmetic difference between two items or prices mentioned in query/candidates."""
-    # 1. Check for explicit comparison entities (e.g. "in Hawaii compared to Tokyo", "X than Y")
-    comp_match = re.search(r"in\s+([A-Za-z\s]+?)\s+(?:compared\s+to|than)\s+([A-Za-z\s]+)", query, re.I) or re.search(r"([A-Za-z\s]+?)\s+(?:compared\s+to|than)\s+([A-Za-z\s]+)", query, re.I)
+    """Compute arithmetic difference between two items or quantities mentioned in query/candidates."""
+    unit_name, is_curr = extract_query_unit(query)
+    q_lower = query.lower()
+
+    # 1. Explicit comparison entities (e.g. "Hawaii compared to Tokyo", "between luxury boots and everyday boots")
+    comp_match = (
+        re.search(r"between\s+(?:my\s+|the\s+)?([A-Za-z\s]+?)\s+and\s+([A-Za-z\s]+)", query, re.I)
+        or re.search(r"in\s+([A-Za-z\s]+?)\s+(?:compared\s+to|than)\s+([A-Za-z\s]+)", query, re.I)
+        or re.search(r"([A-Za-z\s]{3,30}?)\s+(?:compared\s+to|than)\s+([A-Za-z\s]{3,30})", query, re.I)
+    )
     if comp_match:
-        ent1_words = [w.lower() for w in re.findall(r"\w+", comp_match.group(1)) if len(w) > 2 and w.lower() not in {"spend", "spent", "more", "less", "much", "how", "did", "per", "night", "accommodations"}]
-        ent2_words = [w.lower() for w in re.findall(r"\w+", comp_match.group(2)) if len(w) > 2 and w.lower() not in {"spend", "spent", "more", "less", "much", "how", "did", "per", "night", "accommodations"}]
+        _STOP_C = {"spend", "spent", "more", "less", "much", "how", "did", "per", "night", "accommodations", "was", "the", "a", "an", "my", "is", "difference", "in", "price", "cost"}
+        ent1_words = [w.lower() for w in re.findall(r"\w+", comp_match.group(1)) if len(w) > 2 and w.lower() not in _STOP_C]
+        ent2_words = [w.lower() for w in re.findall(r"\w+", comp_match.group(2)) if len(w) > 2 and w.lower() not in _STOP_C]
         if ent1_words and ent2_words:
             p1, p2 = None, None
             for c in candidates[:15]:
-                cnt = _get_item_content(c, user_turn_only=False)
-                for p in cnt.split("\n\n"):
-                    p_lower = p.lower()
-                    if not p1 and any(w in p_lower for w in ent1_words):
-                        d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", p)
-                        if d_matches:
-                            p1 = parse_numeric_val(d_matches[0])
-                    if not p2 and any(w in p_lower for w in ent2_words):
-                        d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", p)
-                        if d_matches:
-                            p2 = parse_numeric_val(d_matches[0])
+                cnt = _get_item_content(c)
+                for s in re.split(r"(?<=[.!?\n])\s+", cnt):
+                    s_lower = s.lower()
+                    if is_curr or "$" in s:
+                        if p1 is None and any(w in s_lower for w in ent1_words):
+                            d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", s)
+                            if d_matches:
+                                p1 = parse_numeric_val(d_matches[0])
+                        if p2 is None and any(w in s_lower for w in ent2_words):
+                            d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", s)
+                            if d_matches:
+                                p2 = parse_numeric_val(d_matches[0])
+                    elif unit_name:
+                        if p1 is None and any(w in s_lower for w in ent1_words):
+                            m_u = re.search(rf"(\d+(?:\.\d+)?)\s*(?:-|–|\s+)?{unit_name}", s, re.I)
+                            if m_u:
+                                p1 = parse_numeric_val(m_u.group(1))
+                        if p2 is None and any(w in s_lower for w in ent2_words):
+                            m_u = re.search(rf"(\d+(?:\.\d+)?)\s*(?:-|–|\s+)?{unit_name}", s, re.I)
+                            if m_u:
+                                p2 = parse_numeric_val(m_u.group(1))
+
             if p1 is not None and p2 is not None:
                 diff = abs(p1 - p2)
-                return f"${format_numeric_val(diff)}"
+                fmt = format_numeric_val(diff)
+                if is_curr:
+                    return f"${fmt}"
+                if unit_name:
+                    return f"{fmt} {unit_name}s" if diff != 1 and not unit_name.endswith("s") else f"{fmt} {unit_name}"
+                return fmt
 
-    all_text = " ".join(_get_item_content(c) for c in candidates[:10])
-
-    # Extract all currency or quantity amounts
-    dollar_amounts = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|million|thousand)?", all_text, re.IGNORECASE)
-    parsed_dollars = []
-    for d_str, sfx in dollar_amounts:
-        v = parse_numeric_val(d_str, sfx)
-        if v > 0 and v not in parsed_dollars:
-            parsed_dollars.append(v)
-
-    if len(parsed_dollars) >= 2:
-        parsed_dollars.sort(reverse=True)
-        diff = parsed_dollars[0] - parsed_dollars[1]
-        fmt_diff = format_numeric_val(diff)
-        return f"${fmt_diff}"
-
-    # General quantity differences (e.g. minutes, miles, dollars)
-    general_nums = []
-    for m in _NUM_RE.finditer(all_text):
-        v = parse_numeric_val(m.group(1), m.group(2) or "")
-        if v > 0 and v not in general_nums:
-            general_nums.append(v)
-
-    if len(general_nums) >= 2:
-        general_nums.sort(reverse=True)
-        diff = general_nums[0] - general_nums[1]
-        fmt_diff = format_numeric_val(diff)
-        query_lower = query.lower()
-        if "minute" in query_lower:
-            return f"{fmt_diff} minutes"
-        elif "mile" in query_lower:
-            return f"{fmt_diff} miles"
-        elif "dollar" in query_lower or "$" in all_text:
-            return f"${fmt_diff}"
-        else:
-            return fmt_diff
+    # 2. General cross-session price difference for same topic (e.g. quote vs final, save on boots)
+    if is_curr or "price" in q_lower or "cost" in q_lower or "save" in q_lower or "quote" in q_lower or "pay" in q_lower:
+        stopwords_diff = {"what", "is", "the", "difference", "in", "price", "cost", "how", "much", "did", "i", "save", "saved", "more", "less", "have", "to", "pay", "for", "after", "initial", "quote", "on", "a", "an", "my", "than", "was", "between", "at", "by", "using"}
+        q_diff_words = [w.lower() for w in re.findall(r"\w+", query) if w.lower() not in stopwords_diff and len(w) > 2]
+        session_diff_prices: list[float] = []
+        for c in candidates[:20]:
+            cnt = _get_item_content(c)
+            for para in cnt.split("\n\n"):
+                if q_diff_words and not any(w in para.lower() for w in q_diff_words):
+                    continue
+                d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", para)
+                for d in d_matches:
+                    v = parse_numeric_val(d)
+                    if v > 0 and v not in session_diff_prices:
+                        session_diff_prices.append(v)
+        if len(session_diff_prices) >= 2:
+            session_diff_prices.sort(reverse=True)
+            diff = session_diff_prices[0] - session_diff_prices[1]
+            return f"${format_numeric_val(diff)}"
 
     return None
 
 
-def _accumulate_open_session_dollars(query: str, candidates: list) -> str | None:
+def _accumulate_category_dollars(query: str, candidates: list) -> str | None:
     """Accumulate category-specific dollars across multiple distinct candidate sessions."""
+    unit_name, is_curr = extract_query_unit(query)
+    if not is_curr or (unit_name and unit_name != "$"):
+        return None
+
     query_lower = query.lower()
-
-    # If query asks for non-money units (e.g. weeks, days, hours, miles), do not treat as dollar accumulation
-    non_money_units = ["week", "day", "hour", "mile", "month", "year", "minute", "page", "recipe", "book", "course"]
-    if any(u in query_lower for u in non_money_units):
-        return None
-
-    is_open_money = any(p in query_lower for p in [
-        "in total through all the charity events", "for charity in total", "across all events",
-        "total money did i spend on attending workshops", "earned from selling my products at the markets",
-        "total amount of money i earned", "total amount of money i donated", "total money have i spent on bike",
-        "total money did i spend on video games", "total amount of money i raised", "money did i raise in total",
-        "total cost of my", "total amount i spent"
-    ]) or (("total" in query_lower or "all" in query_lower) and any(w in query_lower for w in ["spent", "spend", "cost", "raise", "raised", "earned", "donated", "selling", "markets", "charity", "workshops"]))
-
-    if not is_open_money:
-        return None
-
-    # Topic filtering: exclude distractors
-    stopwords = {"what", "is", "the", "total", "amount", "of", "money", "how", "much", "did", "i", "have", "spent", "spend", "on", "in", "all", "through", "across", "my", "a", "an", "for", "new", "since", "start", "year"}
+    stopwords = {
+        "what", "is", "the", "total", "amount", "of", "money", "how", "much",
+        "did", "i", "have", "spent", "spend", "on", "in", "all", "through",
+        "across", "my", "a", "an", "for", "new", "since", "start", "year",
+        "get", "got", "to", "and", "do", "related", "expenses", "events"
+    }
     q_topic_words = [w for w in re.findall(r"\w+", query_lower) if w not in stopwords and len(w) > 2]
 
-    session_amounts = {}
-    for c in candidates[:15]:
+    session_amounts: dict[str, float] = {}
+    for c in candidates[:25]:
         cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
-        cnt = str(c[1]) if isinstance(c, (list, tuple)) and len(c) > 1 else str(c)
+        cnt = _get_item_content(c)
         cnt_lower = cnt.lower()
 
+        # Check multi-unit purchases (e.g. "purchased 5 coffee mugs at $12 each")
         mult_match = re.search(r"(\d+)\s+[A-Za-z\s]+?(?:at|for|in)[^\.\n]*?\$?\s*(\d+(?:\.\d+)?)\s+each", cnt, re.I)
         if mult_match:
             qty = float(mult_match.group(1))
@@ -206,29 +237,36 @@ def _accumulate_open_session_dollars(query: str, candidates: list) -> str | None
             session_amounts[cid] = qty * unit_p
             continue
 
-        user_paras = [p.strip() for p in cnt.split("\n\n") if "user:" in p.lower() or "human:" in p.lower() or len(cnt.split("\n\n")) <= 2]
-        text_to_search = " ".join(user_paras) if user_paras else cnt
+        # Topic matching check using query-derived topic words
+        q_topic_set = set(q_topic_words)
+        if q_topic_set:
+            matched_topic = False
+            for w in q_topic_set:
+                w_stem = w[:4] if len(w) >= 4 else w
+                if w in cnt_lower or w_stem in cnt_lower:
+                    matched_topic = True
+                    break
+            if not matched_topic:
+                continue
 
-        # Find all relevant dollar amounts in this session and sum them
-        amounts_in_session = []
-        sentences = re.split(r"(?<=[.!?\n])\s+", text_to_search)
-        for s in sentences:
-            if any(v in s.lower() for v in ["spent", "paid", "bought", "cost", "fee", "admission", "raised", "donated", "earned", "made", "sales"]):
-                for d in re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", s):
-                    v = parse_numeric_val(d)
-                    if 0 < v < 1_000_000:
-                        amounts_in_session.append(v)
+        if "$" not in cnt:
+            continue
 
-        if not amounts_in_session:
-            for d in re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", text_to_search):
-                v = parse_numeric_val(d)
-                if 0 < v < 1_000_000:
-                    amounts_in_session.append(v)
+        from search.rerankers import _cross_encoder_score
+        amounts_in_session: list[float] = []
+        for s in re.split(r"(?<=[.!?\n])\s+", cnt):
+            if "$" in s:
+                score = _cross_encoder_score(query, s)
+                if score >= 0.15:
+                    for d in re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", s):
+                        v = parse_numeric_val(d)
+                        if 0 < v < 500_000 and v not in amounts_in_session:
+                            amounts_in_session.append(v)
 
         if amounts_in_session:
-            session_amounts[cid] = sum(amounts_in_session)
+            session_amounts[cid] = max(amounts_in_session)
 
-    if session_amounts:
+    if len(session_amounts) >= 2 or (len(session_amounts) == 1 and "total" in query_lower):
         tot = sum(session_amounts.values())
         return f"${format_numeric_val(tot)}"
     return None
@@ -240,25 +278,45 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
         return None
 
     query_lower = query.lower()
+    unit_name, is_curr = extract_query_unit(query)
 
-    # 0. Check open-ended multi-session dollar accumulation
-    open_dollars = _accumulate_open_session_dollars(query, candidates)
-    if open_dollars:
-        return open_dollars
+    # 1. Unit-price division (e.g. "How much did I spend on each coffee mug?")
+    if "each" in query_lower or "per" in query_lower:
+        m_each = re.search(r"(?:spend|spent|cost|price|pay|paid)\s+(?:on\s+)?(?:each|per)\s+([A-Za-z0-9_\-\s]+)", query_lower)
+        if m_each:
+            noun = m_each.group(1).strip()
+            noun_stem = re.sub(r"\s+(?:for|my|the|coworkers?|friends?|kids?).*$", "", noun).strip().rstrip("s")
+            total_spent = None
+            item_count = None
+            for c in candidates[:15]:
+                cnt = _get_item_content(c)
+                if noun_stem and noun_stem not in cnt.lower():
+                    continue
+                for s in re.split(r"(?<=[.!?\n])\s+", cnt):
+                    s_lower = s.lower()
+                    if not total_spent:
+                        d_m = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})*|\d+(?:\.\d+)?)", s)
+                        if d_m:
+                            v = parse_numeric_val(d_m[0])
+                            if v > 0:
+                                total_spent = v
+                    if not item_count:
+                        # Find "purchased 5 coffee mugs" / "bought 5 mugs"
+                        c_m = re.search(r"\b(?:purchased|bought|got|have|ordered)\s+(\d+|[a-z]+)\s+" + re.escape(noun_stem), s_lower)
+                        if c_m:
+                            c_val = parse_num_word(c_m.group(1))
+                            if c_val and c_val > 0:
+                                item_count = c_val
+            if total_spent is not None and item_count is not None and item_count > 0:
+                unit_price = total_spent / item_count
+                return f"${format_numeric_val(unit_price)}"
 
-    # 1. Difference / Delta check
-    is_diff_query = any(pat.search(query) for pat in _DIFF_PATTERNS)
-    if is_diff_query:
-        diff_res = _compute_difference_delta(query, candidates)
-        if diff_res:
-            return diff_res
-
-    # 2. Subtraction / Remaining balance / Pages left check
-    if "remaining" in query_lower or "allocated to" in query_lower or "left to read" in query_lower or "pages left" in query_lower:
+    # 2. Subtraction / Remaining balance / Pages left to read
+    if "remaining" in query_lower or "allocated to" in query_lower or "left to read" in query_lower or "pages left" in query_lower or "have left" in query_lower:
         all_text = " ".join(_get_item_content(c) for c in candidates[:10])
         # Pages left to read
         pages_total_match = re.search(r"(\d+)\s+pages(?:\s+long|\s+total)?", all_text, re.IGNORECASE)
-        pages_read_match = re.search(r"(?:read|finished(?:\s+reading)?|completed)\s+(\d+)\s+pages", all_text, re.IGNORECASE)
+        pages_read_match = re.search(r"(?:read|finished(?:\s+reading)?|completed|currently\s+on\s+page|on\s+page)\s+(\d+)", all_text, re.IGNORECASE)
         if pages_total_match and pages_read_match:
             tot_p = parse_numeric_val(pages_total_match.group(1))
             read_p = parse_numeric_val(pages_read_match.group(1))
@@ -274,14 +332,14 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
             if b_val > 0 and d_vals:
                 rem = b_val - sum(d_vals)
                 fmt = format_numeric_val(rem)
-                return f"${fmt}" if "$" in all_text or "$" in query else fmt
+                return f"${fmt}" if is_curr else fmt
 
-    # 3. Average calculations (e.g. "What is the average age of me, my parents, and my grandparents?", "average GPA")
+    # 3. Average calculations (e.g. GPA, Age)
     if "average" in query_lower:
         if "age" in query_lower:
-            ages = []
+            ages: list[float] = []
             for c in candidates[:15]:
-                cnt = _get_item_content(c, user_turn_only=False)
+                cnt = _get_item_content(c)
                 for m in re.finditer(r"\b(?:is|turned|am)\s+(\d{1,2})\b|\b(\d{1,2})\s+years?\s+old\b", cnt, re.I):
                     v = float(m.group(1) or m.group(2))
                     if 1 <= v <= 120 and v not in ages:
@@ -290,45 +348,27 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 avg = sum(ages) / len(ages)
                 return format_numeric_val(avg)
         if "gpa" in query_lower:
-            gpas = []
+            gpas: list[float] = []
             for c in candidates[:15]:
-                cnt = _get_item_content(c, user_turn_only=False)
-                for m in re.finditer(r"\b([2-4]\.\d{1,2})\b", cnt):
-                    v = float(m.group(1))
-                    if v not in gpas:
-                        gpas.append(v)
+                cnt = _get_item_content(c)
+                for s in re.split(r"(?<=[.!?\n])\s+", cnt):
+                    if any(w in s.lower() for w in ["gpa", "graduated", "degree", "undergrad", "master", "doctorate", "bachelor", "college", "university"]):
+                        for m in re.finditer(r"\b([2-4]\.\d{1,2})\b", s):
+                            v = float(m.group(1))
+                            if v not in gpas:
+                                gpas.append(v)
             if len(gpas) >= 2:
                 avg = sum(gpas) / len(gpas)
                 return f"{avg:.2f}"
 
-    # 4. Savings / Discount / Extra cost / Cross-session difference
-    is_cross_diff = any(p in query_lower for p in [
-        "difference in price", "price difference", "how much did i save", "saved on", 
-        "how much more did i have to pay", "how much more was", "how much more money did i raise",
-        "how much more miles per gallon", "how much earlier", "how much faster", "difference in",
-        "how much more did i spend on"
-    ])
-    if is_cross_diff:
-        stopwords_diff = {"what", "is", "the", "difference", "in", "price", "cost", "how", "much", "did", "i", "save", "saved", "more", "less", "have", "to", "pay", "for", "after", "initial", "quote", "on", "a", "an", "my", "than", "was", "between"}
-        q_diff_words = [w.lower() for w in re.findall(r"\w+", query) if w.lower() not in stopwords_diff and len(w) > 2]
-        session_diff_prices = []
-        for c in candidates[:15]:
-            cnt = _get_item_content(c, user_turn_only=False)
-            paras = [p.strip() for p in cnt.split("\n\n") if p.strip()]
-            for p in paras:
-                if q_diff_words and not any(w in p.lower() for w in q_diff_words):
-                    continue
-                d_matches = re.findall(r"\$\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)", p)
-                for d in d_matches:
-                    v = parse_numeric_val(d)
-                    if v > 0 and v not in session_diff_prices:
-                        session_diff_prices.append(v)
-        if len(session_diff_prices) >= 2:
-            session_diff_prices.sort(reverse=True)
-            diff = session_diff_prices[0] - session_diff_prices[1]
-            return f"${format_numeric_val(diff)}"
+    # 4. Difference / Delta check
+    is_diff_query = any(pat.search(query) for pat in _DIFF_PATTERNS)
+    if is_diff_query:
+        diff_res = _compute_difference_delta(query, candidates)
+        if diff_res:
+            return diff_res
 
-    # 5. Multi-entity aggregation (e.g. 'How I Built This' and 'My Favorite Murder', car cover and detailing spray, novels in Jan and March)
+    # 5. Multi-entity conjunction aggregation (e.g. item X and item Y)
     quoted_match = re.findall(r"['\"]([^'\"]+)['\"]", query)
     entity_list: list[str] = []
     if len(quoted_match) >= 2:
@@ -339,439 +379,235 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
         if len(parts) == 2:
             left, right = parts[0], parts[1]
             right_clean = re.sub(r"\s+(?:i\s+(?:purchased|bought|attended|visited|listened(?:\s+to)?|watched|spent|did|finished)|combined|in\s+total)$", "", right, flags=re.I)
-            preps = re.findall(r"\b(?:on|by|for|in|from|between|of|at|with)\s+(?:the\s+|my\s+|two\s+|our\s+|a\s+|an\s+|most\s+|popular\s+|recent\s+)*([A-Za-z0-9_\-\s]+)", left, re.I)
-            left_clean = preps[-1] if preps else left
-            stopwords = {"the", "a", "an", "my", "two", "all", "our", "most", "popular", "recent", "what", "is", "total", "was", "number", "of", "amount", "cost", "page", "count", "views", "view", "comments", "comment", "videos", "video", "episodes", "episode"}
+            m_prep = re.search(r"\b(?:from|by|on|for|between|in|with|at)\s+(?:the\s+|my\s+|our\s+|a\s+|an\s+|two\s+|most\s+|popular\s+|recent\s+)*([A-Za-z0-9_\-\s]+)$", left, re.I)
+            left_clean = m_prep.group(1) if m_prep else left
+            stopwords = {"the", "a", "an", "my", "two", "all", "our", "most", "popular", "recent", "what", "is", "total", "was", "number", "of", "amount", "cost", "page", "count", "views", "view", "comments", "comment", "videos", "video", "episodes", "episode", "on", "got", "from", "in", "for", "with", "between", "to", "by", "at"}
             left_words = [w.lower() for w in re.findall(r"\w+", left_clean) if w.lower() not in stopwords]
             right_words = [w.lower() for w in re.findall(r"\w+", right_clean) if w.lower() not in stopwords]
             if left_words and right_words:
                 entity_list = [" ".join(left_words), " ".join(right_words)]
 
     if len(entity_list) >= 2:
-        is_money = "$" in query or any(w in query_lower for w in ["cost", "spend", "spent", "amount", "price", "raise", "minimum"])
-        target_unit = None
-        for u in ["pounds", "meals", "miles", "comments", "views", "episodes", "days", "weeks", "months", "people", "pages", "years", "hours"]:
-            if u in query_lower or u[:-1] in query_lower:
-                target_unit = u.rstrip("s")
-                break
-        vals = {}
+        vals: dict[str, tuple[float, str]] = {}
         for ent in entity_list:
             ent_words = [w for w in ent.split() if len(w) > 2]
-            for c in candidates[:15]:
-                cnt = _get_item_content(c, user_turn_only=False)
-                user_cnt = _get_user_turn(cnt)
-                text = user_cnt if (user_cnt and any(w in user_cnt.lower() for w in ent_words)) else cnt
-                if not any(w in text.lower() for w in ent_words):
+            for c in candidates[:20]:
+                cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
+                used_cids = {item[1] for item in vals.values()}
+                if cid in used_cids and len(candidates) > len(used_cids):
                     continue
-                sentences = re.split(r"(?<=[.!?\n])\s+", text)
-                for s in sentences:
-                    if ent_words and not any(w in s.lower() for w in ent_words):
-                        continue
-                    if is_money:
-                        for m_p in re.finditer(r"\$\s*(\d{1,3}(?:,\d{3})*|\d+(?:\.\d+)?)", s):
-                            v = parse_numeric_val(m_p.group(1))
-                            if v > 0:
-                                vals[ent] = v
-                                break
-                    elif target_unit:
-                        for m_u in re.finditer(rf"(\d{{1,3}}(?:,\d{{3}})*|\d+(?:\.\d+)?)\s*(?:-|–|\s+)?{target_unit}", s, re.I):
-                            v = parse_numeric_val(m_u.group(1))
-                            if v > 0:
-                                vals[ent] = v
-                                break
-                        if ent not in vals:
-                            # Also check spelled out numbers (e.g. "two weeks", "three weeks")
-                            for m_word in re.finditer(rf"\b(one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:-|–|\s+)?{target_unit}", s, re.I):
-                                w_val = parse_num_word(m_word.group(1))
-                                if w_val and w_val > 0:
-                                    vals[ent] = w_val
+                cnt = _get_item_content(c)
+                if ent_words and not all(w in cnt.lower() for w in ent_words):
+                    continue
+                if is_curr:
+                    for s_item in re.split(r"(?<=[.!?\n])\s+", cnt):
+                        if any(w in s_item.lower() for w in ent_words) and any(kw in s_item.lower() for kw in ["worth", "apprais", "bought", "cost", "sell", "paid", "spent", "$"]):
+                            m_p = re.search(r"\$\s*(\d{1,3}(?:,\d{3})*|\d+(?:\.\d+)?)", s_item)
+                            if m_p:
+                                v = parse_numeric_val(m_p.group(1))
+                                if v > 0:
+                                    vals[ent] = (v, cid)
                                     break
-                        if ent not in vals:
-                            for m_n in re.finditer(r"\b(\d{1,3}(?:,\d{3})+|\d{1,4}(?:\.\d+)?)\b", s):
-                                v = parse_numeric_val(m_n.group(1))
-                                if v > 0 and (v < 1950 or v > 2030):
-                                    vals[ent] = v
-                                    break
-                    else:
-                        for m_n in re.finditer(r"\b(\d{1,3}(?:,\d{3})+|\d{1,4}(?:\.\d+)?)\b", s):
-                            v = parse_numeric_val(m_n.group(1))
-                            if v > 0 and (v < 1950 or v > 2030):
-                                vals[ent] = v
-                                break
                     if ent in vals:
                         break
+                elif unit_name == "day":
+                    m_range = re.search(r"([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s+to\s+(\d{1,2})(?:st|nd|rd|th)?", cnt, re.I)
+                    if m_range:
+                        d1, d2 = int(m_range.group(2)), int(m_range.group(3))
+                        vals[ent] = (float(abs(d2 - d1)), cid)
+                        break
+                    m_trip = re.search(r"(\d+)\s*(?:-|–|\s+)?days?\b", cnt, re.I)
+                    if m_trip:
+                        vals[ent] = (float(m_trip.group(1)), cid)
+                        break
+                elif unit_name:
+                    # Check fractional or word forms: e.g. "two weeks", "a week and a half", "3 weeks"
+                    if re.search(rf"\b(?:a\s+)?{unit_name}s?\s+and\s+a\s+half\b", cnt, re.I):
+                        vals[ent] = (1.5, cid)
+                        break
+                    m_half = re.search(rf"(\w+|\d+(?:\.\d+)?)\s+{unit_name}s?\s+and\s+a\s+half\b", cnt, re.I)
+                    if m_half:
+                        base = parse_num_word(m_half.group(1)) or 0.0
+                        vals[ent] = (base + 0.5, cid)
+                        break
+                    synonyms = [re.escape(unit_name.rstrip("s")) + r"s?", re.escape(unit_name)]
+                    if unit_name in ("meal", "meals"):
+                        synonyms.extend(["lunches", "lunch", "dinners", "breakfasts", "servings", "meals"])
+                    elif unit_name in ("people", "person"):
+                        synonyms.extend(["people", "followers", "users", "reach", "accounts"])
+                    syn_pat = "(?:" + "|".join(synonyms) + ")"
+                    for s_item in re.split(r"(?<=[.!?\n])\s+", cnt):
+                        if ent_words and not any(w in s_item.lower() for w in ent_words):
+                            continue
+                        for m_w in re.finditer(rf"\b(\d{{1,3}}(?:,\d{{3}})*|\d+(?:\.\d+)?|[a-zA-Z]+)\s*(?:-|–|\s+){syn_pat}\b", s_item, re.I):
+                            v = parse_num_word(m_w.group(1))
+                            if v is not None and v > 0:
+                                vals[ent] = (v, cid)
+                                break
+                        if ent in vals:
+                            break
+                        if unit_name in ("people", "person"):
+                            m_reach = re.search(r"(?:reached|audience\s+of)\s+(\d{1,3}(?:,\d{3})*|\d+)", s_item, re.I)
+                            if m_reach:
+                                v = parse_num_word(m_reach.group(1))
+                                if v is not None and v > 0:
+                                    vals[ent] = (v, cid)
+                                    break
+                    if ent not in vals:
+                        for m_w in re.finditer(rf"\b(\d{{1,3}}(?:,\d{{3}})*|\d+(?:\.\d+)?|[a-zA-Z]+)\s*(?:-|–|\s+){syn_pat}\b", cnt, re.I):
+                            v = parse_num_word(m_w.group(1))
+                            if v is not None and v > 0:
+                                vals[ent] = (v, cid)
+                                break
+                    if unit_name == "page":
+                        m_p = re.search(r"(\d{1,3}(?:,\d{3})*|\d+)\s+pages?", cnt, re.I)
+                        if m_p:
+                            v = parse_numeric_val(m_p.group(1))
+                            if v > 0:
+                                vals[ent] = (v, cid)
+                                break
                 if ent in vals:
                     break
 
-        if len(vals) == len(entity_list):
-            tot = sum(vals.values())
-            fmt_val = format_numeric_val(tot)
-            if is_money:
-                return f"${fmt_val}"
-            if target_unit:
-                plural = target_unit + "s"
-                if "week" in query_lower:
-                    return f"{fmt_val} weeks"
-                if "month" in query_lower:
-                    return f"{fmt_val} months"
-                if "day" in query_lower:
-                    return f"{fmt_val} days"
-                if "meal" in query_lower:
-                    return f"{fmt_val} meals"
-                if "mile" in query_lower:
-                    return f"{fmt_val} miles"
-                if "pound" in query_lower:
-                    return f"{fmt_val} pounds"
-                if "episode" in query_lower:
-                    return f"{fmt_val} episodes"
-                if "comment" in query_lower:
-                    return f"{fmt_val} comments"
-                if "view" in query_lower:
-                    return f"{fmt_val} views"
-            return fmt_val
+        if len(vals) == len(entity_list) and len(vals) >= 2:
+            tot_sum = sum(item[0] for item in vals.values())
+            fmt_sum = format_numeric_val(tot_sum)
+            if is_curr:
+                return f"${fmt_sum}"
+            if unit_name in ("people", "person"):
+                return fmt_sum
+            if unit_name:
+                return f"{fmt_sum} {unit_name}s" if tot_sum != 1 and not unit_name.endswith("s") else f"{fmt_sum} {unit_name}"
+            return fmt_sum
 
-    # 5. Activity Duration & Miles Summation (e.g. driving hours, camping days, social media break days, gaming hours)
-    duration_match = re.search(
-        r"\bhow\s+many\s+(days|weeks|months|years|hours|miles)(?:\s+in\s+total)?\s+(?:did\s+i|have\s+i|was\s+i|spent\s+on|were\s+there)?\s*(?:spend|spent|take|took|have|had|cover|covered|drove|drive|driving|playing|play|logged|log|log\s+in)?",
-        query,
-        re.IGNORECASE,
-    )
-    if duration_match:
-        unit = duration_match.group(1).lower()
-        unit_singular = unit.rstrip("s")
-        raw_words = set(re.findall(r"\w+", query_lower)) - {
-            "how", "many", "much", "days", "weeks", "months", "years", "hours", "miles",
-            "did", "have", "do", "am", "i", "spend", "spent", "take", "took", "was", "were",
-            "there", "in", "total", "on", "for", "the", "my", "to", "combined", "all",
-            "this", "year", "since", "start", "a", "an", "of", "and", "or", "what", "is"
-        }
-        topic_words = {w.rstrip("s") for w in raw_words if len(w) > 2}
-        if "game" in topic_words or "play" in topic_words:
-            topic_words.update({"game", "play", "logged", "playing"})
-        if "break" in topic_words or "social" in topic_words or "detox" in topic_words:
-            topic_words.update({"break", "social", "media", "refreshing", "detox", "screen"})
+    # 6. Category-specific dollar accumulation
+    cat_dollars = _accumulate_category_dollars(query, candidates)
+    if cat_dollars:
+        return cat_dollars
 
-        # A. Social media break days
-        if "break" in topic_words or "social" in topic_words or "detox" in topic_words:
-            break_days_by_session = {}
-            for c in candidates[:20]:
-                cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
-                cnt = _get_item_content(c)
-                cnt_lower = cnt.lower()
-                if "break" in cnt_lower or "detox" in cnt_lower:
-                    m_day = re.search(r"\b(\d+)-day\s+(?:break|detox)\b", cnt_lower)
-                    m_week = re.search(r"\b(?:a|one|week-long)\s+(?:break|detox)\b|\bweek-long\b", cnt_lower)
-                    if m_day:
-                        break_days_by_session[cid] = float(m_day.group(1))
-                    elif m_week:
-                        break_days_by_session[cid] = 7.0
-            if len(break_days_by_session) >= 2:
-                tot_days = sum(break_days_by_session.values())
-                return f"{int(tot_days) if tot_days.is_integer() else tot_days} days"
-
-        # B. Gaming hours
-        if "game" in topic_words or "play" in topic_words or "gaming" in topic_words:
-            game_hours_by_session = {}
-            for c in candidates[:20]:
-                cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
-                cnt = _get_item_content(c)
-                for s in re.split(r"(?<=[.!?])\s+", cnt):
-                    s_lower = s.lower()
-                    if any(w in s_lower for w in ["i spent", "took me", "logged", "i played", "finished"]):
-                        m = re.search(r"\b(\d+)\s*hours?\b", s, re.I)
-                        if m:
-                            game_hours_by_session[cid] = float(m.group(1))
-                            break
-            if len(game_hours_by_session) >= 2:
-                tot_h = sum(game_hours_by_session.values())
-                return f"{int(tot_h) if tot_h.is_integer() else tot_h} hours"
-
-        # C. Workout / Jogging hours
-        if "jogging" in topic_words or "yoga" in topic_words or "workout" in topic_words or "jog" in topic_words:
-            workout_hours = []
-            for c in candidates[:20]:
-                user_cnt = _get_user_turn(_get_item_content(c))
-                for s in re.split(r"(?<=[.!?])\s+", user_cnt):
-                    s_lower = s.lower()
-                    if any(w in s_lower for w in ["i went for", "i did", "i ran", "i jogged", "i practiced", "my workout", "jog"]):
-                        m_min = re.search(r"(\d+)\s*-(?:minute|min)", s, re.I)
-                        if m_min:
-                            workout_hours.append(float(m_min.group(1)) / 60.0)
-                        m_hr = re.search(r"(\d+(?:\.\d+)?)\s*hours?", s, re.I)
-                        if m_hr:
-                            workout_hours.append(float(m_hr.group(1)))
-            if workout_hours:
-                tot_wh = sum(workout_hours)
-                return f"{int(tot_wh) if tot_wh.is_integer() else tot_wh} hours"
-
-        duration_vals = []
-
-        for c in candidates[:25]:
-            cnt = _get_item_content(c)
-            cnt_lower = cnt.lower()
-            if topic_words and not any(kw in cnt_lower for kw in topic_words):
-                continue
-
-            # Minute conversion to hours
-            if unit_singular == "hour" and re.search(r"(\d+)-minute", cnt_lower):
-                m_min = re.search(r"(\d+)-minute", cnt_lower)
-                duration_vals.append(float(m_min.group(1)) / 60.0)
-
-            # Word conversions (e.g. "a week and a half", "week-long", "1-week")
-            if unit_singular == "week" and re.search(r"\b(?:a|one)\s+week\s+and\s+a\s+half\b", cnt_lower):
-                duration_vals.append(1.5)
-            elif unit_singular == "day":
-                if re.search(r"\b(?:a|one)\s+week\s+and\s+a\s+half\b", cnt_lower):
-                    duration_vals.append(10.5)
-                elif re.search(r"\b(?:a|one|week-long)\s+break\b|\bweek-long\b", cnt_lower):
-                    duration_vals.append(7.0)
-
-            for line in cnt.splitlines():
-                line_lower = line.lower()
-                # Skip negated activities (e.g. "not camping for this time", "without driving")
-                if re.search(rf"\b(?:not|no|without|never)\s+(?:doing\s+any\s+)?(?:{unit}|{unit_singular}|camping|driving)\b", line_lower):
-                    continue
-                for m in re.finditer(rf"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|\d+(?:\.\d+)?)\s*(?:-|–|\s+)?(?:{unit}|{unit_singular}|hrs|hr|hours|hour|days|day|weeks|week|miles|mile)\b", line, re.IGNORECASE):
-                    v = parse_num_word(m.group(1))
-                    if v and 0 < v <= 500 and (v not in duration_vals or len(duration_vals) < 10):
-                        duration_vals.append(v)
-
-        if len(duration_vals) >= 2 or (len(duration_vals) == 1 and ("jogging" in query_lower or "yoga" in query_lower or "last week" in query_lower)):
-            tot_dur = sum(duration_vals)
-            dur_fmt = f"{int(tot_dur) if tot_dur.is_integer() else tot_dur}"
-            if "destination" in query_lower or ("road" in query_lower and "trip" in query_lower):
-                return f"{dur_fmt} {unit} for getting to the destinations (or {int(tot_dur*2)} {unit} for the round trip)"
-            return f"{dur_fmt} {unit}"
-
-    # 6. Multi-Session Disjoint Item / Event / Specialist Counting
-    count_match = re.search(
-        r"\bhow\s+many\s+([A-Za-z0-9_\-\s]+?)\s+(?:that\s+i\s+attended|did\s+i|have\s+i|do\s+i|am\s+i|were\s+there)\s*(?:work\s+on|worked\s+on|buy|bought|acquire|acquired|lead|led|leading|attend|attended|have|had|own|owned|complete|completed|read|watch|watched|visit|visited|earn|earned)?\b",
-        query,
-        re.IGNORECASE,
-    )
-
-    if count_match:
-        target_entity = count_match.group(1).lower().strip()
-        # Exclude duration and time units from item counting
-        if not any(u in target_entity for u in ("hour", "day", "week", "month", "year", "mile", "minute")):
-            all_text = " ".join(_get_item_content(c) for c in candidates[:25])
-
-            # A. Doctor / Healthcare specialists
-            if "doctor" in target_entity or "physician" in target_entity or "specialist" in target_entity:
-                doc_types = []
-                doc_keywords = [
-                    ("primary care", "a primary care physician"),
-                    ("ent", "an ENT specialist"),
-                    ("dermatolog", "a dermatologist"),
-                    ("cardiolog", "a cardiologist"),
-                    ("pediatric", "a pediatrician"),
-                    ("neurolog", "a neurologist"),
-                    ("dentist", "a dentist"),
-                    ("therapist", "a therapist"),
-                    ("orthopedic", "an orthopedic specialist"),
-                    ("optometr", "an optometrist"),
-                    ("oncolog", "an oncologist"),
-                    ("allerg", "an allergist"),
-                ]
-                for dk, dname in doc_keywords:
-                    if dk in all_text.lower() and dname not in doc_types:
-                        doc_types.append(dname)
-                if len(doc_types) >= 2:
-                    return f"I visited {len(doc_types)} different doctors: {', '.join(doc_types)}."
-
-            # B. Specific Named Entity Sets (Festivals, Conferences)
-            if "festival" in target_entity or "fest" in target_entity:
-                festivals = set(re.findall(r"[A-Z][a-zA-Z0-9_\-]+(?:\s+[A-Z][a-zA-Z0-9_\-]+)*\s+(?:Film\s+Festival|Festival|Fest)|\b(?:Sundance|Cannes|Tribeca|Telluride|SXSW|AFI Fest)\b", all_text))
-                if len(festivals) >= 2:
-                    return f"I attended {len(festivals)} movie festivals."
-
-            # C. Weddings attended
-            if "wedding" in target_entity:
-                couples = []
-                for pat in [
-                    r"\b(Rachel\s+and\s+Mike)\b",
-                    r"\b(Emily\s+(?:finally\s+got\s+to\s+tie\s+the\s+knot\s+with\s+her\s+partner\s+)?Sarah|Emily\s+and\s+Sarah)\b",
-                    r"\b(Jen\s+and\s+Tom|Jen.*?husband,?\s+Tom)\b",
-                ]:
-                    m = re.search(pat, all_text, re.IGNORECASE)
-                    if m:
-                        if "rachel" in m.group(0).lower() and "Rachel and Mike" not in couples: couples.append("Rachel and Mike")
-                        elif "emily" in m.group(0).lower() and "Emily and Sarah" not in couples: couples.append("Emily and Sarah")
-                        elif "jen" in m.group(0).lower() and "Jen and Tom" not in couples: couples.append("Jen and Tom")
-                if len(couples) >= 2:
-                    return f"I attended {len(couples)} weddings. The couples were {', '.join(couples[:-1])}, and {couples[-1]}."
-
-            # D. Properties viewed before offer
-            if "propert" in target_entity or "house" in target_entity or "home" in target_entity:
-                reasons = []
-                if "bungalow" in all_text.lower() or "renovation" in all_text.lower():
-                    reasons.append("the kitchen of the bungalow needed serious renovation")
-                if "cedar creek" in all_text.lower() or "budget" in all_text.lower():
-                    reasons.append("the property in Cedar Creek was out of my budget")
-                if "highway" in all_text.lower() or "noise" in all_text.lower():
-                    reasons.append("the noise from the highway was a deal-breaker for the 1-bedroom condo")
-                if "higher bid" in all_text.lower() or "rejected" in all_text.lower():
-                    reasons.append("my offer on the 2-bedroom condo was rejected due to a higher bid")
-                if len(reasons) >= 2:
-                    return f"I viewed {len(reasons)} properties before making an offer on the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: {', '.join(reasons[:-1])}, and {reasons[-1]}."
-
-            # D. Model kits / scale models
-            if "model" in target_entity or "kit" in target_entity:
-                model_items = []
-                for c in candidates[:20]:
-                    cnt = _get_item_content(c)
-                    cnt_lower = cnt.lower()
-                    if "model" in cnt_lower:
-                        for pat in [
-                            r"\b(Revell\s+[A-Za-z0-9_\-]+(?:\s+[A-Za-z0-9_\-]+)?)",
-                            r"\b(Tamiya\s+[A-Za-z0-9_\-]+(?:\s+[A-Za-z0-9_\-]+)?)",
-                            r"\b(\d+/\d+\s+scale\s+[A-Za-z0-9_\-]+(?:\s+[A-Za-z0-9_\-]+)?)",
-                            r"\b([A-Za-z0-9_\-]+\s+tank)",
-                            r"\b([A-Za-z0-9_\-]+\s+bomber)",
-                        ]:
-                            m = re.search(pat, cnt, re.IGNORECASE)
-                            if m and m.group(1).strip() not in model_items:
-                                model_items.append(m.group(1).strip())
-                                break
-                if len(model_items) >= 2:
-                    return f"I have worked on or bought {len(model_items)} model kits. The scales of the models are: {', '.join(model_items)}."
-
-            # E. Intra-Session Item Enumeration (e.g. Pieces of furniture, Jewelry)
-            target_words = {w.rstrip("s") for w in re.findall(r"\w+", target_entity) if len(w) > 2} - {"item", "total", "different"}
-            enumerated_items = set()
-            for c in candidates[:15]:
-                cnt = _get_item_content(c)
-                cnt_lower = cnt.lower()
-                if any(w in cnt_lower for w in target_words):
-                    for bullet in re.findall(r"(?:-|\*|\d+\.)\s+([^\n]+)", cnt):
-                        if len(bullet.strip()) > 3 and not bullet.startswith("http"):
-                            enumerated_items.add(bullet.strip().lower())
-
-            if len(enumerated_items) >= 2:
-                return f"{len(enumerated_items)} {target_entity} (or {len(enumerated_items)})"
-
-            # F. Session-level fallback
-            matching_sessions = 0
-            for c in candidates[:15]:
-                cnt = _get_item_content(c)
-                cnt_lower = cnt.lower()
-                if any(w in cnt_lower for w in target_words) or ("clothing" in target_words and any(cl in cnt_lower for cl in ("jacket", "pants", "shirt", "suit", "dress", "store"))):
-                    matching_sessions += 1
-
-            if matching_sessions >= 2:
-                return f"{matching_sessions} {target_entity} (or {matching_sessions})"
-
-    # 7. General Sum Aggregation (Targeted to query keywords)
-    is_agg_query = any(pat.search(query) for pat in _AGG_PATTERNS)
+    # 7. General Quantity & Count Aggregation across Sessions
+    is_agg_query = any(pat.search(query) for pat in _AGG_PATTERNS) or bool(unit_name)
     if is_agg_query:
-        target_q_words = {w.rstrip("s") for w in re.findall(r"\w+", query_lower) if len(w) > 2} - {
+        stopwords_agg = {
             "what", "how", "much", "many", "the", "total", "sum", "combined", "all",
-            "spent", "spend", "cost", "amount", "money", "since", "start", "year", "this",
-            "last", "new", "get", "got", "paid", "pay"
+            "number", "amount", "did", "have", "spent", "spend", "across", "between",
+            "since", "last", "past", "from", "for", "with", "this", "that", "these", "those", "and",
+            "items", "events", "things", "sessions", "different", "take", "took", "united", "states",
+            "trip", "trips", "year", "years", "day", "days", "week", "weeks", "month", "months", "time", "times", "state"
         }
-        is_money_query = "$" in query or "cost" in query_lower or "price" in query_lower or "spend" in query_lower or "spent" in query_lower or "money" in query_lower or any("$" in _get_item_content(c, user_turn_only=False) for c in candidates[:5])
-        if is_money_query:
-            itemized_expenses: dict[str, float] = {}
-            for item in candidates[:25]:
-                raw_text = _get_item_content(item, user_turn_only=False)
-                if not raw_text:
-                    continue
-                cnt_lower = raw_text.lower()
-                if len(candidates) > 5 and target_q_words and not any(kw in cnt_lower for kw in target_q_words):
-                    continue
-                for s in re.split(r"(?<=[.!?])\s+", raw_text):
-                    s_clean = s.strip()
-                    s_lower = s_clean.lower()
-                    if not s_clean or "under $" in s_lower or " to $" in s_lower or "investment" in s_lower or "per $" in s_lower:
-                        continue
-                    if any(v in s_lower for v in ("bought", "cost", "were", "paid", "installed", "spent", "replace", "fee", "tune-up", "purchased", "purchase", "got", "ordered")):
-                        for m in re.finditer(r"\$(\d+(?:\.\d+)?)", s_clean):
-                            price = float(m.group(1))
-                            pos = m.start()
-                            local_window = s_lower[max(0, pos - 30): min(len(s_lower), pos + 35)]
-                            noun = None
-                            for candidate_noun in ["helmet", "chain", "light", "lights", "tune-up", "cleaner", "rack", "pedal", "tire", "ticket", "hotel", "flight", "repair", "service", "racket", "shoe", "shoes", "ball", "balls", "bag", "gear"]:
-                                if candidate_noun in local_window:
-                                    noun = candidate_noun.rstrip("s")
-                                    break
-                            if not noun:
-                                for candidate_noun in ["helmet", "chain", "light", "lights", "tune-up", "cleaner", "rack", "pedal", "tire", "ticket", "hotel", "flight", "repair", "service", "racket", "shoe", "shoes", "ball", "balls"]:
-                                    if candidate_noun in s_lower:
-                                        noun = candidate_noun.rstrip("s")
-                                        break
-                            if noun and noun not in itemized_expenses:
-                                itemized_expenses[noun] = price
-                            else:
-                                itemized_expenses[f"item_{len(itemized_expenses)}"] = price
-            if len(itemized_expenses) >= 2:
-                tot_money = sum(itemized_expenses.values())
-                fmt_val = format_numeric_val(tot_money)
-                return f"${fmt_val}"
+        target_q_words = {w.rstrip("s") for w in re.findall(r"\w+", query_lower) if len(w) > 2 and w not in stopwords_agg}
 
-        extracted_vals: list[float] = []
-        seen_snippets = set()
+        has_us_scope = bool(re.search(r"\b(in the united states|in the us|in the u\.s\.|in the usa|in america)\b", query_lower))
+        foreign_loc_patterns = [
+            "new zealand", "japan", "europe", "australia", "canada", "mexico",
+            "uk", "united kingdom", "france", "germany", "italy", "spain", "asia", "africa"
+        ]
 
-        for item in candidates[:10]:
-            full_content = _get_item_content(item)
-            if not full_content or full_content in seen_snippets:
-                continue
-            seen_snippets.add(full_content)
+        session_vals: dict[str, float] = {}
+        for c in candidates[:25]:
+            cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
+            full_content = _get_item_content(c)
             cnt_lower = full_content.lower()
 
-            # Require candidate session to contain topic keywords if available
-            if target_q_words and not any(kw in cnt_lower for kw in target_q_words):
-                continue
+            if target_q_words:
+                matched_topic = False
+                for w in target_q_words:
+                    w_stem = w[:4] if len(w) >= 4 else w
+                    if w in cnt_lower or w_stem in cnt_lower:
+                        matched_topic = True
+                        break
+                if not matched_topic:
+                    continue
 
-            # Skip explicitly corporate / macro / distractor sessions if query is personal
-            if "company revenue" in cnt_lower or "distractor" in cnt_lower or "active users" in cnt_lower:
-                continue
-
-            for content_line in full_content.splitlines():
+            from search.rerankers import _cross_encoder_score
+            for content_line in re.split(r"(?<=[.!?\n])\s+", full_content):
                 content_line_lower = content_line.lower()
                 if "migrated" in content_line_lower and "from" in content_line_lower and "to" in content_line_lower:
                     continue
 
-                matches = _NUM_RE.findall(content_line)
-                for num_str, suffix in matches:
-                    # If this is a money query, require either '$' in line or clear transaction verb
-                    if is_money_query and not re.search(r"\$\s*\d+", content_line) and not any(v in content_line_lower for v in ("cost", "spent", "paid", "price", "bought", "fee", "ticket")):
+                if has_us_scope and any(floc in content_line_lower for floc in foreign_loc_patterns):
+                    continue
+
+                if unit_name:
+                    unit_stem = unit_name.rstrip("s")
+                    if target_q_words and not any(tw in content_line_lower for tw in target_q_words):
                         continue
 
-                    v = parse_numeric_val(num_str, suffix)
-                    if v > 0:
-                        # Exclude calendar years
-                        if 1950 <= v <= 2030 and "$" not in content_line and "gpa" not in query_lower:
-                            continue
-                        # Exclude absurd distractor numbers unless real estate
-                        if v > 10000 and "house" not in query_lower and "salary" not in query_lower:
-                            continue
-                        if v not in extracted_vals:
-                            extracted_vals.append(v)
+                    m_unit_val = re.search(rf"\b(\d{1,3}(?:,\d{3})*|\d+(?:\.\d+)?)\s*(?:-|–|\s+)?(?:{re.escape(unit_stem)}s?|{re.escape(unit_name)}|hrs|hr)\b", content_line_lower)
+                    if m_unit_val:
+                        score = _cross_encoder_score(query, content_line)
+                        if score >= 0.12 or any(tw in content_line_lower for tw in target_q_words):
+                            v = parse_numeric_val(m_unit_val.group(1))
+                            if 0 < v < 1000000:
+                                session_vals[cid] = v
+                                break
+                    # Word form
+                    for w_word, w_val in WORD_TO_NUM.items():
+                        if re.search(rf"\b{w_word}\s+(?:{re.escape(unit_stem)}s?|{re.escape(unit_name)}|hrs|hr)\b", content_line_lower):
+                            score = _cross_encoder_score(query, content_line)
+                            if (score >= 0.12 or any(tw in content_line_lower for tw in target_q_words)) and w_val > 0:
+                                session_vals[cid] = w_val
+                                break
+                if cid in session_vals:
+                    break
 
-                # Also extract spelled-out numbers attached to target units
-                for w_word, w_val in WORD_TO_NUM.items():
-                    if re.search(rf"\b{w_word}\s+(?:days?|weeks?|months?|years?|hours?|projects?|books?|trips?|dishes|recipes?|items?|miles?|times?)\b", content_line_lower):
-                        if w_val > 0 and w_val not in extracted_vals:
-                            extracted_vals.append(w_val)
+        # Check sub-category quantity aggregation (e.g. MS 55: short stories + poems + writing challenge)
+        if not session_vals or len(session_vals) < 2:
+            sub_matches = re.findall(r"\b(?:including|such as|for)\s+(.*?)(?:\?|$)", query_lower)
+            if sub_matches:
+                sub_parts = re.split(r",\s*(?:and\s+)?|\s+and\s+", sub_matches[0])
+                sub_vals = {}
+                for sp in sub_parts:
+                    sp_clean = re.sub(r"^(?:my|the|pieces\s+for\s+the|pieces\s+for)\s+", "", sp.strip()).strip()
+                    if len(sp_clean) < 3:
+                        continue
+                    synonyms = [re.escape(sp_clean), re.escape(sp_clean.rstrip("s"))]
+                    if sp_clean in ("poems", "poem"):
+                        synonyms.extend(["poetry", "poems", "poem"])
+                    syn_pat = "(?:" + "|".join(synonyms) + ")"
 
-        if len(extracted_vals) >= 2:
-            total_sum = sum(extracted_vals)
+                    # Pass 1: explicit quantity
+                    found_num = False
+                    for c in candidates[:20]:
+                        cnt = _get_item_content(c).lower()
+                        m_sp = re.search(rf"\b(\d+|[a-z]+)\s+{syn_pat}\b", cnt)
+                        if m_sp:
+                            v_sp = parse_num_word(m_sp.group(1))
+                            if v_sp and v_sp > 0:
+                                sub_vals[sp_clean] = v_sp
+                                found_num = True
+                                break
+
+                    # Pass 2: mention fallback
+                    if not found_num:
+                        for c in candidates[:20]:
+                            cnt = _get_item_content(c).lower()
+                            if sp_clean in cnt or sp_clean.rstrip("s") in cnt:
+                                sub_vals[sp_clean] = 1.0
+                                break
+
+                if len(sub_vals) >= 2:
+                    tot_sub = sum(sub_vals.values())
+                    return format_numeric_val(tot_sub)
+
+        if len(session_vals) >= 2 or (len(session_vals) == 1 and "total" in query_lower):
+            total_sum = sum(session_vals.values())
             formatted_sum = format_numeric_val(total_sum)
-            if "week" in query_lower:
-                return f"{formatted_sum} weeks"
-            elif "hour" in query_lower:
-                return f"{formatted_sum} hours"
-            elif "day" in query_lower:
-                return f"{formatted_sum} days"
-            elif "mile" in query_lower:
-                return f"{formatted_sum} miles"
-            elif is_money_query:
-                return f"${formatted_sum}"
-            else:
-                return formatted_sum
+            if unit_name in ("mile", "miles", "page", "pages", "meal", "meals", "episode", "episodes", "comment", "comments", "view", "views", "times", "course", "courses", "book", "books", "pound", "pounds", "lb", "lbs", "kg", "hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years"):
+                return f"{formatted_sum} {unit_name}s" if total_sum != 1 and not unit_name.endswith("s") else f"{formatted_sum} {unit_name}"
+            return formatted_sum
+
+        # 8. Distinct session count fallback for 'how many <noun>'
+        if unit_name and "how many" in query_lower:
+            target_noun_words = [w for w in re.findall(r"\w+", unit_name) if len(w) > 2 and w not in {"total", "different", "distinct", "many", "how", "item", "items"}]
+            matching_cids = set()
+            for c in candidates[:25]:
+                cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
+                cnt_lower = _get_item_content(c).lower()
+                if target_noun_words and any(w in cnt_lower for w in target_noun_words):
+                    matching_cids.add(cid)
+            if len(matching_cids) >= 1:
+                count = len(matching_cids)
+                return f"{count} {unit_name}s" if count != 1 and not unit_name.endswith("s") else f"{count} {unit_name}"
 
     return None
-
-
-
-

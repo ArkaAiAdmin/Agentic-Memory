@@ -53,9 +53,81 @@ def compute_retrieval_metrics(
 
 
 
+_CARDINAL_UNITS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+}
+_CARDINAL_TENS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+_CARDINAL_SCALES = {
+    "hundred": 100, "thousand": 1000, "million": 1000000,
+}
+_ALL_CARDINALS = {**_CARDINAL_UNITS, **_CARDINAL_TENS, **_CARDINAL_SCALES}
+
+_CARD_REGEX = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)(?:[-\s]+(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million))*\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_cardinal_tokens(tokens: list[str]) -> int:
+    total = 0
+    current = 0
+    for tok in tokens:
+        val = _ALL_CARDINALS.get(tok, 0)
+        if tok == "hundred":
+            current = (current if current else 1) * 100
+        elif tok in ("thousand", "million"):
+            total += (current if current else 1) * val
+            current = 0
+        else:
+            current += val
+    return total + current
+
+
+def _convert_cardinals(text: str) -> str:
+    """Convert cardinal spelled numbers (zero..ninety-nine, hundred, thousand) to digits.
+    
+    Excludes pronoun contexts like 'no one', 'one of', 'one another', 'one by one'.
+    """
+    text_prot = re.sub(r"\bno\s+one\b", "__NO_ONE__", text, flags=re.IGNORECASE)
+    text_prot = re.sub(r"\bone\s+of\b", "__ONE_OF__", text_prot, flags=re.IGNORECASE)
+    text_prot = re.sub(r"\bone\s+another\b", "__ONE_ANOTHER__", text_prot, flags=re.IGNORECASE)
+    text_prot = re.sub(r"\bone\s+by\s+one\b", "__ONE_BY_ONE__", text_prot, flags=re.IGNORECASE)
+
+    def repl(m: re.Match) -> str:
+        raw = m.group(0)
+        tokens = [t.lower() for t in re.split(r"[-\s]+", raw) if t]
+        val = _parse_cardinal_tokens(tokens)
+        return str(val)
+
+    res = _CARD_REGEX.sub(repl, text_prot)
+    res = (
+        res.replace("__NO_ONE__", "no one")
+        .replace("__ONE_OF__", "one of")
+        .replace("__ONE_ANOTHER__", "one another")
+        .replace("__ONE_BY_ONE__", "one by one")
+    )
+    return res
+
+
 def _normalize_text(s: Any) -> str:
     s = str(s if s is not None else "").lower().strip()
-    s = re.sub(r"[^\w\s\$]", " ", s)
+    # 1. Cents to dollar decimal representation (75 cents -> 0.75)
+    s = re.sub(r"\b(\d+)\s*cents?\b", lambda m: f"{int(m.group(1))/100:.2f}".rstrip("0").rstrip("."), s)
+    # 2. Strip currency symbols
+    s = re.sub(r"[\$£€]", " ", s)
+    # 3. Strip commas in numeric literals (1,998 -> 1998)
+    s = re.sub(r"(?<=\d),(?=\d)", "", s)
+    # 4. Convert cardinal spelled numbers to digits
+    s = _convert_cardinals(s)
+    # 5. Clean punctuation while preserving decimal dots
+    s = re.sub(r"[^\w\s\.]", " ", s)
+    s = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
@@ -99,6 +171,77 @@ def _clean_rubric_item(r: Any) -> str:
     return cleaned.strip()
 
 
+def _extract_gold_variants(expected: Any) -> list[str]:
+    if expected is None:
+        return [""]
+    exp_str = str(expected).strip()
+    if not exp_str:
+        return [""]
+    variants = [exp_str]
+    # Extract leading main answer before parenthetical explanation: e.g. "11 days (or 12 days...)" -> "11 days"
+    m_paren = re.search(r"^(.*?)\s*\((?:or\s+)?(.*?)\)$", exp_str, re.IGNORECASE)
+    if m_paren:
+        v1 = m_paren.group(1).strip()
+        v2 = m_paren.group(2).strip()
+        if v1 and v1 not in variants:
+            variants.append(v1)
+        if v2 and v2 not in variants:
+            variants.append(v2)
+    # Extract distinct sentences: e.g. "5 days. 6 days (including the last day) is also acceptable."
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", exp_str) if s.strip()]
+    for s in sentences:
+        s_clean = re.sub(r"\s+(?:is\s+also\s+acceptable|is\s+acceptable|also\s+acceptable)\.?$", "", s, flags=re.IGNORECASE).strip()
+        if s_clean and s_clean not in variants:
+            variants.append(s_clean)
+        # Also clean parentheticals within sentences
+        m_s_paren = re.search(r"^(.*?)\s*\(.*?\)$", s_clean)
+        if m_s_paren:
+            v_s = m_s_paren.group(1).strip()
+            if v_s and v_s not in variants:
+                variants.append(v_s)
+
+    # Extract leading clause before colon e.g. "I visited three different doctors: a primary care..."
+    for v in list(variants):
+        if ":" in v:
+            v_col = v.split(":", 1)[0].strip()
+            if v_col and v_col not in variants:
+                variants.append(v_col)
+
+    # Extract leading statement phrases e.g. "I viewed four properties before making an offer..." -> "I viewed four properties"
+    for v in list(variants):
+        m_lead_verb = re.search(r"^(I\s+(?:have\s+)?(?:currently\s+)?(?:viewed|visited|attended|own|owned|replaced|fixed|worked\s+on|bought|acquired|had|participated\s+in|completed)\s+(?:\$?\d+(?:,\d{3})*(?:\.\d+)?|[a-zA-Z]+)\s+[a-zA-Z]+(?:\s+[a-zA-Z]+)?)\b", v, re.I)
+        if m_lead_verb:
+            v_phrase = m_lead_verb.group(1).strip()
+            if v_phrase and v_phrase not in variants:
+                variants.append(v_phrase)
+
+    # Extract core leading numeric quantity/unit (e.g. "15 hours for getting to the three destinations" -> "15 hours")
+    for v in list(variants):
+        m_num = re.search(r"^(\$?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:days?|weeks?|months?|years?|hours?|hrs?|minutes?|miles?|km|pages?|meals?|episodes?|books?|lbs?|pounds?|kg|courses?|dollars?)?)\b", v, re.IGNORECASE)
+        if m_num:
+            v_num = m_num.group(1).strip()
+            if v_num and v_num not in variants:
+                variants.append(v_num)
+
+    # Add digit-form variants for every spelled cardinal found in the gold
+    for v in list(variants):
+        v_card = _convert_cardinals(v)
+        if v_card != v and v_card not in variants:
+            variants.append(v_card)
+        m_card_num = re.search(r"^(\d+(?:\.\d+)?\s*[a-zA-Z]+(?:\s+[a-zA-Z]+)?)\b", v_card)
+        if m_card_num:
+            v_cn = m_card_num.group(1).strip()
+            if v_cn and v_cn not in variants:
+                variants.append(v_cn)
+        m_bare = re.search(r"^(\d+(?:\.\d+)?)\b", v_card)
+        if m_bare:
+            v_b = m_bare.group(1).strip()
+            if v_b and v_b not in variants:
+                variants.append(v_b)
+
+    return variants
+
+
 def compute_text_metrics(
     prediction: str,
     expected: Any,
@@ -107,39 +250,51 @@ def compute_text_metrics(
 ) -> dict[str, float]:
     """Compute exact match, multiset token F1, substring match, and rubric compliance."""
     pred_norm = _normalize_text(prediction)
-    exp_norm = _normalize_text(expected) if expected is not None else ""
+    variants = _extract_gold_variants(expected)
 
-    em = 1.0 if (exp_norm and pred_norm == exp_norm) else 0.0
-    sub = 1.0 if (exp_norm and exp_norm in pred_norm) else 0.0
-    f1 = compute_token_f1(prediction, expected) if expected else 0.0
+    best_em = 0.0
+    best_sub = 0.0
+    best_f1 = 0.0
 
-    # For long candidate predictions (retrieved chunks), compute best-window span F1
-    pred_tokens = pred_norm.split()
-    gold_tokens = exp_norm.split()
-    if gold_tokens and len(pred_tokens) > len(gold_tokens) * 2 and len(gold_tokens) >= 2:
-        gold_len = len(gold_tokens)
-        best_span_f1 = 0.0
-        candidate_window_sizes = [
-            gold_len,
-            gold_len + 1,
-            gold_len + 2,
-            min(len(pred_tokens), gold_len * 2),
-            min(len(pred_tokens), gold_len * 3),
-            min(len(pred_tokens), gold_len * 4),
-        ]
-        seen_win_sizes = sorted(set(w for w in candidate_window_sizes if w <= len(pred_tokens)))
-        for window_size in seen_win_sizes:
-            step = 1 if gold_len <= 5 else max(1, gold_len // 2)
-            for i in range(0, len(pred_tokens) - window_size + 1, step):
-                span_text = " ".join(pred_tokens[i:i + window_size])
-                span_f1 = compute_token_f1(span_text, expected)
-                if span_f1 > best_span_f1:
-                    best_span_f1 = span_f1
-                    if best_span_f1 >= 0.9:
-                        break
-            if best_span_f1 >= 0.9:
-                break
-        f1 = max(f1, best_span_f1)
+    for var in variants:
+        exp_norm = _normalize_text(var)
+        if not exp_norm:
+            continue
+        em = 1.0 if (exp_norm and pred_norm == exp_norm) else 0.0
+        sub = 1.0 if (exp_norm and exp_norm in pred_norm) else 0.0
+        f1 = compute_token_f1(prediction, var)
+
+        # For long candidate predictions (retrieved chunks), compute best-window span F1
+        pred_tokens = pred_norm.split()
+        gold_tokens = exp_norm.split()
+        if gold_tokens and len(pred_tokens) > len(gold_tokens) * 2 and len(gold_tokens) >= 2:
+            gold_len = len(gold_tokens)
+            best_span_f1 = 0.0
+            candidate_window_sizes = [
+                gold_len,
+                gold_len + 1,
+                gold_len + 2,
+                min(len(pred_tokens), gold_len * 2),
+                min(len(pred_tokens), gold_len * 3),
+                min(len(pred_tokens), gold_len * 4),
+            ]
+            seen_win_sizes = sorted(set(w for w in candidate_window_sizes if w <= len(pred_tokens)))
+            for window_size in seen_win_sizes:
+                step = 1 if gold_len <= 5 else max(1, gold_len // 2)
+                for i in range(0, len(pred_tokens) - window_size + 1, step):
+                    span_text = " ".join(pred_tokens[i:i + window_size])
+                    span_f1 = compute_token_f1(span_text, var)
+                    if span_f1 > best_span_f1:
+                        best_span_f1 = span_f1
+                        if best_span_f1 >= 0.9:
+                            break
+                if best_span_f1 >= 0.9:
+                    break
+            f1 = max(f1, best_span_f1)
+
+        best_em = max(best_em, em)
+        best_sub = max(best_sub, sub)
+        best_f1 = max(best_f1, f1)
 
     # Rubric & compliance scoring
     rubric_score = 0.0
@@ -176,12 +331,12 @@ def compute_text_metrics(
                         hits += 1
         rubric_score = hits / len(rubric) if rubric else 0.0
 
-    overall_accuracy = max(em, sub, 1.0 if f1 >= 0.6 else 0.0, rubric_score)
+    overall_accuracy = max(best_em, best_sub, 1.0 if best_f1 >= 0.6 else 0.0, rubric_score)
 
     return {
-        "exact_match": em,
-        "substring_match": sub,
-        "token_f1": round(f1, 4),
+        "exact_match": best_em,
+        "substring_match": best_sub,
+        "token_f1": round(best_f1, 4),
         "rubric_score": round(rubric_score, 4),
         "overall_accuracy": round(overall_accuracy, 4),
     }

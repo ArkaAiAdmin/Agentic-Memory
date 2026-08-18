@@ -149,8 +149,8 @@ class BenchmarkHarness:
 
         try:
             _ = search_memories(
-                db_path,
-                "warmup query",
+                query="warmup query",
+                db_path=db_path,
                 limit=1,
                 include_global=True,
                 rerank=True,

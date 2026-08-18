@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,22 @@ def parse_natural_or_iso_date(text: str, default_year: int = 2023) -> tuple[date
         dt = parse_iso_date(m_iso.group(1))
         if dt:
             return dt, m_iso.group(1)
+
+    # M/D or M/D/YYYY dates (e.g. 1/15 or 1/20/2023)
+    m_slash = re.search(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b", text)
+    if m_slash:
+        m_val = int(m_slash.group(1))
+        d_val = int(m_slash.group(2))
+        y_val = m_slash.group(3)
+        if 1 <= m_val <= 12 and 1 <= d_val <= 31:
+            y_int = int(y_val) if y_val else default_year
+            if y_int < 100:
+                y_int += 2000
+            try:
+                dt = datetime(y_int, m_val, d_val, tzinfo=timezone.utc)
+                return dt, m_slash.group(0)
+            except ValueError:
+                pass
 
     m_nat = _NATURAL_DATE_RE.search(text)
     if m_nat:
@@ -421,6 +437,11 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
 
     is_delta_query = any(pat.search(query) for pat in _DELTA_PATTERNS)
     if not is_delta_query:
+        return None
+
+    # Guard against pure entity count queries (e.g. "how many pieces of writing", "how many books", "how many model kits")
+    m_count_guard = re.search(r"\bhow\s+many\s+(?!days|weeks|months|years|hours|minutes|seconds|time)\b[a-z0-9_\-\s]+(?:\s+(?:did|have|do|were|was|are|am|can|i|completed|written|spent|made|attended|visited|started|got|left)|$)", query, re.I)
+    if m_count_guard and not any(w in query.lower() for w in ["passed", "elapsed", "take to", "arrive", "order of", "chronological", "earliest to latest", "first to last", "how long"]):
         return None
 
     # Parse as_of reference date if provided

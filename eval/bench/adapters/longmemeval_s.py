@@ -61,8 +61,6 @@ class LongMemEvalSAdapter(BaseBenchmarkAdapter):
                 raw_entries = json.load(f)
 
             evaluable = [q for q in raw_entries if not q.get("question_id", "").endswith("_abs")]
-            if limit is not None:
-                evaluable = evaluable[:limit]
 
             for q in evaluable:
                 qid = q["question_id"]
@@ -152,5 +150,8 @@ class LongMemEvalSAdapter(BaseBenchmarkAdapter):
                         )
                         if limit and len(questions) >= limit:
                             break
+
+        if limit is not None:
+            questions = questions[:limit]
 
         return sessions, questions
