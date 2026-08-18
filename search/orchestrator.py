@@ -1013,11 +1013,12 @@ def _conjoint_entity_phase(
     results: list,
     query: str,
     limit: int,
+    tenant_id: str | None = None,
 ) -> list:
     """Phase 11.4: Conjoint Entity Retrieval for compound multi-entity queries.
 
     When a query asks for multiple distinct items (e.g. "What are the current X and Y?"
-    or "combining X and Y" or "across X, Y, and Z"), a single blended search can let the
+    or "combining X and Y" or "cost of the X and Y"), a single blended search can let the
     entity with higher term frequency dominate all top candidate slots. This phase extracts
     the conjuncts, retrieves the most recent / best matching session for each entity
     independently, and ensures all entities are interleaved into the top positions.
@@ -1026,19 +1027,25 @@ def _conjoint_entity_phase(
 
     conjuncts = []
 
+    # Pattern 0: Quoted entity titles: 'X' and 'Y' or "X" and "Y"
+    quoted_matches = _re.findall(r"['\"]([^'\"]+)['\"]", query)
+    if len(quoted_matches) >= 2:
+        conjuncts = [quoted_matches[0].strip(), quoted_matches[1].strip()]
+
     # Pattern 1: "What are the current X and Y?", "What is the X and Y?"
-    m1 = _re.search(
-        r"what\s+(?:is|are|was|were)\s+(?:the\s+)?(?:current\s+)?(.+?)\s+and\s+(?:the\s+)?(.+?)\s*\??$",
-        query,
-        _re.IGNORECASE,
-    )
-    if m1:
-        raw_e1, raw_e2 = m1.group(1).strip(), m1.group(2).strip()
-        _STOP = {"the", "a", "an", "current", "latest", "now", "is", "are", "were", "was"}
-        e1_words = [w for w in raw_e1.split() if w.lower() not in _STOP]
-        e2_words = [w for w in raw_e2.split() if w.lower() not in _STOP]
-        if e1_words and e2_words:
-            conjuncts = [" ".join(e1_words), " ".join(e2_words)]
+    if not conjuncts:
+        m1 = _re.search(
+            r"what\s+(?:is|are|was|were)\s+(?:the\s+)?(?:current\s+)?(.+?)\s+and\s+(?:the\s+)?(.+?)\s*\??$",
+            query,
+            _re.IGNORECASE,
+        )
+        if m1:
+            raw_e1, raw_e2 = m1.group(1).strip(), m1.group(2).strip()
+            _STOP = {"the", "a", "an", "current", "latest", "now", "is", "are", "were", "was"}
+            e1_words = [w for w in raw_e1.split() if w.lower() not in _STOP]
+            e2_words = [w for w in raw_e2.split() if w.lower() not in _STOP]
+            if e1_words and e2_words:
+                conjuncts = [" ".join(e1_words), " ".join(e2_words)]
 
     # Pattern 2: "combining my X and Y projects/data/work"
     if not conjuncts:
@@ -1060,6 +1067,21 @@ def _conjoint_entity_phase(
         if m3:
             conjuncts = [m3.group(1).strip(), m3.group(2).strip(), m3.group(3).strip()]
 
+    # Pattern 4: Generic compound noun/item conjunctions (cost/spent/total/views of X and Y)
+    if not conjuncts:
+        m4 = _re.search(
+            r"(?:total|sum|combined|cost|spend|spent|distance|views|comments|episodes|number\s+of\s+[\w\s]+|minimum\s+amount|between|difference|more\s+than|compared\s+to|sold\s+the)\s+(?:of|for|on|from|in|between)?\s+(?:the\s+|my\s+)?([A-Za-z0-9_\-\$ ]{2,35}?)\s+and\s+(?:the\s+|my\s+)?([A-Za-z0-9_\-\$ ]{2,35}?)(?:\s+(?:i\s+(?:purchased|bought|attended|visited|listened|watched|spent|did)|combined|in\s+total|\?|$))",
+            query,
+            _re.IGNORECASE,
+        )
+        if m4:
+            raw_c1, raw_c2 = m4.group(1).strip(), m4.group(2).strip()
+            _STOP_C = {"the", "a", "an", "my", "our", "all", "what", "how", "is", "of", "total"}
+            c1_words = [w for w in raw_c1.split() if w.lower() not in _STOP_C]
+            c2_words = [w for w in raw_c2.split() if w.lower() not in _STOP_C]
+            if c1_words and c2_words:
+                conjuncts = [" ".join(c1_words), " ".join(c2_words)]
+
     if not conjuncts:
         return results
 
@@ -1071,29 +1093,38 @@ def _conjoint_entity_phase(
             continue
         safe_conj = clean_conj.replace('"', '""')
         try:
+            where_sql = "memories_fts MATCH ? AND m.deleted_at IS NULL"
+            params: list[Any] = [f'"{safe_conj}"']
+            if tenant_id:
+                where_sql += " AND m.tenant_id = ?"
+                params.append(tenant_id)
+
             rows = db.execute(
-                "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
-                "FROM memories_fts fts "
-                "JOIN memories m ON m.rowid = fts.rowid "
-                "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
-                "AND m.category = 'sessions' "
-                "ORDER BY m.observed_at DESC LIMIT 2",
-                (f'"{safe_conj}"',)
+                f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                f"FROM memories_fts fts "
+                f"JOIN memories m ON m.rowid = fts.rowid "
+                f"WHERE {where_sql} "
+                f"ORDER BY m.observed_at DESC LIMIT 3",
+                tuple(params)
             ).fetchall()
             if rows:
                 conjoint_rows.extend(rows)
             else:
                 for kw in clean_conj.split():
-                    if kw.lower() not in _STOP_WORDS:
+                    if kw.lower() not in _STOP_WORDS and len(kw) >= 3:
                         safe_kw = kw.replace('"', '""')
+                        kw_where = "memories_fts MATCH ? AND m.deleted_at IS NULL"
+                        kw_params: list[Any] = [f'"{safe_kw}"']
+                        if tenant_id:
+                            kw_where += " AND m.tenant_id = ?"
+                            kw_params.append(tenant_id)
                         rows_kw = db.execute(
-                            "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
-                            "FROM memories_fts fts "
-                            "JOIN memories m ON m.rowid = fts.rowid "
-                            "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
-                            "AND m.category = 'sessions' "
-                            "ORDER BY m.observed_at DESC LIMIT 2",
-                            (f'"{safe_kw}"',)
+                            f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                            f"FROM memories_fts fts "
+                            f"JOIN memories m ON m.rowid = fts.rowid "
+                            f"WHERE {kw_where} "
+                            f"ORDER BY m.observed_at DESC LIMIT 2",
+                            tuple(kw_params)
                         ).fetchall()
                         if rows_kw:
                             conjoint_rows.extend(rows_kw)
@@ -2053,7 +2084,7 @@ def search_memories(
         # ensure each conjunct independently secures top representation in results_to_display.
         _t0_conj = time.time()
         try:
-            results_to_display = _conjoint_entity_phase(db, results_to_display, query, limit)
+            results_to_display = _conjoint_entity_phase(db, results_to_display, query, limit, tenant_id=tenant_id)
         except Exception as _conj_exc:
             _phase_inc("search.conjoint_entity", _conj_exc)
             logger.debug("conjoint_entity phase failed (degraded): %s", _conj_exc)

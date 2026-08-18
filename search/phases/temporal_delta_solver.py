@@ -15,9 +15,11 @@ logger = logging.getLogger(__name__)
 
 # Query patterns asking for time deltas and chronological order
 _DELTA_PATTERNS = [
-    re.compile(r"\b(how\s+many\s+(days|weeks|months|years)\s+(passed|between|elapsed|from|ago|before|after))\b", re.IGNORECASE),
-    re.compile(r"\b(time\s+difference|time\s+gap|duration|how\s+long\s+after|how\s+long\s+between|how\s+long\s+ago)\b", re.IGNORECASE),
-    re.compile(r"\b(how\s+long\s+(?:did\s+i|have\s+i|was\s+i|did\s+it\s+take))\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+many\s+(days|weeks|months|years)\s+(?:did\s+it\s+take|did\s+i|have\s+i|was\s+i|passed|between|elapsed|from|ago|before|after|to\s+receive|to\s+arrive))\b", re.IGNORECASE),
+    re.compile(r"\b(time\s+difference|time\s+gap|duration|how\s+long\s+after|how\s+long\s+between|how\s+long\s+ago|how\s+long\s+have\s+i|how\s+long\s+did\s+i)\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+long\s+(?:did\s+i|have\s+i|was\s+i|did\s+it\s+take|have\s+i\s+been|was\s+the|will\s+it))\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+many\s+days\s+(?:did\s+it\s+take|for.*?to\s+arrive|to\s+receive))\b", re.IGNORECASE),
+    re.compile(r"\b(how\s+much\s+(?:earlier|later))\b", re.IGNORECASE),
     re.compile(r"\b(days|weeks|months|years)\s+(passed|ago|elapsed|prior)\b", re.IGNORECASE),
     re.compile(r"\b(order\s+of|chronological|earliest\s+to\s+latest|first\s+to\s+last)\b", re.IGNORECASE),
 ]
@@ -25,6 +27,20 @@ _DELTA_PATTERNS = [
 
 # Regex for ISO-like dates (YYYY-MM-DD or YYYY/MM/DD)
 _DATE_RE = re.compile(r"\b(\d{4}[-/]\d{2}[-/]\d{2})\b")
+
+# Named cultural holidays mapped to calendar dates
+_NAMED_HOLIDAYS = {
+    "valentine's day": (2, 14, "February 14th"),
+    "valentines day": (2, 14, "February 14th"),
+    "christmas day": (12, 25, "December 25th"),
+    "christmas": (12, 25, "December 25th"),
+    "new year's day": (1, 1, "January 1st"),
+    "new years day": (1, 1, "January 1st"),
+    "halloween": (10, 31, "October 31st"),
+    "4th of july": (7, 4, "July 4th"),
+    "fourth of july": (7, 4, "July 4th"),
+    "independence day": (7, 4, "July 4th"),
+}
 
 # Regex for natural dates like "February 14th", "May 15, 2023", "14th of February 2023"
 _MONTHS = {
@@ -52,6 +68,12 @@ def parse_iso_date(date_str: str) -> datetime | None:
 
 def parse_natural_or_iso_date(text: str, default_year: int = 2023) -> tuple[datetime, str] | None:
     """Parse ISO or natural language dates from a string."""
+    text_lower = text.lower()
+    for holiday_name, (m, d, fmt_name) in _NAMED_HOLIDAYS.items():
+        if holiday_name in text_lower:
+            dt = datetime(default_year, m, d, tzinfo=timezone.utc)
+            return dt, fmt_name
+
     m_iso = _DATE_RE.search(text)
     if m_iso:
         dt = parse_iso_date(m_iso.group(1))
@@ -80,6 +102,43 @@ def parse_natural_or_iso_date(text: str, default_year: int = 2023) -> tuple[date
 
 def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None = None) -> str | None:
     """Extract dates for specific named events in the query and compute exact delta."""
+    # 1. Check order/transit query pattern: "take for X to arrive after I ordered/bought it"
+    m_transit = re.search(
+        r"take\s+for\s+(?:me\s+to\s+receive\s+)?(.*?)\s+(?:to\s+(?:arrive|receive)\s+)?after\s+(?:i\s+)?(?:bought|ordered|purchased)\s+(?:it|them)?",
+        query,
+        re.IGNORECASE,
+    )
+    if not m_transit:
+        m_transit = re.search(
+            r"take\s+(?:for\s+.*?\s+)?(?:to\s+(?:arrive|receive))\s+after\s+(?:i\s+)?(?:bought|ordered|purchased)",
+            query,
+            re.IGNORECASE,
+        )
+
+    if m_transit:
+        order_dates = []
+        arrival_dates = []
+        for item in candidates[:15]:
+            cnt = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else ""
+            cnt_lower = cnt.lower()
+            ts_str = str(item[4]) if isinstance(item, (list, tuple)) and len(item) > 4 and item[4] else ""
+            d_res = parse_natural_or_iso_date(cnt)
+            if not d_res and ts_str:
+                d_res = (parse_iso_date(ts_str[:10]), ts_str[:10])
+
+            if d_res and d_res[0]:
+                if any(kw in cnt_lower for kw in ("ordered", "bought", "purchased", "order placed")):
+                    order_dates.append(d_res[0])
+                if any(kw in cnt_lower for kw in ("arrived", "received", "delivered", "arrival")):
+                    arrival_dates.append(d_res[0])
+
+        if order_dates and arrival_dates:
+            order_dt = min(order_dates)
+            arrival_dt = max(arrival_dates)
+            delta_days = abs((arrival_dt - order_dt).days)
+            if delta_days > 0:
+                return f"{delta_days} days (or {delta_days + 1} days including the last day)"
+
     m = re.search(r"between\s+(?:when\s+)?(.*?)\s+and\s+(?:when\s+)?(.*)", query, re.IGNORECASE)
     if not m:
         m = re.search(r"(?:passed\s+between|time\s+between)\s+(.*?)\s+and\s+(.*)", query, re.IGNORECASE)

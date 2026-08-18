@@ -55,7 +55,8 @@ def compute_retrieval_metrics(
 
 def _normalize_text(s: Any) -> str:
     s = str(s if s is not None else "").lower().strip()
-    s = re.sub(r"[^\w\s\$\.,]", "", s)
+    s = re.sub(r"[^\w\s\$]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
@@ -117,16 +118,25 @@ def compute_text_metrics(
     gold_tokens = exp_norm.split()
     if gold_tokens and len(pred_tokens) > len(gold_tokens) * 2 and len(gold_tokens) >= 2:
         gold_len = len(gold_tokens)
-        window_size = min(len(pred_tokens), gold_len * 3)
         best_span_f1 = 0.0
-        step = max(1, gold_len // 2)
-        for i in range(0, len(pred_tokens) - gold_len + 1, step):
-            span_text = " ".join(pred_tokens[i:i + window_size])
-            span_f1 = compute_token_f1(span_text, expected)
-            if span_f1 > best_span_f1:
-                best_span_f1 = span_f1
-                if best_span_f1 >= 0.9:
-                    break
+        candidate_window_sizes = [
+            gold_len,
+            gold_len + 1,
+            gold_len + 2,
+            min(len(pred_tokens), gold_len * 2),
+        ]
+        seen_win_sizes = sorted(set(w for w in candidate_window_sizes if w <= len(pred_tokens)))
+        for window_size in seen_win_sizes:
+            step = 1 if gold_len <= 5 else max(1, gold_len // 2)
+            for i in range(0, len(pred_tokens) - window_size + 1, step):
+                span_text = " ".join(pred_tokens[i:i + window_size])
+                span_f1 = compute_token_f1(span_text, expected)
+                if span_f1 > best_span_f1:
+                    best_span_f1 = span_f1
+                    if best_span_f1 >= 0.9:
+                        break
+            if best_span_f1 >= 0.9:
+                break
         f1 = max(f1, best_span_f1)
 
     # Rubric & compliance scoring

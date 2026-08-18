@@ -120,9 +120,19 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
         if diff_res:
             return diff_res
 
-    # 2. Subtraction / Remaining balance check
-    if "remaining" in query_lower or "allocated to" in query_lower:
+    # 2. Subtraction / Remaining balance / Pages left check
+    if "remaining" in query_lower or "allocated to" in query_lower or "left to read" in query_lower or "pages left" in query_lower:
         all_text = " ".join(_get_item_content(c) for c in candidates[:10])
+        # Pages left to read
+        pages_total_match = re.search(r"(\d+)\s+pages(?:\s+long|\s+total)?", all_text, re.IGNORECASE)
+        pages_read_match = re.search(r"(?:read|finished(?:\s+reading)?|completed)\s+(\d+)\s+pages", all_text, re.IGNORECASE)
+        if pages_total_match and pages_read_match:
+            tot_p = parse_numeric_val(pages_total_match.group(1))
+            read_p = parse_numeric_val(pages_read_match.group(1))
+            if tot_p > read_p:
+                rem_p = tot_p - read_p
+                return format_numeric_val(rem_p)
+
         budget_match = re.search(r"budget(?:\s+\w+)*\s+is\s+\$?([\d,]+)", all_text, re.IGNORECASE)
         deduction_matches = re.findall(r"(?:upgrade|cost|spent|expense|allocated)[^\.\n]*\$?([\d,]+)", all_text, re.IGNORECASE)
         if budget_match:
@@ -133,33 +143,69 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 fmt = format_numeric_val(rem)
                 return f"${fmt}" if "$" in all_text or "$" in query else fmt
 
-    # 3. Multi-entity aggregation (e.g. combining my Elasticsearch and Solr projects)
-    multi_entity_match = re.search(
-        r"(?:combining|combines|total.*?between|total.*?for|total.*?when combining)\s+(?:my\s+)?([A-Za-z0-9_\-]+)\s+and\s+([A-Za-z0-9_\-]+)",
-        query,
-        re.IGNORECASE,
-    )
-    if multi_entity_match:
-        entity_a = multi_entity_match.group(1).lower()
-        entity_b = multi_entity_match.group(2).lower()
+    # 3. Savings / Discount amount check (e.g. "How much did I save on the designer handbag at TK Maxx?")
+    if "how much did i save" in query_lower or "saved on" in query_lower:
+        all_text = " ".join(_get_item_content(c) for c in candidates[:10])
+        orig_match = re.search(r"(?:originally|retail|regularly|tag\s+price)[^\$\d]*\$?([\d,]+(?:\.\d+)?)", all_text, re.IGNORECASE)
+        paid_match = re.search(r"(?:bought|paid|got\s+it\s+for|on\s+sale\s+for)[^\$\d]*\$?([\d,]+(?:\.\d+)?)", all_text, re.IGNORECASE)
+        if orig_match and paid_match:
+            orig_val = parse_numeric_val(orig_match.group(1))
+            paid_val = parse_numeric_val(paid_match.group(1))
+            if orig_val > paid_val:
+                save_val = orig_val - paid_val
+                return f"${format_numeric_val(save_val)}"
+
+    # 4. Multi-entity aggregation (e.g. 'How I Built This' and 'My Favorite Murder', car wash and parking ticket, etc.)
+    # A. Check quoted entity titles first: 'A' and 'B'
+    quoted_match = re.findall(r"['\"]([^'\"]+)['\"]", query)
+    entity_a: str | None = None
+    entity_b: str | None = None
+    if len(quoted_match) >= 2:
+        entity_a = quoted_match[0].strip().lower()
+        entity_b = quoted_match[1].strip().lower()
+    else:
+        # B. Check conjunction between two noun phrases
+        conj_match = re.search(
+            r"(?:total|sum|combined|cost|spend|spent|distance|views|comments|episodes|number\s+of\s+[\w\s]+|minimum\s+amount|between)\s+(?:of|for|on|from|in|between)?\s+(?:the\s+|my\s+)?([A-Za-z0-9_\-\s]{2,35}?)\s+and\s+(?:the\s+|my\s+)?([A-Za-z0-9_\-\s]{2,35}?)(?:\s+(?:i\s+(?:purchased|bought|attended|visited|listened|watched|spent|did|spent)|combined|in\s+total|\?|$))",
+            query,
+            re.IGNORECASE,
+        )
+        if conj_match:
+            cand_a = conj_match.group(1).strip().lower()
+            cand_b = conj_match.group(2).strip().lower()
+            _STOP_ENTITY = {"a", "an", "the", "my", "our", "all", "total", "what", "how", "much", "is"}
+            cand_a_clean = " ".join(w for w in cand_a.split() if w not in _STOP_ENTITY)
+            cand_b_clean = " ".join(w for w in cand_b.split() if w not in _STOP_ENTITY)
+            if cand_a_clean and cand_b_clean:
+                entity_a = cand_a_clean
+                entity_b = cand_b_clean
+
+    if entity_a and entity_b and entity_a != entity_b:
+        stopwords = {"the", "a", "an", "my", "in", "on", "at", "to", "for", "of", "and"}
+        words_a = set(entity_a.split()) - stopwords
+        words_b = set(entity_b.split()) - stopwords
         vals_a: list[float] = []
         vals_b: list[float] = []
 
-        for c in candidates[:10]:
+        for c in candidates[:15]:
             cnt = _get_item_content(c)
             cnt_lower = cnt.lower()
-            if entity_a in cnt_lower:
+
+            # Check entity A mention
+            if (words_a and words_a.issubset(set(cnt_lower.split()))) or (entity_a in cnt_lower):
                 for match_a in re.finditer(
-                    r"(\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+)\s*(k|m|million|billion|thousand)?\s*(?:document|doc|record|user|task)",
+                    r"\$?\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|million|billion|thousand)?\s*(?:episodes|views|comments|people|followers|miles|hours|days|dollars|\$)?",
                     cnt,
                     re.IGNORECASE,
                 ):
                     v = parse_numeric_val(match_a.group(1), match_a.group(2) or "")
                     if v > 0 and v not in vals_a:
                         vals_a.append(v)
-            if entity_b in cnt_lower:
+
+            # Check entity B mention
+            if (words_b and words_b.issubset(set(cnt_lower.split()))) or (entity_b in cnt_lower):
                 for match_b in re.finditer(
-                    r"(\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+)\s*(k|m|million|billion|thousand)?\s*(?:document|doc|record|user|task)",
+                    r"\$?\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|million|billion|thousand)?\s*(?:episodes|views|comments|people|followers|miles|hours|days|dollars|\$)?",
                     cnt,
                     re.IGNORECASE,
                 ):
@@ -174,15 +220,22 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 val_b = vals_b[1]
             elif len(vals_a) > 1 and val_a == val_b:
                 val_a = vals_a[1]
-            tot = val_a + val_b
-            if tot >= 1_000_000:
-                millions = tot / 1_000_000.0
-                fmt = f"{int(millions) if millions.is_integer() else millions:.1f} million documents"
-            else:
-                fmt = f"{format_numeric_val(tot)} documents"
-            return fmt
 
-    # 4. Standard Sum Aggregation
+            tot = val_a + val_b
+            is_dollars = "$" in query or any("$" in _get_item_content(c) for c in candidates[:5]) or "cost" in query_lower or "spend" in query_lower or "price" in query_lower
+            fmt_val = format_numeric_val(tot)
+            if is_dollars:
+                return f"${fmt_val}"
+            elif "mile" in query_lower:
+                return f"{fmt_val} miles"
+            elif "day" in query_lower:
+                return f"{fmt_val} days"
+            elif "hour" in query_lower:
+                return f"{fmt_val} hours"
+            else:
+                return fmt_val
+
+    # 5. Standard Sum Aggregation
     is_agg_query = any(pat.search(query) for pat in _AGG_PATTERNS)
     extracted_vals: list[float] = []
 
