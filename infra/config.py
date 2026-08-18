@@ -131,13 +131,28 @@ def resolve_db_path(db_path: str | Path) -> Path:
     return Path(_abs_db_path(str(Path(db_path))))
 
 
+_TOML_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
+
+
 def _read_toml(path: Path) -> Dict[str, Any]:
     """Return parsed TOML dict, or empty dict if file missing / lib absent."""
     if not path.exists() or tomllib is None:
         return {}
-    with open(path, "rb") as fh:
-        data = tomllib.load(fh)
-        return data if isinstance(data, dict) else {}
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    cached = _TOML_CACHE.get(str(path))
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    try:
+        with open(path, "rb") as fh:
+            data = tomllib.load(fh)
+            parsed = data if isinstance(data, dict) else {}
+            _TOML_CACHE[str(path)] = (mtime, parsed)
+            return parsed
+    except Exception:
+        return {}
 
 
 def _deep_get(d: Dict[str, Any], dotted: str) -> Any:

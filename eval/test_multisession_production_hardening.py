@@ -267,3 +267,34 @@ def test_item_targeted_order_arrival_duration():
     assert res is not None
     assert "5 days" in res
 
+
+def test_three_event_chronological_ordering():
+    from search.phases.temporal_delta_solver import calculate_temporal_delta
+
+    candidates = [
+        ("m1", "I helped my cousin pick out stuff for her baby shower.", "", "", "2023-02-10T10:00:00Z"),
+        ("m2", "I ordered a customized phone case for my friend's birthday.", "", "", "2023-02-20T10:00:00Z"),
+        ("m3", "I helped my friend prepare the nursery.", "", "", "2023-02-05T10:00:00Z"),
+    ]
+    query = "Which three events happened in the order from first to last: the day I helped my friend prepare the nursery, the day I helped my cousin pick out stuff for her baby shower, and the day I ordered a customized phone case for my friend's birthday?"
+    res = calculate_temporal_delta(query, candidates)
+    assert res is not None
+    assert "First, I helped my friend prepare the nursery" in res
+    assert "then I helped my cousin pick out stuff for her baby shower" in res
+    assert "finally I ordered a customized phone case for my friend's birthday" in res
+
+
+def test_relative_delta_with_as_of():
+    from search.phases.temporal_delta_solver import calculate_temporal_delta
+    from datetime import datetime, timezone
+
+    candidates = [
+        ("m1", "I attended a baking class at a local culinary school.", "", "", "2022-03-25T10:00:00Z"),
+    ]
+    as_of = datetime(2022, 4, 15, 18, 46, tzinfo=timezone.utc)
+    query = "How many days ago did I attend a baking class at a local culinary school?"
+    res = calculate_temporal_delta(query, candidates, as_of=as_of)
+    assert res is not None
+    assert "21 days" in res
+
+

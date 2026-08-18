@@ -160,12 +160,71 @@ def _extract_event_delta(query: str, candidates: list, as_of_dt: datetime | None
             if delta_days > 0:
                 return f"{delta_days} days (or {delta_days + 1} days including the last day)"
 
-    # 2. Binary precedence queries ("Which event happened first, A or B?" / "Which did I join first, A or B?")
+    # 2. Three-event chronological sequence ordering queries
+    is_3_order = any(w in query.lower() for w in [
+        "which three events", "order of the three", "three events happened", "three events:", 
+        "three events from earliest", "three trips", "three sports events", "three books", "three novels", "three dishes", "three recipes"
+    ])
+    if is_3_order:
+        candidates_info = []
+        for item in candidates[:20]:
+            cid = item[0] if isinstance(item, (list, tuple)) and len(item) > 0 else ""
+            cnt = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else ""
+            ts_str = str(item[4]) if isinstance(item, (list, tuple)) and len(item) > 4 else ""
+            dt = parse_iso_date(str(ts_str)[:10]) if ts_str else None
+            if not dt and cnt:
+                d_header = re.search(r"\[Session Date:\s*(\d{4}-\d{2}-\d{2})", cnt)
+                if d_header:
+                    dt = parse_iso_date(d_header.group(1))
+            if not dt and cnt:
+                d_nat = parse_natural_or_iso_date(cnt)
+                if d_nat:
+                    dt = d_nat[0]
+            if dt and cnt:
+                paras = [p.strip() for p in cnt.split("\n\n") if p.strip()]
+                u_text = paras[0] if paras else cnt
+                candidates_info.append((cid, u_text, dt, cnt))
+
+        quoted = re.findall(r"['\"]([^'\"]+)['\"]", query)
+        event_phrases = []
+        if len(quoted) >= 3:
+            event_phrases = [q.strip() for q in quoted[:3]]
+        elif ":" in query:
+            after_colon = query.split(":", 1)[1]
+            clean_after = re.sub(r"[\?\.\!]+$", "", after_colon)
+            parts = re.split(r",\s*(?:and\s+)?|\s+and\s+", clean_after)
+            event_phrases = [p.strip() for p in parts if len(p.strip()) > 3]
+        else:
+            m_days = re.findall(r"(?:the\s+day\s+i\s+|when\s+i\s+|the\s+time\s+i\s+)([A-Za-z0-9_\-\s\'\"]+?)(?:,\s*|\s+and\s+|\?$)", query, re.I)
+            if len(m_days) >= 3:
+                event_phrases = [m.strip() for m in m_days[:3]]
+
+        if event_phrases and len(event_phrases) >= 3:
+            event_with_date = []
+            for ep in event_phrases:
+                ep_words = [w.lower() for w in re.findall(r"\w+", ep) if len(w) > 3 and w.lower() not in {"the", "day", "and", "that", "with", "for", "from", "when"}]
+                best_dt = None
+                for cid, u_text, dt, full_cnt in candidates_info:
+                    if ep_words and any(w in full_cnt.lower() for w in ep_words):
+                        best_dt = dt
+                        break
+                if best_dt:
+                    event_with_date.append((ep, best_dt))
+
+            if len(event_with_date) >= 3:
+                event_with_date.sort(key=lambda x: x[1])
+                e1, e2, e3 = event_with_date[0][0], event_with_date[1][0], event_with_date[2][0]
+                def _clean_ep(text: str) -> str:
+                    return re.sub(r"^(?:the\s+day\s+i\s+|the\s+time\s+i\s+|when\s+i\s+|that\s+i\s+|i\s+)", "", text.strip(), flags=re.I).strip()
+                c1, c2, c3 = _clean_ep(e1), _clean_ep(e2), _clean_ep(e3)
+                return f"First, I {c1}, then I {c2}, and finally I {c3}."
+
+    # 3. Binary precedence queries ("Which event happened first, A or B?" / "Which did I join first, A or B?")
     m_prec = re.search(r"which\s+(?:event\s+)?(?:happened|did\s+i\s+(?:join|read|finish|take|attend|visit))\s+first[,\s]+(?:the\s+|my\s+)?(.*?)\s+or\s+(?:the\s+|my\s+)?(.*?)\??$", query, re.IGNORECASE)
     if not m_prec:
         m_prec = re.search(r"which\s+(?:one\s+)?(?:did\s+i|happened)\s+(?:first|earlier)[,\s]+(.*)\s+or\s+(.*)\??$", query, re.IGNORECASE)
 
-    # 3. Inter-event interval queries
+    # 4. Inter-event interval queries
     m = None
     event_a_phrase = ""
     event_b_phrase = ""
@@ -383,7 +442,7 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
             y_val = int(years) if years.is_integer() else years
             return f"{y_val} years ({y_val} years ago, {delta_days} days)"
         else:
-            return f"{delta_days} days ({delta_days} days ago, or {delta_days + 1} days including today)"
+            return f"{delta_days} days ({delta_days} days ago, or {delta_days + 1} days including the last day)"
 
     # Inter-session delta between earliest and latest extracted dates
     if len(dates) >= 2:

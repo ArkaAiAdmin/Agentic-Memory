@@ -322,19 +322,11 @@ def _text_multi_hop_traversal(
                 return []
             try:
                 fts_rows = db.execute(
-                    f"SELECT m.id, m.content FROM memories_fts f JOIN {tgt_table} m ON f.id = m.id "
+                    f"SELECT m.id, m.content FROM memories_fts f JOIN {tgt_table} m ON f.rowid = m.rowid "
                     "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL LIMIT ?",
                     (f'"{clean}"', limit),
                 ).fetchall()
-                if fts_rows:
-                    return fts_rows
-            except Exception:
-                pass
-            try:
-                return db.execute(
-                    f"SELECT id, content FROM {tgt_table} WHERE content LIKE ? AND deleted_at IS NULL LIMIT ?",
-                    (f"%{clean}%", limit),
-                ).fetchall()
+                return fts_rows or []
             except Exception:
                 return []
 

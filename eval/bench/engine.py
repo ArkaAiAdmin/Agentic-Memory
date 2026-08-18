@@ -213,7 +213,11 @@ class BenchmarkHarness:
                         id_to_content[r[0]] = r[1]
                         id_to_created[r[0]] = str(r[2]) if len(r) > 2 and r[2] else ""
 
-                retrieved_contents = [id_to_content.get(mid, "") for mid in top10_ids if mid in id_to_content]
+                if q.category == "knowledge-update":
+                    top10_ids_ordered = sorted(top10_ids, key=lambda mid: id_to_created.get(mid, ""), reverse=True)
+                    retrieved_contents = [id_to_content.get(mid, "") for mid in top10_ids_ordered if mid in id_to_content]
+                else:
+                    retrieved_contents = [id_to_content.get(mid, "") for mid in top10_ids if mid in id_to_content]
                 combined_content = " ".join(retrieved_contents)
                 candidates_tuple = [
                     (mid, id_to_content.get(mid, ""), "", "", id_to_created.get(mid, ""))

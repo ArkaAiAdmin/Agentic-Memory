@@ -175,6 +175,19 @@ def _parse_tags(tags_json: str) -> list:
         return []
 
 
+def _get_memories_table(db: Any) -> str:
+    """Return 'tenant_memories' if present in db, otherwise fallback to 'memories'."""
+    try:
+        row = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE (type='view' OR type='table') AND name='tenant_memories'"
+        ).fetchone()
+        if row is not None:
+            return "tenant_memories"
+    except Exception:
+        pass
+    return "memories"
+
+
 # ---------------------------------------------------------------------------
 # Contextual Retrieval (Anthropic 2024-09)
 # ---------------------------------------------------------------------------
@@ -738,12 +751,13 @@ class EmbeddingSearch:
                 try:
                     _cutoff = time.time() - (stale_days * 86400)
                     mid = "unknown"
+                    tbl = _get_memories_table(db)
                     for mid, content, tags, source_file in db.execute(
-                        "SELECT m.id, m.content, m.tags, m.source_file "
-                        "FROM tenant_memories m LEFT JOIN memory_embeddings e "
-                        "  ON e.memory_id = m.id "
-                        "WHERE m.deleted_at IS NULL "
-                        "  AND (e.memory_id IS NULL OR e.updated_at < ?)",
+                        f"SELECT m.id, m.content, m.tags, m.source_file "
+                        f"FROM {tbl} m LEFT JOIN memory_embeddings e "
+                        f"  ON e.memory_id = m.id "
+                        f"WHERE m.deleted_at IS NULL "
+                        f"  AND (e.memory_id IS NULL OR e.updated_at < ?)",
                         (_cutoff,),
                     ).fetchall():
                         meta_map[mid] = (tags, source_file)
@@ -986,13 +1000,14 @@ class EmbeddingSearch:
         # "added a few hundred memories since last rebuild" case.
         # If a user has truly added more, `rebuild_vec_index` is
         # the right answer (1.9s on 10K, 13s on 100K).
+        tbl = _get_memories_table(db)
         try:
             unindexed = db.execute(
-                "SELECT m.id FROM tenant_memories m "
-                "WHERE m.deleted_at IS NULL "
-                "AND NOT EXISTS "
-                "  (SELECT 1 FROM memory_vec_keys k WHERE k.memory_id = m.id) "
-                "LIMIT ?",
+                f"SELECT m.id FROM {tbl} m "
+                f"WHERE m.deleted_at IS NULL "
+                f"AND NOT EXISTS "
+                f"  (SELECT 1 FROM memory_vec_keys k WHERE k.memory_id = m.id) "
+                f"LIMIT ?",
                 (UNINDEXED_SAFETY_NET_LIMIT,),
             ).fetchall()
         except sqlite3.OperationalError:
@@ -1021,7 +1036,7 @@ class EmbeddingSearch:
         placeholders = ",".join("?" for _ in candidate_mids)
         try:
             mem_rows = db.execute(
-                f"SELECT id, content, source_file, tags FROM tenant_memories "
+                f"SELECT id, content, source_file, tags FROM {tbl} "
                 f"WHERE id IN ({placeholders}) AND deleted_at IS NULL",
                 candidate_mids,
             ).fetchall()
@@ -1053,6 +1068,13 @@ class EmbeddingSearch:
         # path — the per-candidate dot in the naive version added
         # ~3-5ms on 200 candidates.
         dim = meta["dim"]
+        # Map key to usearch distance for fast fallback scoring
+        mid_to_dist = {}
+        for k, dist in zip(candidate_keys, matches.distances.tolist()):
+            mid = key_to_mid.get(k)
+            if mid:
+                mid_to_dist[mid] = float(dist)
+
         items: list = []  # (mid, row, vec, chash, was_cache_hit)
         to_save: list = []
         text_to_encode: list = []
@@ -1072,12 +1094,12 @@ class EmbeddingSearch:
                     if v.size == dim:
                         vec = v
                 except Exception:
-                    logger.warning("Failed to decode cached vector for memory %s", mid)
                     vec = None
             if vec is None:
-                # Queue for batch re-encode.
-                text_to_encode.append(text)
-                text_to_indices.append(len(items))
+                # If unindexed or small count, queue for batch re-encode
+                if len(text_to_encode) < 10:
+                    text_to_encode.append(text)
+                    text_to_indices.append(len(items))
             items.append((mid, row, vec, chash))
 
         if text_to_encode:
@@ -1092,16 +1114,24 @@ class EmbeddingSearch:
                     items[index_in_items] = (mid, row, fresh[k], chash)
                     to_save.append((mid, chash, fresh[k], dim))
 
-        # Single matrix multiply for all candidates.
+        # Check if all items have vectors for exact matmul
         valid = [
             (mid, row, vec, chash) for mid, row, vec, chash in items if vec is not None
         ]
-        if not valid:
-            return []
-        vec_matrix = self.np.stack([v for _mid, _row, v, _c in valid])
-        sims = vec_matrix @ query_vec  # (n,) — one matmul
-
-        scored = list(zip(sims.tolist(), [row for _mid, row, _v, _c in valid]))
+        if len(valid) == len(items) and len(valid) > 0:
+            vec_matrix = self.np.stack([v for _mid, _row, v, _c in valid])
+            sims = vec_matrix @ query_vec  # (n,) — one matmul
+            scored = list(zip(sims.tolist(), [row for _mid, row, _v, _c in valid]))
+        else:
+            # Score directly using usearch cosine distances
+            scored = []
+            for mid, row, vec, _chash in items:
+                if vec is not None:
+                    sim = float(self.np.dot(vec, query_vec))
+                else:
+                    dist = mid_to_dist.get(mid, 1.0)
+                    sim = 1.0 - dist
+                scored.append((sim, row))
 
         if to_save:
             try:
@@ -1146,8 +1176,9 @@ class EmbeddingSearch:
         if not self._ensure_model():
             return "Embedding model not loaded."
         # Get all memories (the candidate set).
+        tbl = _get_memories_table(db)
         rows = db.execute(
-            "SELECT id, content, source_file, tags FROM tenant_memories WHERE deleted_at IS NULL"
+            f"SELECT id, content, source_file, tags FROM {tbl} WHERE deleted_at IS NULL"
         ).fetchall()
         if not rows:
             return "No memories found."
@@ -1320,9 +1351,10 @@ class EmbeddingSearch:
                         candidate_mids.append(mid)
 
                 if candidate_mids:
+                    tbl = _get_memories_table(db)
                     placeholders = ",".join("?" for _ in candidate_mids)
                     mem_rows = db.execute(
-                        f"SELECT id, content, source_file, tags FROM tenant_memories "
+                        f"SELECT id, content, source_file, tags FROM {tbl} "
                         f"WHERE id IN ({placeholders}) AND deleted_at IS NULL",
                         candidate_mids,
                     ).fetchall()
