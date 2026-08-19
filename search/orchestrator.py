@@ -586,13 +586,22 @@ def _counting_phase(
     if not is_count:
         return results
 
-    # Stopwords specific to counting questions
+    # Stopwords specific to counting questions (auxiliary verbs, question frames, pronouns, and action verbs)
     _STOP = {
         "the", "a", "an", "is", "are", "was", "were", "how", "many",
         "times", "often", "has", "been", "updated", "changed", "modified",
         "distinct", "different", "values", "value", "had", "have", "what",
-        "does", "did", "count", "number", "total", "of", "for", "each",
-        "since", "beginning", "ever", "in", "history", "all", "switch",
+        "does", "did", "do", "doing", "done", "count", "number", "total", "of", "for", "each",
+        "since", "beginning", "ever", "in", "history", "all", "switch", "switched",
+        "see", "sees", "saw", "seen", "seeing", "meet", "meets", "met", "meeting",
+        "play", "plays", "played", "playing", "go", "goes", "went", "gone", "going",
+        "get", "gets", "got", "getting", "gotten", "make", "makes", "made", "making",
+        "take", "takes", "took", "taken", "taking", "visit", "visits", "visited", "visiting",
+        "attend", "attends", "attended", "attending", "talk", "talks", "talked", "talking",
+        "work", "works", "worked", "working", "live", "lives", "lived", "living",
+        "buy", "buys", "bought", "buying", "spend", "spends", "spent", "spending",
+        "with", "and", "or", "to", "my", "your", "his", "her", "their", "our", "me", "you", "them", "us",
+        "up", "down", "out", "on", "off", "over", "under", "from", "about", "into", "around", "through", "after", "before", "between", "by", "at",
     }
     keywords = [
         w.lower() for w in _re.findall(r"[a-z0-9_\-\$]{2,}", query.lower())
