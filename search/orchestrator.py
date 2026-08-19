@@ -324,37 +324,8 @@ def _rerank_results(
     if budget is None:
         budget = get_search_budget()
     assert budget is not None
-    if not (has_fitness and rerank):
-        # No reranking: pass through with -rank as final_score.
-        out = []
-        for r in results:
-            last_accessed_col = r[9] if len(r) > 9 else None
-            metadata_json = r[10] if len(r) > 10 else None
-            access_count = r[11] if len(r) > 11 else 1
-            forget_score = r[12] if len(r) > 12 else None
-            supersedes = r[13] if len(r) > 13 else None
-            out.append(
-                (
-                    r[0],
-                    r[1],
-                    r[2],
-                    r[3],
-                    r[4],
-                    r[5],
-                    -r[5],
-                    None,
-                    None,
-                    None,
-                    last_accessed_col,
-                    metadata_json,
-                    supersedes,
-                )
-            )
-        # RANK-FIRST LOCK (PR1.1): the no-rerank pass-through must not
-        # mutate the ranking score. Order is fixed by -rank (set above);
-        # enrichment is attached as order-invariant envelope fields by
-        # _apply_post_rank_metadata in Phase 10.
-        return out[:limit], None
+    if not results:
+        return [], None
 
     _qtype = _detect_query_type(query)
     # Per-query-type CTR-learned weights override global prior
@@ -445,59 +416,60 @@ def _rerank_results(
     # after all writers. The deep path ("deep") runs the combined baseline
     # then an optional Qwen3-Reranker top-30 refinement that degrades
     # gracefully to combined when the model is unavailable.
-    _ce_mode = _select_ce_mode(query, deep_rerank)
+    _ce_mode = _select_ce_mode(query, deep_rerank) if rerank else "none"
     _ce_weak_k = min(len(scored), limit * 2)
     _ce_chunk_k = min(len(scored), limit * 3)
     # Budget check: downgrade to weak CE if tight budget
-    if not budget.should_run("chunk_ce", 100):
+    if rerank and not budget.should_run("chunk_ce", 100):
         _ce_mode = "weak"
         _ce_chunk_k = _ce_weak_k
     out = _apply_single_ce_rerank(
         query, scored, top_k=_ce_chunk_k, mode=_ce_mode,
         weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
     )
-    out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
-    # ColBERT MaxSim reranking (Phase 3): late-interaction via per-token
-    # embeddings.  Only fires when index is populated, candidates ≤ 30,
-    # query has ≥ 3 tokens, AND budget allows.
-    if budget.should_run("colbert", 100):
-        try:
-            from search.colbert_rerank import colbert_rerank
-            out = colbert_rerank(db, query, out, db_path=db_path)
-        except Exception as _cb_exc:
-            logger.debug("colbert_rerank skipped: %s", _cb_exc)
-    # Answer-level reranking (Phase 5): score best snippet per candidate.
-    # Uses cross-encoder on extracted snippets, with pre-computed cache.
-    if budget.should_run("answer_rerank", 50):
-        try:
-            from search.answer_rerank import answer_rerank
-            from search.enrichment import compute_display_scores
+    if rerank:
+        out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
+        # ColBERT MaxSim reranking (Phase 3): late-interaction via per-token
+        # embeddings.  Only fires when index is populated, candidates ≤ 30,
+        # query has ≥ 3 tokens, AND budget allows.
+        if budget.should_run("colbert", 100):
+            try:
+                from search.colbert_rerank import colbert_rerank
+                out = colbert_rerank(db, query, out, db_path=db_path)
+            except Exception as _cb_exc:
+                logger.debug("colbert_rerank skipped: %s", _cb_exc)
+        # Answer-level reranking (Phase 5): score best snippet per candidate.
+        # Uses cross-encoder on extracted snippets, with pre-computed cache.
+        if budget.should_run("answer_rerank", 50):
+            try:
+                from search.answer_rerank import answer_rerank
+                from search.enrichment import compute_display_scores
 
-            _display_scores = compute_display_scores(out, query, db_path, as_of=as_of, tenant_id=tenant_id)
-            out = answer_rerank(
-                db, query, out, db_path=db_path, display_scores=_display_scores
-            )
-        except Exception as _ar_exc:
-            logger.debug("answer_rerank skipped: %s", _ar_exc)
-    # LTR reranking: LambdaMART takes over ordering after all CE /
-    # late-interaction work.  CE / late-interaction become features
-    # into LTR, not final rank owners.  Writes r[6] exactly once.
-    if out and budget.should_run("ltr_rerank", 50):
-        try:
-            from search.ltr.scorer import ltr_rerank, ltr_enabled
-            if ltr_enabled():
-                from search.ltr.session_ctx import build_session_ctx
-                _session_ctx = (
-                    build_session_ctx(db, lookback=10, time_window_hours=4.0)
-                    if use_history
-                    else None
+                _display_scores = compute_display_scores(out, query, db_path, as_of=as_of, tenant_id=tenant_id)
+                out = answer_rerank(
+                    db, query, out, db_path=db_path, display_scores=_display_scores
                 )
-                out = ltr_rerank(
-                    query, out, db=db, db_path=db_path,
-                    limit=limit, session_ctx=_session_ctx,
-                )
-        except Exception as _ltr_exc:
-            logger.debug("ltr_rerank skipped: %s", _ltr_exc)
+            except Exception as _ar_exc:
+                logger.debug("answer_rerank skipped: %s", _ar_exc)
+        # LTR reranking: LambdaMART takes over ordering after all CE /
+        # late-interaction work.  CE / late-interaction become features
+        # into LTR, not final rank owners.  Writes r[6] exactly once.
+        if out and budget.should_run("ltr_rerank", 50):
+            try:
+                from search.ltr.scorer import ltr_rerank, ltr_enabled
+                if ltr_enabled():
+                    from search.ltr.session_ctx import build_session_ctx
+                    _session_ctx = (
+                        build_session_ctx(db, lookback=10, time_window_hours=4.0)
+                        if use_history
+                        else None
+                    )
+                    out = ltr_rerank(
+                        query, out, db=db, db_path=db_path,
+                        limit=limit, session_ctx=_session_ctx,
+                    )
+            except Exception as _ltr_exc:
+                logger.debug("ltr_rerank skipped: %s", _ltr_exc)
     # Temporal SSM recency reranking (gated by temporal_ssm_enabled).  Final
     # recency-aware multiplier on r[6]; neutral (blend 1.0) until
     # cron_train_temporal_ssm has written temporal_ssm_weights, so it cannot
@@ -520,7 +492,9 @@ def _rerank_results(
     # neutral until trained, and deliberately the last r[6] writer. Re-assert
     # the ranking order so any future in-place score mutation cannot leak into
     # result ordering.
-    is_fact_or_temp = bool(_FACT_LOOKUP_RE.search(query))
+    from search.scoring import _extract_relative_time_offset_days
+    has_rel_time = bool(_extract_relative_time_offset_days(query))
+    is_fact_or_temp = bool(_FACT_LOOKUP_RE.search(query)) and not has_rel_time
     def _rank_key(r):
         score = float(r[6]) if r[6] is not None else 0.0
         ts = str(r[4]) if len(r) > 4 and r[4] is not None else ""
@@ -574,13 +548,11 @@ def _counting_phase(
     import re as _re
 
     _COUNT_PATTERNS = [
-        r"how\s+(?:many\s+times|often)",
-        r"number\s+of\s+times",
-        r"count\s+of",
         r"how\s+many\s+(?:distinct|different)?\s*values",
         r"how\s+many\s+distinct",
-        r"how\s+many\s+times\s+did\s+",
-        r"how\s+many\s+(?:times|updates|changes)",
+        r"how\s+many\s+(?:updates|changes|transitions|switches)",
+        r"how\s+(?:many\s+times|often)\s+.*?\b(?:change|changed|update|updated|switch|switched|transition|modified)\b",
+        r"number\s+of\s+times\s+.*?\b(?:change|changed|update|updated|switch|switched|transition|modified)\b",
     ]
     is_count = any(_re.search(p, query, _re.IGNORECASE) for p in _COUNT_PATTERNS)
     if not is_count:
@@ -1907,11 +1879,13 @@ def search_memories(
 
             if _search_parallel and include_facts:
                 def _fts_worker() -> list:
+                    from infra.db import set_include_global
+                    set_include_global(include_global)
                     conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
                     try:
                         return _fts_search(
                             conn, fts_query,
-                            limit * 10 if _effective_rerank else limit,
+                            limit * 10 if _effective_rerank else max(limit * 5, 50),
                             has_fitness, repo_filter,
                             tag_filter_sql=_tag_filter_sql,
                             tag_filter_params=tuple(_tag_filter_params),
@@ -1928,6 +1902,8 @@ def search_memories(
                         connection_pool.put(conn)
 
                 def _kg_worker() -> list:
+                    from infra.db import set_include_global
+                    set_include_global(include_global)
                     conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
                     try:
                         return _search_kg_facts(
@@ -1952,7 +1928,7 @@ def search_memories(
                 _record_phase_latency("search.kg_facts", _t0)
             else:
                 results = _fts_search(
-                    db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
+                    db, fts_query, limit * 5 if _effective_rerank else max(limit * 5, 50), has_fitness,
                     repo_filter,
                     tag_filter_sql=_tag_filter_sql,
                     tag_filter_params=tuple(_tag_filter_params),
@@ -2037,80 +2013,53 @@ def search_memories(
                 _merged_chunks = _fusion_chunk_hits[0]
 
         # Phase 8: Temporal filtering
-        if not include_invalid or as_of is not None:
+        if results and (not include_invalid or as_of is not None):
             if "valid_to" in cols:
-                if tenant_id:
-                    tenant_clause = " AND (tenant_id = ? OR tenant_id = 'default')" if include_global else " AND tenant_id = ?"
-                else:
-                    tenant_clause = ""
-                if as_of is not None:
-                    if isinstance(as_of, str):
-                        as_of_iso = as_of[:19].replace("Z", "")
-                    elif isinstance(as_of, datetime):
-                        as_of_iso = as_of.strftime("%Y-%m-%dT%H:%M:%S")
-                    else:
-                        try:
-                            as_of_iso = time.strftime(
-                                "%Y-%m-%dT%H:%M:%S", time.gmtime(float(as_of))
-                            )
-                        except Exception:
-                            as_of_iso = str(as_of)[:19]
+                _cand_ids = [r[0] for r in results]
+                if _cand_ids:
+                    _ph = ",".join("?" for _ in _cand_ids)
+                    if as_of is not None:
+                        if isinstance(as_of, str):
+                            as_of_iso = as_of[:19].replace("Z", "")
+                        elif isinstance(as_of, datetime):
+                            as_of_iso = as_of.strftime("%Y-%m-%dT%H:%M:%S")
+                        else:
+                            try:
+                                as_of_iso = time.strftime(
+                                    "%Y-%m-%dT%H:%M:%S", time.gmtime(float(as_of))
+                                )
+                            except Exception:
+                                as_of_iso = str(as_of)[:19]
 
-                    if "valid_from" in cols:
-                        sql_params = [as_of_iso, as_of_iso]
-                        if tenant_id: sql_params.append(tenant_id)
-                        valid_ids = {
-                            row[0]
-                            for row in db.execute(
-                                "SELECT id FROM memories "
-                                "WHERE deleted_at IS NULL "
+                        if "valid_from" in cols:
+                            valid_rows = db.execute(
+                                f"SELECT id FROM memories WHERE id IN ({_ph}) AND deleted_at IS NULL "
                                 "AND (valid_from IS NULL OR valid_from = '' OR valid_from <= ?) "
-                                f"AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?){tenant_clause}"
-                                " LIMIT 10000",
-                                tuple(sql_params),
+                                "AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?)",
+                                tuple(_cand_ids) + (as_of_iso, as_of_iso),
                             ).fetchall()
-                        }
+                        else:
+                            valid_rows = db.execute(
+                                f"SELECT id FROM memories WHERE id IN ({_ph}) AND deleted_at IS NULL "
+                                "AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?)",
+                                tuple(_cand_ids) + (as_of_iso,),
+                            ).fetchall()
                     else:
-                        sql_params = [as_of_iso]
-                        if tenant_id: sql_params.append(tenant_id)
-                        valid_ids = {
-                            row[0]
-                            for row in db.execute(
-                                "SELECT id FROM memories "
-                                "WHERE deleted_at IS NULL "
-                                f"AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?){tenant_clause}"
-                                " LIMIT 10000",
-                                tuple(sql_params),
-                            ).fetchall()
-                        }
-                else:
-                    sql_params = [tenant_id] if tenant_id else []
-                    valid_ids = {
-                        row[0]
-                        for row in db.execute(
-                            "SELECT id FROM memories WHERE deleted_at IS NULL "
-                            f"AND (valid_to IS NULL OR valid_to = ''){tenant_clause}"
-                            " LIMIT 10000",
-                            tuple(sql_params),
+                        valid_rows = db.execute(
+                            f"SELECT id FROM memories WHERE id IN ({_ph}) AND deleted_at IS NULL "
+                            "AND (valid_to IS NULL OR valid_to = '')",
+                            tuple(_cand_ids),
                         ).fetchall()
-                    }
-                if not valid_ids:
-                    return _build_empty_result_with_hint(
-                        cache_key=cache_key,
-                        query=f"{query} (after temporal filter)",
-                        db_path=db_path,
-                        hint=None,
-                        related_facts=related_facts if include_facts else None,
-                    )
-                results = [r for r in results if r[0] in valid_ids]
-                if not results:
-                    return _build_empty_result_with_hint(
-                        cache_key=cache_key,
-                        query=f"{query} (after temporal filter)",
-                        db_path=db_path,
-                        hint=None,
-                        related_facts=related_facts if include_facts else None,
-                    )
+                    valid_ids = {row[0] for row in valid_rows}
+                    results = [r for r in results if r[0] in valid_ids]
+                    if not results:
+                        return _build_empty_result_with_hint(
+                            cache_key=cache_key,
+                            query=f"{query} (after temporal filter)",
+                            db_path=db_path,
+                            hint=None,
+                            related_facts=related_facts if include_facts else None,
+                        )
 
         # Phase 9: Chunk enhancement + session clustering
         # KG boost, CE reranking) — these add noise on keyword-specific

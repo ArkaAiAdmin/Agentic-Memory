@@ -683,6 +683,8 @@ def _compute_final_score(ctx) -> float:
             raw = raw * (0.85 + 0.15 * _forget)
         except (TypeError, ValueError):
             pass
+    if relative_offset_days is not None and created and now_ts:
+        raw = raw * (0.05 + 0.95 * recency_score)
     return raw * _entailment_factor
 
 

@@ -1155,7 +1155,7 @@ def _apply_single_ce_rerank(
     separate, non-CE reranker family) and re-asserts the PR1.1 rank-first
     sort. No CE stage runs after this point.
     """
-    if not scored_results or not query:
+    if not scored_results or not query or mode in ("none", "off", "disabled"):
         return list(scored_results)
     try:
         from infra._lazy_imports import get_config

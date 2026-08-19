@@ -126,10 +126,17 @@ def _fetch_rows_by_ids(
         return {}
     result = {}
     _CHUNK_SIZE = 500
+    _target_table = table
+    if _target_table == "tenant_memories":
+        try:
+            db.execute("SELECT 1 FROM tenant_memories LIMIT 0")
+        except Exception:
+            _target_table = "memories"
+
     for i in range(0, len(ids), _CHUNK_SIZE):
         chunk = ids[i : i + _CHUNK_SIZE]
         placeholders = ",".join("?" * len(chunk))
-        query = f"SELECT {columns} FROM {table} m WHERE m.id IN ({placeholders}) AND m.deleted_at IS NULL{extra_filter}"
+        query = f"SELECT {columns} FROM {_target_table} m WHERE m.id IN ({placeholders}) AND m.deleted_at IS NULL{extra_filter}"
         try:
             rows = db.execute(query, [*chunk, *extra_params]).fetchall()
             result.update({row[0]: row for row in rows})

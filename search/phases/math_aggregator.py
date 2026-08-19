@@ -413,6 +413,8 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
         r"\b(?:issue|issues|problem|problems|defect|defects|trouble|broken|error|errors|fault|malfunction)\b",
         r"\b(?:what\s+happened|why\s+did|why\s+was|how\s+come)\b",
         r"\b(?:did\s+i|was\s+it|were\s+they|is\s+it)\s+.*?\b(?:or\s+not|with\s+a\s+friend\s+or\s+not)\b",
+        r"\bwhat\s+(?:.*?\s+)?(?:activity|milestone|appliance|investment|decision|recommendation|habit)\b",
+        r"\bwhat\s+did\s+i\s+(?:do|buy|mention|participate|eat|visit|see|get)\b",
     ]
     if any(re.search(pat, query_lower) for pat in NON_NUMERIC_INTENTS):
         return None
@@ -813,21 +815,19 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
 
     # Gaming hours aggregation across sessions
     if "games" in query_lower and ("hours" in query_lower or unit_name == "hour"):
+        _GAMING_HOUR_PAT = re.compile(
+            r"\b(?:took\s+me|i\s+spent|spent\s+around|immersed\s+in|logged|played\s+for|completed\s+it\s+in)\s*(?:around\s+|about\s+)?(\d+)\s+hours?\b",
+            re.IGNORECASE,
+        )
         sess_hours: dict[str, float] = {}
         for c in candidates[:35]:
             cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
             cnt = _get_item_content(c)
-            for line in cnt.split("\n"):
-                m_dur = (
-                    re.search(r"\b(?:took\s+me|i\s+spent|spent\s+around|immersed\s+in|logged|played\s+for)?\s*(?:around\s+|about\s+)?(\d+)\s+hours?\s+(?:in|playing|on|of)\b", line, re.I)
-                    or re.search(r"(\d+)\s+hours?\s+in\s+[A-Za-z0-9\s]+", line, re.I)
-                    or re.search(r"\b(?:spent|spent\s+around|about)\s+(\d+)\s+hours?", line, re.I)
-                )
-                if m_dur:
-                    v = float(m_dur.group(1))
-                    if 1 <= v <= 1000:
-                        sess_hours[cid] = v
-                        break
+            m_dur = _GAMING_HOUR_PAT.search(cnt)
+            if m_dur:
+                v = float(m_dur.group(1) or m_dur.group(2))
+                if 1 <= v <= 1000:
+                    sess_hours[cid] = v
         if len(sess_hours) >= 2:
             tot_h = sum(sess_hours.values())
             return f"{int(tot_h)} hours"

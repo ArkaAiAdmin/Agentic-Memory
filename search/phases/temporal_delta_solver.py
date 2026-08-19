@@ -20,7 +20,7 @@ _DELTA_PATTERNS = [
     re.compile(r"\b(how\s+long\s+(?:did\s+i|have\s+i|had\s+i|was\s+i|did\s+it\s+take|have\s+i\s+been|had\s+i\s+been|was\s+the|will\s+it))\b", re.IGNORECASE),
     re.compile(r"\b(how\s+many\s+days\s+(?:did\s+it\s+take|for.*?to\s+arrive|to\s+receive|had\s+passed|before))\b", re.IGNORECASE),
     re.compile(r"\b(how\s+much\s+(?:earlier|later))\b", re.IGNORECASE),
-    re.compile(r"\b(days|weeks|months|years)\s+(passed|ago|elapsed|prior|before|since)\b", re.IGNORECASE),
+    re.compile(r"\b(?:how\s+many\s+|number\s+of\s+)?(days|weeks|months|years)\s+(?:passed|elapsed)\b|\bhow\s+(?:many\s+(?:days|weeks|months|years)|long)\s+ago\b", re.IGNORECASE),
     re.compile(r"\b(order\s+of|chronological|earliest\s+to\s+latest|first\s+to\s+last|which\s+.*?first|which\s+.*?earlier)\b", re.IGNORECASE),
 ]
 
@@ -464,7 +464,7 @@ def calculate_temporal_delta(query: str, candidates: list[tuple], as_of: float |
 
     # 2. Check relative query against as_of date (e.g. "How many days ago did I buy X?")
     query_lower = query.lower()
-    is_relative_ago = bool(re.search(r"\b(days|weeks|months|years)\s+ago\b|\bhow\s+long\s+ago\b|\bhow\s+many\s+days\s+(?:did\s+it\s+take|had\s+passed|since)\b", query_lower))
+    is_relative_ago = bool(re.search(r"\bhow\s+(?:many\s+(?:days|weeks|months|years)|long)\s+ago\b|\bhow\s+many\s+days\s+(?:did\s+it\s+take|had\s+passed|since)\b", query_lower))
 
     dates: list[tuple[datetime, str]] = []
 

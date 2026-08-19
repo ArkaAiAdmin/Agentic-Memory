@@ -70,8 +70,13 @@ def _build_result_items(
         except Exception as _oe:
             logger.warning("backlinks fetch failed: %s", _oe)
         try:
+            _cat_table = "tenant_memories"
+            try:
+                db.execute("SELECT 1 FROM tenant_memories LIMIT 0")
+            except Exception:
+                _cat_table = "memories"
             for row in db.execute(
-                f"SELECT id, category FROM tenant_memories WHERE id IN ({ph})",
+                f"SELECT id, category FROM {_cat_table} WHERE id IN ({ph})",
                 result_ids,
             ).fetchall():
                 category_map[row[0]] = row[1]

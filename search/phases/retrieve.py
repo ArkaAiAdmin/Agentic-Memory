@@ -37,12 +37,14 @@ def _fts_search(
 ) -> list:
     _base_filter = repo_filter + tag_filter_sql
     _tenant_params = ()
-    if tenant_id:
+    if tenant_id and tenant_id != "default":
         if include_global:
             _base_filter = _base_filter + " AND (m.tenant_id = ? OR m.tenant_id = 'default')"
         else:
             _base_filter = _base_filter + " AND m.tenant_id = ?"
         _tenant_params = (tenant_id,)
+    elif tenant_id == "default" and not include_global:
+        _base_filter = _base_filter + " AND m.tenant_id = 'default'"
 
     if prefilter_ids:
         _id_list = ",".join("?" for _ in prefilter_ids)
