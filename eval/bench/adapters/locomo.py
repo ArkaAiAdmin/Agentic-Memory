@@ -75,7 +75,24 @@ class LoCoMoAdapter(BaseBenchmarkAdapter):
                     dia_id = turn.get("dia_id", "")
                     lines.append(f"({dia_id}) {speaker}: {text}")
                 content = "\n".join(lines)
+                raw_dt = conv.get(f"{sk}_date_time")
                 sess_time = (base_time + timedelta(days=conv_idx * 30 + sess_idx)).isoformat()
+                if raw_dt:
+                    clean_dt = str(raw_dt).strip().replace(",", "")
+                    for fmt in (
+                        "%I:%M %p on %d %B %Y",
+                        "%I:%M %p on %d %b %Y",
+                        "%H:%M on %d %B %Y",
+                        "%H:%M on %d %b %Y",
+                        "%d %B %Y",
+                        "%d %b %Y",
+                        "%Y-%m-%d",
+                    ):
+                        try:
+                            sess_time = datetime.strptime(clean_dt, fmt).replace(tzinfo=timezone.utc).isoformat()
+                            break
+                        except ValueError:
+                            pass
 
                 sessions.append(
                     BenchmarkSession(

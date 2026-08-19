@@ -471,14 +471,16 @@ def _max_over_chunk_scores(raw_scores, counts: list, start: int = 0) -> tuple[li
 
 def _get_best_device() -> str:
     """Return the best available PyTorch device for CE inference."""
+    env_dev = os.environ.get("MEMORY_CE_DEVICE")
+    if env_dev:
+        return env_dev
     try:
         import torch
 
         if torch.cuda.is_available():
             return "cuda"
         if torch.backends.mps.is_available():
-            # MPS has high per-call overhead for tiny batches; CPU is faster for <20 pairs
-            return "cpu"
+            return "mps"
     except Exception:
         pass
     return "cpu"
