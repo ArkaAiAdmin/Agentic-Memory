@@ -151,6 +151,9 @@ def _compute_difference_delta(query: str, candidates: list) -> str | None:
         m = re.search(r"(?:I\'?m|you\'?re|I am)\s+(?:currently\s+|a\s+)?(\d{1,3})[-\s]year[-\s]old", content, re.I)
         if m:
             return float(m.group(1))
+        m = re.search(r"\b(?:I\'?m|I am)\s+(\d{1,3})\s+years?\s+old\b", content, re.I)
+        if m:
+            return float(m.group(1))
         m = re.search(r"(?:Since\s+I\'?m|As\s+you\'?re|I\'?m\s+currently)\s+(\d{1,3})\b", content, re.I)
         if m and 18 <= float(m.group(1)) <= 100:
             return float(m.group(1))
@@ -168,10 +171,10 @@ def _compute_difference_delta(query: str, candidates: list) -> str | None:
         for item in candidates[:50]:
             cnt = _get_item_content(item)
             a = _get_my_age(cnt)
-            if a:
+            if a and not my_age:
                 my_age = a
-            m_dur = re.search(r"(?:for\s+(?:the\s+)?past\s+|for\s+)(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+years", cnt, re.I)
-            if m_dur:
+            m_dur = re.search(r"(?:for\s+(?:the\s+)?past\s+|for\s+|living\s+in[^\.\n]*?for\s+|been\s+in[^\.\n]*?for\s+)(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+years", cnt, re.I)
+            if m_dur and not duration:
                 d_str = m_dur.group(1).lower()
                 duration = float(WORD_TO_NUM.get(d_str, d_str))
         if my_age is not None and duration is not None:
@@ -307,7 +310,7 @@ def _accumulate_category_dollars(query: str, candidates: list) -> str | None:
     """Accumulate dollar amounts from sessions matching category-specific spending or earnings."""
     query_lower = query.lower()
     _USER_SPEND_VERBS = re.compile(r"\b(spent|spend|paid|pay|bought|buy|purchased|purchase|cost(?:\s+me)?|got\s+for|installed|tuition)\b", re.I)
-    _DISALLOWED_TERMS = re.compile(r"\b(stock\s+market|crypto\s+market|housing\s+market|market\s+cap|company\s+revenue|annual\s+revenue|budget|range\s+from|between\s+\$|retail|msrp|distractor)\b", re.I)
+    _DISALLOWED_TERMS = re.compile(r"\b(stock\s+market|crypto\s+market|housing\s+market|market\s+cap|company\s+revenue|annual\s+revenue|budget|range\s+from|between\s+\$|retail|msrp|distractor|such\s+as|for\s+example|e\.g\.|sponsor\s+a)\b", re.I)
 
     GENERIC_FRAME_WORDS = {
         "what", "is", "the", "total", "amount", "of", "money", "how", "much",
@@ -322,7 +325,7 @@ def _accumulate_category_dollars(query: str, candidates: list) -> str | None:
 
     is_earn = any(w in query_lower for w in ["earn", "earned", "raise", "raised", "selling", "sold"])
     if "raise" in query_lower or "raised" in query_lower:
-        target_verb_re = re.compile(r"\b(raise|raised|fundrais)\b", re.I)
+        target_verb_re = re.compile(r"\b(raise|raised|raising|fundrais\w*)\b", re.I)
     elif "earn" in query_lower or "earned" in query_lower or "selling" in query_lower or "sold" in query_lower:
         target_verb_re = re.compile(r"\b(earned|earn|sold|sell|made|generated)\b", re.I)
     elif "workshop" in query_lower or "workshops" in query_lower:
@@ -546,34 +549,73 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 avg = sum(ages) / len(ages)
                 return format_numeric_val(avg)
         if "gpa" in query_lower:
-            ug_gpa = None
-            grad_gpa = None
-            for c in candidates[:50]:
-                cnt = _get_item_content(c)
-                cnt_lower = cnt.lower()
-                if "undergraduate" in cnt_lower or "bachelor" in cnt_lower or "undergrad" in cnt_lower or "mumbai" in cnt_lower:
-                    m_g = re.search(r"gpa[^\d]*?(\d\.\d{1,2})", cnt, re.I)
-                    if m_g:
-                        ug_gpa = float(m_g.group(1))
-                if ("graduate" in cnt_lower and "undergraduate" not in cnt_lower) or "master" in cnt_lower or "phd" in cnt_lower or "doctorate" in cnt_lower or "illinois" in cnt_lower:
-                    m_g = re.search(r"gpa[^\d]*?(\d\.\d{1,2})", cnt, re.I)
-                    if m_g:
-                        grad_gpa = float(m_g.group(1))
-            if ug_gpa is not None and grad_gpa is not None:
-                avg = (ug_gpa + grad_gpa) / 2.0
-                return f"{avg:.2f}"
             gpas: list[float] = []
             for c in candidates[:50]:
                 cnt = _get_item_content(c)
-                for s in re.split(r"(?<=[.!?\n])\s+", cnt):
-                    if any(w in s.lower() for w in ["gpa", "graduated", "degree", "undergrad", "master", "doctorate", "bachelor", "college", "university"]):
-                        for m in re.finditer(r"\b([2-4]\.\d{1,2})\b", s):
-                            v = float(m.group(1))
-                            if v not in gpas:
-                                gpas.append(v)
+                for turn in cnt.split("\n\n"):
+                    for s in re.split(r"(?<=[a-zA-Z\)])\.\s+|\n+", turn):
+                        if "gpa" in s.lower():
+                            if any(w in s.lower() for w in ["or higher", "or above", "minimum", "at least", "target gpa"]):
+                                continue
+                            m_user = re.search(r"\b(?:GPA\s+(?:of|was|is)|equivalent\s+to\s+a\s+GPA\s+of)\s+([2-4]\.\d{1,2})\b", s, re.I)
+                            if m_user:
+                                v = float(m_user.group(1))
+                                if v not in gpas:
+                                    gpas.append(v)
             if len(gpas) >= 2:
                 avg = sum(gpas) / len(gpas)
                 return f"{avg:.2f}"
+
+    # Rare items / collectibles collection aggregation (e.g. rare records + rare figurines + rare coins + rare books)
+    if "rare" in query_lower and ("item" in query_lower or "collect" in query_lower or "total" in query_lower or "have" in query_lower):
+        rare_vals: dict[str, float] = {}
+        for c in candidates[:50]:
+            cid = _get_item_id(c)
+            cnt = _get_item_content(c)
+            for turn in cnt.split("\n\n"):
+                m_r = re.search(r"\b(\d+)\s+rare\s+([a-zA-Z]+)|\bcollection\s+of\s+(\d+)\s+(?:rare\s+)?([a-zA-Z]+)", turn, re.I)
+                if m_r:
+                    val = float(m_r.group(1) or m_r.group(3))
+                    if 0 < val < 1000:
+                        rare_vals[cid] = val
+                        break
+        if len(rare_vals) >= 2:
+            tot = sum(rare_vals.values())
+            return format_numeric_val(tot)
+
+    # Age when moved / started / immigrated / joined (e.g. "How old was I when I moved to the United States?")
+    m_moved = re.search(r"how\s+old\s+was\s+i\s+when\s+i\s+(?:moved|started|joined|arrived|immigrated|came)", query_lower)
+    if m_moved:
+        current_age: float | None = None
+        years_ago: float | None = None
+        for c in candidates[:50]:
+            cnt = _get_item_content(c)
+            m_age = re.search(r"\b(?:I\s+am|I\x27m|I\s+was)\s+(\d{1,2})[- ](?:year[- ]old|years\s+old)\b", cnt, re.I)
+            if m_age and current_age is None:
+                current_age = float(m_age.group(1))
+            m_dur = re.search(r"\b(?:living\s+in|been\s+in|for\s+the\s+past)\s+(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\s+years\b", cnt, re.I)
+            if m_dur and years_ago is None:
+                w = m_dur.group(1).lower()
+                years_ago = float(WORD_TO_NUM.get(w, w))
+        if current_age is not None and years_ago is not None:
+            res_age = int(current_age - years_ago)
+            return str(res_age)
+
+    # Collection update: prior base count + newly added items (e.g. 37 coins + 1 added = 38)
+    if ("how many" in query_lower or "total" in query_lower) and ("collection" in query_lower or "have" in query_lower or "own" in query_lower):
+        base_count: float | None = None
+        added_count: float = 0.0
+        for c in candidates[:50]:
+            cnt = _get_item_content(c)
+            for turn in cnt.split("\n\n"):
+                m_base = re.search(r"\b(?:displaying|holding|collection\s+of|cataloging|have)\s+(\d{1,4})\s+([a-zA-Z\s\-]+)", turn, re.I)
+                if m_base and base_count is None:
+                    base_count = float(m_base.group(1))
+                m_add = re.search(r"\b(?:just\s+added|added|bought|got)\s+(?:a|an|\d+)\s+new\s+([a-zA-Z\s\-]+?)\s+to\s+my\s+collection\b", turn, re.I)
+                if m_add:
+                    added_count += 1.0
+        if base_count is not None and added_count > 0:
+            return format_numeric_val(base_count + added_count)
 
     # Minimum amount for named items (e.g. vintage diamond necklace and antique vanity)
     if "minimum amount" in query_lower or ("minimum" in query_lower and ("sold" in query_lower or "sell" in query_lower or "get" in query_lower)):

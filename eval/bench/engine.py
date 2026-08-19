@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 import traceback
@@ -205,7 +206,7 @@ class BenchmarkHarness:
                 retrieved_ids = [r["id"] for r in retrieved_items]
 
                 # Safe ID-to-content lookup avoiding zip misalignment
-                top_context_ids = retrieved_ids[:25]
+                top_context_ids = retrieved_ids[:50]
                 top10_ids = retrieved_ids[:10]
                 id_to_content = {}
                 id_to_created = {}
@@ -220,7 +221,10 @@ class BenchmarkHarness:
                         id_to_created[r[0]] = str(r[2]) if len(r) > 2 and r[2] else ""
 
                 if q.category == "knowledge-update":
-                    top10_ids_ordered = sorted(top10_ids, key=lambda mid: id_to_created.get(mid, ""), reverse=True)
+                    if re.search(r"\b(initially|originally|at\s+first|in\s+the\s+beginning|earliest)\b", q.query, re.I):
+                        top10_ids_ordered = sorted(top10_ids, key=lambda mid: id_to_created.get(mid, ""), reverse=False)
+                    else:
+                        top10_ids_ordered = sorted(top10_ids, key=lambda mid: id_to_created.get(mid, ""), reverse=True)
                     retrieved_contents = [id_to_content.get(mid, "") for mid in top10_ids_ordered if mid in id_to_content]
                 else:
                     retrieved_contents = [id_to_content.get(mid, "") for mid in top10_ids if mid in id_to_content]

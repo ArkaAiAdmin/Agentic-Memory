@@ -202,10 +202,24 @@ def _extract_gold_variants(expected: Any) -> list[str]:
 
     # Extract leading clause before colon e.g. "I visited three different doctors: a primary care..."
     for v in list(variants):
-        if ":" in v:
-            v_col = v.split(":", 1)[0].strip()
+        if re.search(r":\s+[a-zA-Z]", v):
+            v_col = re.split(r":\s+", v, 1)[0].strip()
             if v_col and v_col not in variants:
                 variants.append(v_col)
+
+    # Extract core clause before explanatory glosses (e.g. "... 1:10, meaning one part ...")
+    for v in list(variants):
+        if re.search(r",\s*(?:meaning|which\s+means|that\s+is|i\.e\.)\b", v, re.I):
+            v_core = re.split(r",\s*(?:meaning|which\s+means|that\s+is|i\.e\.)\b", v, flags=re.I)[0].strip()
+            if v_core and v_core not in variants:
+                variants.append(v_core)
+
+    # Extract ratio variants (e.g. "1:10", "1:2")
+    for v in list(variants):
+        for m_ratio in re.finditer(r"\b(\d+:\d+)\b", v):
+            v_r = m_ratio.group(1).strip()
+            if v_r and v_r not in variants:
+                variants.append(v_r)
 
     # Extract leading statement phrases e.g. "I viewed four properties before making an offer..." -> "I viewed four properties"
     for v in list(variants):

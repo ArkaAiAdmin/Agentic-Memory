@@ -60,3 +60,52 @@ def test_state_counting_stopwords():
             limit=10,
         )
         assert not any(r[0].startswith("count_do") or r[0].startswith("count_see") for r in res)
+
+
+def test_gpa_averaging_with_threshold_filtering():
+    """Verify GPA calculation averages genuine user degrees while filtering out advice thresholds."""
+    candidates = [
+        ("c1", "I recently completed my Master's degree in Data Science from the University of Illinois where I maintained a GPA of 3.8 out of 4.0.\n\nAdvice: 3. **Strong academic record**: with a GPA of 3.5 or higher.", "", "", "2023-05-01T10:00:00Z"),
+        ("c2", "I graduated with a First-Class distinction in Computer Science from the University of Mumbai, equivalent to a GPA of 3.86 out of 4.0.", "", "", "2023-05-02T10:00:00Z"),
+    ]
+    query = "What is the average GPA of my undergraduate and graduate studies?"
+    res = extract_and_aggregate_quantities(query, candidates)
+    assert res == "3.83"
+
+
+def test_age_relocation_offset_arithmetic():
+    """Verify age at relocation calculation (Current Age - Years in Location)."""
+    candidates = [
+        ("c1", "I'm a 32-year-old male living in Seattle.", "", "", "2023-01-01T10:00:00Z"),
+        ("c2", "I have been living in the United States for the past five years on a work visa.", "", "", "2023-01-02T10:00:00Z"),
+    ]
+    query = "How old was I when I moved to the United States?"
+    res = extract_and_aggregate_quantities(query, candidates)
+    assert res == "27"
+
+
+def test_collection_increment_arithmetic():
+    """Verify collection update arithmetic (Prior Base + Newly Added = Updated Total)."""
+    candidates = [
+        ("c1", "I am currently cataloging a collection of 37 vintage coins.", "", "", "2023-03-01T10:00:00Z"),
+        ("c2", "I just added a new silver dollar to my collection today!", "", "", "2023-03-15T10:00:00Z"),
+    ]
+    query = "How many pre-1920 coins do I have in my collection?"
+    res = extract_and_aggregate_quantities(query, candidates)
+    assert res == "38"
+
+
+def test_dynamic_sequence_grammar_extraction():
+    """Verify sequence solver uses dynamic query grammar without hardcoded noun keywords."""
+    candidates = [
+        ("c1", "I visited the Science Museum today with my colleague.", "", "", "2023-01-15T10:00:00Z"),
+        ("c2", "I attended a lecture series at the Museum of Contemporary Art today.", "", "", "2023-01-22T10:00:00Z"),
+        ("c3", "I saw the golden mask today at the Metropolitan Museum of Art.", "", "", "2023-02-10T10:00:00Z"),
+    ]
+    query = "What is the order of the three museums I visited from earliest to latest?"
+    res = solve_sequence_order(query, candidates)
+    assert res is not None
+    assert "Science Museum" in res
+    assert "Museum of Contemporary Art" in res
+    assert "Metropolitan Museum of Art" in res
+

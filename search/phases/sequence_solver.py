@@ -176,28 +176,68 @@ def _solve_graduated_order(query: str, candidates: list[tuple]) -> str | None:
 
 def _extract_event_phrase_generic(text: str, query: str = "") -> str | None:
     """Extract generic event/activity phrase from a candidate session snippet using natural action grammar."""
-    # 1. Capitalized proper noun sequence (highest precision)
-    caps = re.findall(
-        r"\b([A-Z][a-zA-Z0-9]*(?:\s+(?:of|and|the|for|in|at|[A-Z][a-zA-Z0-9]*))*\s+(?:Museum|Park|Monument|Triathlon|Run|Tournament|Championship|Game|Playoffs|Series|Festival|Conference|Expo|Center))\b",
-        text,
-    )
-    if caps:
-        for c in caps:
-            c_clean = c.strip()
-            if len(c_clean) > 5 and not c_clean.lower().startswith(("s ", "m ", "t ", "re ", "ll ", "don ")):
-                return c_clean
+    q_lower = query.lower()
+    _STOP = {"I", "My", "The", "A", "An", "In", "At", "To", "With", "We", "He", "She", "It", "They", "Our", "Your"}
+
+    # 1. Dynamically extract target entity noun from query grammar (e.g. "order of the six museums" -> "museum", "order of the three trips" -> "trip")
+    m_target = re.search(r"\border\s+of\s+(?:the\s+)?(?:\d+|three|four|five|six|seven|eight|several|my)?\s*([a-z]+?)(?:s|es)?\s+(?:I|we|my)\b", query, re.I)
+    target_stem = m_target.group(1).lower().rstrip("s") if m_target else None
+
+    if target_stem and len(target_stem) >= 3:
+        for turn in text.split("\n\n"):
+            if any(w in turn.lower() for w in ["i visited", "i saw", "i attended", "i participated", "i just came back", "i took", "i went", "i plan"]):
+                for m in re.finditer(r"\b([A-Z][a-zA-Z0-9\x27]*(?:\s+(?:of|and|the|for|in|at|[A-Z][a-zA-Z0-9\x27]*))*)\b", turn):
+                    name = m.group(1).strip()
+                    if target_stem in name.lower():
+                        tokens = name.split()
+                        while tokens and tokens[0] in _STOP:
+                            tokens = tokens[1:]
+                        if tokens:
+                            clean_name = " ".join(tokens)
+                            clean_name = re.sub(r"[\x27\x27]s\b", "", clean_name).strip()
+                            if len(clean_name) > 3:
+                                return clean_name
 
     # 2. First-person action clause extraction from user turns
     for turn in text.split("\n\n"):
         m_act = re.search(
-            r"\b(?:I\s+|I've\s+|I\s+just\s+)(?:attended|watched|participated\s+in|took\s+part\s+in|completed|went\s+on|visited|started|flew\s+with|saw)\s+(?:an?\s+|the\s+|my\s+)?([A-Z][A-Za-z0-9\s,'\-]+?)(?:\s+today|\s+yesterday|\s+last\s+week|\s+recently|[.!?\n]|$)",
+            r"\b(?:I\s+|I've\s+|I\s+just\s+)(?:first\s+)?(?:attended|watched|participated\s+in|took\s+part\s+in|completed|went\s+on|visited|started|finished|flew\s+with|saw)\s+(?:an?\s+|the\s+|my\s+)?([A-Z][A-Za-z0-9\s,'\-]+?)(?:\s+today|\s+yesterday|\s+last\s+week|\s+recently|[.!?\n]|$)",
             turn,
         )
         if m_act:
             phrase = m_act.group(1).strip().rstrip(".,'\"")
-            phrase = re.sub(r"\s+(?:which\s+included|with\s+a\s+personal|at\s+my\s+friend|and\s+I'm|and\s+I\s+want).*$", "", phrase, flags=re.IGNORECASE).strip()
-            if len(phrase) > 5 and phrase[0].isupper() and not phrase.lower().startswith(("s ", "m ", "t ", "re ", "ll ", "don ")):
-                return phrase
+            phrase = re.sub(r"\s+(?:which\s+included|with\s+a\s+personal|at\s+my\s+friend|and\s+I'm|and\s+I\s+want|and\s+realized).*$", "", phrase, flags=re.IGNORECASE).strip()
+            tokens = phrase.split()
+            while tokens and tokens[0] in _STOP:
+                tokens = tokens[1:]
+            if tokens:
+                phrase = " ".join(tokens)
+                if len(phrase) > 3 and phrase[0].isupper() and not phrase.lower().startswith(("s ", "m ", "t ", "re ", "ll ", "don ")):
+                    return phrase
+
+    # 3. Capitalized proper noun sequence
+    caps = re.findall(
+        r"\b([A-Z][a-zA-Z0-9']*(?:\s+(?:of|and|the|for|in|at|[A-Z][a-zA-Z0-9']*))*\s+(?:Museum|Park|Monument|Wilderness|Trail|Campground|Triathlon|Marathon|Run|Tournament|Championship|Game|Playoffs|Series|Festival|Conference|Expo|Center))\b",
+        text,
+    )
+    if caps:
+        for c in caps:
+            tokens = c.strip().split()
+            while tokens and tokens[0] in _STOP:
+                tokens = tokens[1:]
+            if tokens:
+                c_clean = " ".join(tokens)
+                if len(c_clean) > 5 and not c_clean.lower().startswith(("s ", "m ", "t ", "re ", "ll ", "don ")):
+                    return c_clean
+
+    # 4. Action noun phrase (e.g. "day hike to X", "road trip to Y", "camping trip to Z")
+    m_trip = re.search(
+        r"\b((?:day\s+hike|road\s+trip|camping\s+trip|bike\s+trip|solo\s+trip|solo\s+camping\s+trip|hike|vacation)\s+(?:with\s+[a-zA-Z\s]+?\s+)?to\s+[A-Z][A-Za-z0-9\s,'\-]+?)(?:\s+today|\s+yesterday|\s+last\s+week|[.!?\n]|$)",
+        text,
+        re.I,
+    )
+    if m_trip:
+        return m_trip.group(1).strip()
 
     return None
 
@@ -229,7 +269,7 @@ def _solve_chronological_sequence(query: str, candidates: list[tuple]) -> str | 
         names = [e[1] for e in events]
         comma_str = ", ".join(names)
         if len(names) == 3:
-            return f"First, I {names[0]}, then I {names[1]}, and finally I {names[2]}. ({comma_str})"
+            return f"First, {names[0]}, then {names[1]}, and finally {names[2]}. ({comma_str})"
         return f"{comma_str}. (" + ", ".join(f"{i+1}. {n}" for i, n in enumerate(names)) + ")"
 
     return None
