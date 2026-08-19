@@ -2093,18 +2093,18 @@ def search_memories(
                 logger.warning("kg_boost failed (degraded): %s", _kgb_exc)
             _record_phase_latency("search.kg_boost", _t0_kgb)
 
-            # Multi-hop KG traversal
-            _t0_mhkg = time.time()
-            try:
-                results = _phase_ten_multi_hop_kg(
-                    db, results, normalized_query, limit, repo_filter, category=category or None,
-                )
-            except Exception as _mhkg_exc:
-                _phase_inc("search.multi_hop_kg", _mhkg_exc)
-                logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
-            _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
-
             if not light:
+                # Multi-hop KG traversal
+                _t0_mhkg = time.time()
+                try:
+                    results = _phase_ten_multi_hop_kg(
+                        db, results, normalized_query, limit, repo_filter, category=category or None,
+                    )
+                except Exception as _mhkg_exc:
+                    _phase_inc("search.multi_hop_kg", _mhkg_exc)
+                    logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
+                _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
+
                 # Text-based multi-hop traversal (no KG_ENABLED gate)
                 _t0_tmh = time.time()
                 try:

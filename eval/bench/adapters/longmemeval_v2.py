@@ -31,38 +31,71 @@ _IGNORE_AXTREE_PATTERNS = {
     "help menu",
 }
 
+_AX_MENU_OPTION = re.compile(r"(?:menuitem|option|combobox|menu|tab|columnheader)\s+'([^']*)'", re.IGNORECASE)
+_AX_VALUE = re.compile(r"value='([^']*)'", re.IGNORECASE)
+_AX_LABEL_TEXT = re.compile(r"(?:textbox|button|link|heading|label|checkbox|radio|cell|row)\s+'([^']*)'", re.IGNORECASE)
 _AX_STATIC_TEXT = re.compile(r"StaticText\s+'([^']*)'")
-_AX_LABEL_TEXT = re.compile(r"(?:menuitem|option|combobox|cell|row|textbox|button|link|heading|label|checkbox|radio)\s+'([^']*)'", re.IGNORECASE)
+
+_BOILERPLATE_PREFIXES = (
+    "select record for action", "preview record", "open record",
+    "assign tag", "remove tag", "skip to", "open accessibility",
+    "global skip", "back to top"
+)
 
 
-def _extract_axtree_snippets(ax_tree: str, max_chars: int = 1200) -> str:
-    """Pull readable, compact text snippets from raw accessibility trees."""
+def _extract_axtree_snippets(ax_tree: str, max_chars: int = 25000) -> str:
+    """Pull structured, high-fidelity text snippets from raw accessibility trees."""
     if not ax_tree:
         return ""
     snippets: list[str] = []
     seen: set[str] = set()
 
+    # 1. High-priority: Active dropdown options, menu items, tabs, comboboxes, active values
+    menu_items: list[str] = []
+    for m in _AX_MENU_OPTION.findall(ax_tree):
+        v = m.strip()
+        v_lower = v.lower()
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+            seen.add(v_lower)
+            menu_items.append(v)
+    for m in _AX_VALUE.findall(ax_tree):
+        v = m.strip()
+        v_lower = v.lower()
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+            seen.add(v_lower)
+            menu_items.append(v)
+    if menu_items:
+        snippets.append("Menu/Options/Values: " + ", ".join(menu_items))
+
+    # 2. Medium-priority: Interactive buttons, textboxes, labels, headings
+    labels: list[str] = []
     for m in _AX_LABEL_TEXT.findall(ax_tree):
         v = m.strip()
         v_lower = v.lower()
-        if v and len(v) > 1 and v_lower not in seen and v_lower not in _IGNORE_AXTREE_PATTERNS:
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
             seen.add(v_lower)
-            snippets.append(v)
+            labels.append(v)
+    if labels:
+        snippets.append("UI: " + "; ".join(labels[:120]))
 
+    # 3. Static text content (excluding boilerplate)
+    static: list[str] = []
     for m in _AX_STATIC_TEXT.findall(ax_tree):
         v = m.strip()
         v_lower = v.lower()
-        if v and len(v) > 1 and v_lower not in seen and v_lower not in _IGNORE_AXTREE_PATTERNS:
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
             seen.add(v_lower)
-            snippets.append(v)
+            static.append(v)
+    if static:
+        snippets.append("Text: " + "; ".join(static[:120]))
 
-    res = "; ".join(snippets)
+    res = " | ".join(snippets)
     if len(res) > max_chars:
-        res = res[:max_chars] + "..."
+        res = res[:max_chars]
     return res
 
 
-def _build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 6000) -> str:
+def _build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 25000) -> str:
     """Build a compact trajectory narrative with goal, outcome, and step actions."""
     parts: list[str] = []
     traj_id = trajectory.get("id", "?")
@@ -71,7 +104,8 @@ def _build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 6000)
     domain = trajectory.get("domain", "?")
     start_url = trajectory.get("start_url", "")
 
-    parts.append(f"[Trajectory {traj_id}] Domain: {domain} | Outcome: {outcome}")
+    status_tag = f"[STATUS: {outcome.upper()}]" if outcome else ""
+    parts.append(f"[Trajectory {traj_id}] Domain: {domain} | Outcome: {outcome} {status_tag}")
     if goal:
         parts.append(f"Goal: {goal[:500]}")
     if start_url:
@@ -85,13 +119,13 @@ def _build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 6000)
         action = state.get("action")
         url = (state.get("url") or "").strip()
         ax_tree = state.get("accessibility_tree") or ""
-        ax_snip = _extract_axtree_snippets(ax_tree, max_chars=250) if ax_tree else ""
+        ax_snip = _extract_axtree_snippets(ax_tree, max_chars=8000) if ax_tree else ""
 
         line_parts: list[str] = []
         if action:
             line_parts.append(f"action={action}")
         if thought:
-            line_parts.append(f"thought={thought[:200]}")
+            line_parts.append(f"thought={thought[:300]}")
         if url:
             line_parts.append(f"url={url[:120]}")
         if ax_snip:
@@ -115,7 +149,8 @@ def _build_step_facts(trajectory: dict[str, Any]) -> list[str]:
     outcome = trajectory.get("outcome", "?")
     goal = trajectory.get("goal", "")
 
-    facts.append(f"[{traj_id}] {domain} task, outcome={outcome}. Goal: {goal[:300]}")
+    outcome_tag = f"[OUTCOME: {outcome.upper()}]"
+    facts.append(f"[{traj_id}] {domain} task, {outcome_tag}. Goal: {goal[:350]}")
     states = trajectory.get("states", [])
     for i, state in enumerate(states):
         if not isinstance(state, dict):
@@ -131,9 +166,24 @@ def _build_step_facts(trajectory: dict[str, Any]) -> list[str]:
                 fact += f" @ {url[:100]}"
             facts.append(fact)
         if thought and len(thought) > 15:
-            facts.append(f"[{traj_id}] Step {i} observation: {thought[:250]}")
+            facts.append(f"[{traj_id}] Step {i} observation: {thought[:350]}")
         if ax_tree:
-            snip = _extract_axtree_snippets(ax_tree, max_chars=300)
+            menu_opts = []
+            for m in _AX_MENU_OPTION.findall(ax_tree):
+                v = m.strip()
+                v_lower = v.lower()
+                if v and len(v) > 1 and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+                    menu_opts.append(v)
+            for m in _AX_VALUE.findall(ax_tree):
+                v = m.strip()
+                v_lower = v.lower()
+                if v and len(v) > 1 and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+                    menu_opts.append(v)
+            if menu_opts:
+                unique_opts = list(dict.fromkeys(menu_opts))
+                facts.append(f"[{traj_id}] Step {i} Dropdown / Menu / Values: {', '.join(unique_opts[:100])}")
+
+            snip = _extract_axtree_snippets(ax_tree, max_chars=8000)
             if snip:
                 facts.append(f"[{traj_id}] Step {i} UI elements: {snip}")
 

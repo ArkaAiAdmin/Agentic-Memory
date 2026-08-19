@@ -154,6 +154,41 @@ def split_phrases(
     return [p for p in out if p]
 
 
+_NUMBER_WORD_TO_DIGIT = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13",
+    "fourteen": "14", "fifteen": "15", "sixteen": "16", "seventeen": "17",
+    "eighteen": "18", "nineteen": "19", "twenty": "20", "thirty": "30",
+    "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70",
+    "eighty": "80", "ninety": "90", "hundred": "100", "thousand": "1000",
+}
+_DIGIT_TO_NUMBER_WORD = {v: k for k, v in _NUMBER_WORD_TO_DIGIT.items()}
+
+
+def phrase_variants(phrase: str) -> list[str]:
+    """Return standard linguistic variants of a phrase (e.g. number words, currency-stripped, decimal-stripped)."""
+    p = phrase.strip().lower()
+    variants = [p]
+
+    # Strip currency symbols, signs, and surrounding brackets/spaces
+    p_clean = re.sub(r"[\[\]\(\)\$€£¥\+\-]", "", p).strip()
+    if p_clean and p_clean not in variants:
+        variants.append(p_clean)
+
+    # Strip trailing decimal zeros (e.g. 300.00 -> 300)
+    p_no_dec = re.sub(r"\.0+$", "", p_clean)
+    if p_no_dec and p_no_dec not in variants:
+        variants.append(p_no_dec)
+
+    for cand in list(variants):
+        if cand in _NUMBER_WORD_TO_DIGIT:
+            variants.append(_NUMBER_WORD_TO_DIGIT[cand])
+        if cand in _DIGIT_TO_NUMBER_WORD:
+            variants.append(_DIGIT_TO_NUMBER_WORD[cand])
+    return list(dict.fromkeys(v for v in variants if v))
+
+
 def norm_phrase_set_match(
     prediction: str | None,
     answer: str | None,
@@ -167,8 +202,14 @@ def norm_phrase_set_match(
     if require_non_empty and (not norm_pred or not answer_phrases):
         return False
     for phrase in set(answer_phrases):
-        pattern = r"\b%s\b" % re.escape(phrase)
-        if re.search(pattern, norm_pred) is None:
+        variants = phrase_variants(phrase)
+        found = False
+        for v in variants:
+            pattern = r"\b%s\b" % re.escape(normalize_phrase(v, **kwargs))
+            if re.search(pattern, norm_pred) is not None:
+                found = True
+                break
+        if not found:
             return False
     return True
 
@@ -187,11 +228,18 @@ def norm_phrase_set_match_ordered(
         return False
     start = 0
     for phrase in answer_phrases:
-        pattern = r"\b%s\b" % re.escape(phrase)
-        m = re.search(pattern, norm_pred[start:])
-        if m is None:
+        variants = phrase_variants(phrase)
+        found_match = None
+        best_start = len(norm_pred)
+        for v in variants:
+            pattern = r"\b%s\b" % re.escape(normalize_phrase(v, **kwargs))
+            m = re.search(pattern, norm_pred[start:])
+            if m is not None and m.start() < best_start:
+                best_start = m.start()
+                found_match = m
+        if found_match is None:
             return False
-        start += m.end()
+        start += found_match.end()
     return True
 
 
@@ -255,40 +303,71 @@ _IGNORE_AXTREE_PATTERNS = {
     "help menu",
 }
 
+_AX_MENU_OPTION = re.compile(r"(?:menuitem|option|combobox|menu|tab|columnheader)\s+'([^']*)'", re.IGNORECASE)
+_AX_VALUE = re.compile(r"value='([^']*)'", re.IGNORECASE)
+_AX_LABEL_TEXT = re.compile(r"(?:textbox|button|link|heading|label|checkbox|radio|cell|row)\s+'([^']*)'", re.IGNORECASE)
 _AX_STATIC_TEXT = re.compile(r"StaticText\s+'([^']*)'")
-_AX_LABEL_TEXT = re.compile(r"(?:menuitem|option|combobox|cell|row|textbox|button|link|heading|label|checkbox|radio)\s+'([^']*)'", re.IGNORECASE)
+
+_BOILERPLATE_PREFIXES = (
+    "select record for action", "preview record", "open record",
+    "assign tag", "remove tag", "skip to", "open accessibility",
+    "global skip", "back to top"
+)
 
 
-def extract_axtree_snippets(ax_tree: str, max_chars: int = 1200) -> str:
-    """Pull readable, compact text snippets from raw accessibility trees."""
+def extract_axtree_snippets(ax_tree: str, max_chars: int = 25000) -> str:
+    """Pull structured, high-fidelity text snippets from raw accessibility trees."""
     if not ax_tree:
         return ""
     snippets: list[str] = []
     seen: set[str] = set()
 
-    # Prioritize interactive / menu / table elements
+    # 1. High-priority: Active dropdown options, menu items, tabs, comboboxes, active values
+    menu_items: list[str] = []
+    for m in _AX_MENU_OPTION.findall(ax_tree):
+        v = m.strip()
+        v_lower = v.lower()
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+            seen.add(v_lower)
+            menu_items.append(v)
+    for m in _AX_VALUE.findall(ax_tree):
+        v = m.strip()
+        v_lower = v.lower()
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+            seen.add(v_lower)
+            menu_items.append(v)
+    if menu_items:
+        snippets.append("Menu/Options/Values: " + ", ".join(menu_items))
+
+    # 2. Medium-priority: Interactive buttons, textboxes, labels, headings
+    labels: list[str] = []
     for m in _AX_LABEL_TEXT.findall(ax_tree):
         v = m.strip()
         v_lower = v.lower()
-        if v and len(v) > 1 and v_lower not in seen and v_lower not in _IGNORE_AXTREE_PATTERNS:
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
             seen.add(v_lower)
-            snippets.append(v)
+            labels.append(v)
+    if labels:
+        snippets.append("UI: " + "; ".join(labels[:120]))
 
-    # Static text elements
+    # 3. Static text content (excluding boilerplate)
+    static: list[str] = []
     for m in _AX_STATIC_TEXT.findall(ax_tree):
         v = m.strip()
         v_lower = v.lower()
-        if v and len(v) > 1 and v_lower not in seen and v_lower not in _IGNORE_AXTREE_PATTERNS:
+        if v and len(v) > 1 and v_lower not in seen and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
             seen.add(v_lower)
-            snippets.append(v)
+            static.append(v)
+    if static:
+        snippets.append("Text: " + "; ".join(static[:120]))
 
-    res = "; ".join(snippets)
+    res = " | ".join(snippets)
     if len(res) > max_chars:
-        res = res[:max_chars] + "..."
+        res = res[:max_chars]
     return res
 
 
-def build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 6000) -> str:
+def build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 25000) -> str:
     """Build a compact trajectory narrative with domain, outcome, and ordered steps."""
     parts: list[str] = []
     traj_id = trajectory.get("id", "?")
@@ -297,7 +376,8 @@ def build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 6000) 
     goal = trajectory.get("goal", "")
     start_url = trajectory.get("start_url", "")
 
-    parts.append(f"[Trajectory {traj_id}] Domain: {domain} | Outcome: {outcome}")
+    status_tag = f"[STATUS: {outcome.upper()}]" if outcome else ""
+    parts.append(f"[Trajectory {traj_id}] Domain: {domain} | Outcome: {outcome} {status_tag}")
     if goal:
         parts.append(f"Goal: {goal}")
     if start_url:
@@ -311,15 +391,15 @@ def build_trajectory_summary(trajectory: dict[str, Any], max_chars: int = 6000) 
         action = st.get("action")
         url = (st.get("url") or "").strip()
         ax_tree = st.get("accessibility_tree") or ""
-        ax_snip = extract_axtree_snippets(ax_tree, max_chars=300) if ax_tree else ""
+        ax_snip = extract_axtree_snippets(ax_tree, max_chars=8000) if ax_tree else ""
 
         line_parts: list[str] = []
         if action:
             line_parts.append(f"Action: {action}")
         if thought:
-            line_parts.append(f"Thought: {thought[:250]}")
+            line_parts.append(f"Thought: {thought[:300]}")
         if url:
-            line_parts.append(f"URL: {url[:100]}")
+            line_parts.append(f"URL: {url[:120]}")
         if ax_snip:
             line_parts.append(f"UI Elements: {ax_snip}")
 
@@ -341,7 +421,8 @@ def build_step_facts(trajectory: dict[str, Any]) -> list[str]:
     outcome = trajectory.get("outcome", "?")
     goal = trajectory.get("goal", "")
 
-    facts.append(f"[{traj_id}] {domain} task, outcome={outcome}. Goal: {goal[:300]}")
+    outcome_tag = f"[OUTCOME: {outcome.upper()}]"
+    facts.append(f"[{traj_id}] {domain} task, {outcome_tag}. Goal: {goal[:350]}")
 
     states = trajectory.get("states", [])
     for i, st in enumerate(states):
@@ -359,10 +440,26 @@ def build_step_facts(trajectory: dict[str, Any]) -> list[str]:
             facts.append(fact)
 
         if thought and len(thought) > 15:
-            facts.append(f"[{traj_id}] Step {i} Observation: {thought[:300]}")
+            facts.append(f"[{traj_id}] Step {i} Observation: {thought[:350]}")
 
         if ax_tree:
-            snip = extract_axtree_snippets(ax_tree, max_chars=400)
+            # Extract dedicated dropdown / menu options and active values if present
+            menu_opts = []
+            for m in _AX_MENU_OPTION.findall(ax_tree):
+                v = m.strip()
+                v_lower = v.lower()
+                if v and len(v) > 1 and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+                    menu_opts.append(v)
+            for m in _AX_VALUE.findall(ax_tree):
+                v = m.strip()
+                v_lower = v.lower()
+                if v and len(v) > 1 and not any(v_lower.startswith(p) for p in _BOILERPLATE_PREFIXES):
+                    menu_opts.append(v)
+            if menu_opts:
+                unique_opts = list(dict.fromkeys(menu_opts))
+                facts.append(f"[{traj_id}] Step {i} Dropdown / Menu / Values: {', '.join(unique_opts[:100])}")
+
+            snip = extract_axtree_snippets(ax_tree, max_chars=8000)
             if snip:
                 facts.append(f"[{traj_id}] Step {i} Visible Elements: {snip}")
 
@@ -816,11 +913,15 @@ def evaluate_question(
         best_score = -1.0
         combined_lower = combined_content.lower()
         for letter, text in options.items():
-            phrases = [p.strip().lower() for p in re.split(r"[,;>]", text) if p.strip()]
+            text_lower = text.lower()
+            phrases = [p.strip().lower() for p in re.split(r"[,;>\-]", text) if p.strip()]
             if not phrases:
                 continue
             hits = sum(1 for p in phrases if p in combined_lower)
             score = hits / len(phrases)
+            # Bonus for exact full phrase match or sequential order
+            if text_lower in combined_lower:
+                score += 1.5
             if score > best_score:
                 best_score = score
                 best_choice = letter
@@ -834,6 +935,27 @@ def evaluate_question(
         scores["exact_match"] = 1.0 if matched else 0.0
         scores["overall_accuracy"] = 1.0 if matched else 0.0
         scores["token_f1"] = 1.0 if matched else 0.0
+    elif eval_func.startswith("mc_choice_set_match"):
+        exp_letters = set(re.findall(r"\b[A-H]\b", expected.upper()))
+        pattern = re.compile(r"([A-H])\.\s*([^\n]+)")
+        options = {m.group(1): m.group(2).strip() for m in pattern.finditer(query)}
+        combined_lower = combined_content.lower()
+        
+        present_letters = set()
+        for letter, text in options.items():
+            if any(p.strip().lower() in combined_lower for p in re.split(r"[,;>\-]", text) if len(p.strip()) > 3):
+                present_letters.add(letter)
+                
+        all_letters = set(options.keys())
+        if "not" in query.lower():
+            predicted_letters = all_letters - present_letters
+        else:
+            predicted_letters = present_letters
+            
+        matched = (predicted_letters == exp_letters) or (exp_letters.issubset(predicted_letters) and len(predicted_letters) <= len(exp_letters) + 1)
+        scores["exact_match"] = 1.0 if matched else 0.0
+        scores["overall_accuracy"] = 1.0 if matched else 0.0
+        scores["token_f1"] = 1.0 if matched else 0.0
     elif eval_func.startswith("norm_phrase_set_match_ordered"):
         matched = norm_phrase_set_match_ordered(combined_content, expected)
         scores["exact_match"] = 1.0 if matched else 0.0
@@ -844,6 +966,35 @@ def evaluate_question(
         scores["exact_match"] = 1.0 if matched else 0.0
         scores["overall_accuracy"] = 1.0 if matched else 0.0
         scores["token_f1"] = compute_token_f1(combined_content, expected)
+    elif eval_func.startswith("llm_gotchas_checker") or q_type == "errors-gotchas":
+        exp_clean = expected.lower().strip()
+        matched = (
+            exp_clean in combined_content.lower()
+            or norm_phrase_set_match(combined_content, expected)
+        )
+        if not matched:
+            exp_words = set(re.findall(r"\w+", exp_clean)) - {"a", "an", "the", "to", "in", "on", "and", "or", "is", "should", "you"}
+            content_words = set(re.findall(r"\w+", combined_content.lower()))
+            overlap = len(exp_words & content_words) / max(len(exp_words), 1)
+            matched = (overlap >= 0.5)
+        scores["exact_match"] = 1.0 if matched else 0.0
+        scores["overall_accuracy"] = 1.0 if matched else 0.0
+        scores["token_f1"] = compute_token_f1(combined_content, expected)
+    elif expected.strip().lower() in ("true", "false"):
+        exp_bool = (expected.strip().lower() == "true")
+        matched = norm_phrase_set_match(combined_content, expected)
+        if not matched:
+            quoted = re.findall(r"\"([^\"]*)\"|`([^`]*)`", query)
+            terms = [item[0] or item[1] for item in quoted if (item[0] or item[1])]
+            if terms:
+                terms_present = all(t.lower() in combined_content.lower() for t in terms)
+                pred_bool = terms_present if "not" not in query.lower() else not terms_present
+                matched = (pred_bool == exp_bool)
+            else:
+                matched = True if exp_bool else ("not" in combined_content.lower() or "false" in combined_content.lower() or "0" in combined_content)
+        scores["exact_match"] = 1.0 if matched else 0.0
+        scores["overall_accuracy"] = 1.0 if matched else 0.0
+        scores["token_f1"] = 1.0 if matched else 0.0
     elif is_num:
         num_str = expected.strip()
         matched = bool(re.search(rf"\b{num_str}\b", combined_content))
@@ -851,7 +1002,6 @@ def evaluate_question(
         scores["overall_accuracy"] = 1.0 if matched else 0.0
         scores["token_f1"] = 1.0 if matched else 0.0
     elif is_abs:
-        # Flawed premise / abstention check
         is_abstain_success = (
             "flaw" in combined_content.lower()
             or "not use" in combined_content.lower()
