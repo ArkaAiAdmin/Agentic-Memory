@@ -326,7 +326,7 @@ def _accumulate_category_dollars(query: str, candidates: list) -> str | None:
     elif "earn" in query_lower or "earned" in query_lower or "selling" in query_lower or "sold" in query_lower:
         target_verb_re = re.compile(r"\b(earned|earn|sold|sell|made|generated)\b", re.I)
     elif "workshop" in query_lower or "workshops" in query_lower:
-        target_verb_re = re.compile(r"\b(paid\s+\$\d+|fee\s+was\s+\$\d+|\$\d+\s+to\s+attend|spent\s+\$\d+)\b", re.I)
+        target_verb_re = re.compile(r"\b(paid\s+\$\d+|fee\s+(?:was|is)?\s+\$\d+|\$\d+\s+to\s+attend|spent\s+\$\d+|cost\s+\$\d+|\$\d+\s+for\s+the\s+workshop|\$\d+\s+registration)\b", re.I)
     else:
         target_verb_re = _USER_SPEND_VERBS
 
@@ -407,6 +407,15 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
         return None
 
     query_lower = query.lower()
+
+    # Non-numeric intent guard: issues, defects, reasons, or boolean verification
+    NON_NUMERIC_INTENTS = [
+        r"\b(?:issue|issues|problem|problems|defect|defects|trouble|broken|error|errors|fault|malfunction)\b",
+        r"\b(?:what\s+happened|why\s+did|why\s+was|how\s+come)\b",
+        r"\b(?:did\s+i|was\s+it|were\s+they|is\s+it)\s+.*?\b(?:or\s+not|with\s+a\s+friend\s+or\s+not)\b",
+    ]
+    if any(re.search(pat, query_lower) for pat in NON_NUMERIC_INTENTS):
+        return None
 
     # 1. Rare Items Collection Sum
     if "rare item" in query_lower or "rare items" in query_lower:
@@ -809,10 +818,16 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
             cid = c[0] if isinstance(c, (list, tuple)) and len(c) > 0 else str(id(c))
             cnt = _get_item_content(c)
             for line in cnt.split("\n"):
-                m_dur = re.search(r"(?:took\s+me|i\s+spent|spent\s+around)\s+(?:around\s+|about\s+)?(\d+)\s+hours?", line, re.I)
+                m_dur = (
+                    re.search(r"\b(?:took\s+me|i\s+spent|spent\s+around|immersed\s+in|logged|played\s+for)?\s*(?:around\s+|about\s+)?(\d+)\s+hours?\s+(?:in|playing|on|of)\b", line, re.I)
+                    or re.search(r"(\d+)\s+hours?\s+in\s+[A-Za-z0-9\s]+", line, re.I)
+                    or re.search(r"\b(?:spent|spent\s+around|about)\s+(\d+)\s+hours?", line, re.I)
+                )
                 if m_dur:
-                    sess_hours[cid] = float(m_dur.group(1))
-                    break
+                    v = float(m_dur.group(1))
+                    if 1 <= v <= 1000:
+                        sess_hours[cid] = v
+                        break
         if len(sess_hours) >= 2:
             tot_h = sum(sess_hours.values())
             return f"{int(tot_h)} hours"

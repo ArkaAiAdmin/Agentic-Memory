@@ -174,31 +174,30 @@ def _solve_graduated_order(query: str, candidates: list[tuple]) -> str | None:
     return None
 
 
-def _extract_event_phrase_generic(text: str) -> str | None:
+def _extract_event_phrase_generic(text: str, query: str = "") -> str | None:
     """Extract generic event/activity phrase from a candidate session snippet using natural action grammar."""
-    clean_text = text.split("\n\n")[0]
-
-    # First-person action clause extraction
-    m_act = re.search(
-        r"(?:I\s+|I've\s+|I\s+just\s+)(?:attended|watched|participated\s+in|took\s+part\s+in|completed|went\s+on|visited|started|flew\s+with|saw|bought|ordered)\s+(?:an?\s+|the\s+|my\s+)?([A-Za-z0-9\s,'\-]+?)(?:\s+today|\s+yesterday|\s+last\s+week|\s+recently|[.!?\n]|$)",
-        clean_text,
-        re.IGNORECASE,
+    # 1. Capitalized proper noun sequence (highest precision)
+    caps = re.findall(
+        r"\b([A-Z][a-zA-Z0-9]*(?:\s+(?:of|and|the|for|in|at|[A-Z][a-zA-Z0-9]*))*\s+(?:Museum|Park|Monument|Triathlon|Run|Tournament|Championship|Game|Playoffs|Series|Festival|Conference|Expo|Center))\b",
+        text,
     )
-    if m_act:
-        phrase = m_act.group(1).strip().rstrip(".,'\"")
-        phrase = re.sub(r"\s+(?:which\s+included|with\s+a\s+personal|at\s+my\s+friend|and\s+I'm|and\s+I\s+want).*$", "", phrase, flags=re.IGNORECASE).strip()
-        if len(phrase) > 3:
-            return phrase
-
-    # Quoted entity
-    quoted = re.findall(r"['\"]([^'\"]{3,50})['\"]", clean_text)
-    if quoted:
-        return quoted[0].strip()
-
-    # Capitalized proper noun sequence
-    caps = re.findall(r"\b([A-Z][a-zA-Z0-9]*(?:\s+(?:of|and|the|for|in|at|[A-Z][a-zA-Z0-9]*))*\s+(?:Museum|Park|Monument|Triathlon|Run|Tournament|Championship|Game|Playoffs|Series|Festival|Conference|Expo))\b", clean_text)
     if caps:
-        return caps[0].strip()
+        for c in caps:
+            c_clean = c.strip()
+            if len(c_clean) > 5 and not c_clean.lower().startswith(("s ", "m ", "t ", "re ", "ll ", "don ")):
+                return c_clean
+
+    # 2. First-person action clause extraction from user turns
+    for turn in text.split("\n\n"):
+        m_act = re.search(
+            r"\b(?:I\s+|I've\s+|I\s+just\s+)(?:attended|watched|participated\s+in|took\s+part\s+in|completed|went\s+on|visited|started|flew\s+with|saw)\s+(?:an?\s+|the\s+|my\s+)?([A-Z][A-Za-z0-9\s,'\-]+?)(?:\s+today|\s+yesterday|\s+last\s+week|\s+recently|[.!?\n]|$)",
+            turn,
+        )
+        if m_act:
+            phrase = m_act.group(1).strip().rstrip(".,'\"")
+            phrase = re.sub(r"\s+(?:which\s+included|with\s+a\s+personal|at\s+my\s+friend|and\s+I'm|and\s+I\s+want).*$", "", phrase, flags=re.IGNORECASE).strip()
+            if len(phrase) > 5 and phrase[0].isupper() and not phrase.lower().startswith(("s ", "m ", "t ", "re ", "ll ", "don ")):
+                return phrase
 
     return None
 
@@ -211,14 +210,14 @@ def _solve_chronological_sequence(query: str, candidates: list[tuple]) -> str | 
     events: list[tuple[datetime, str]] = []
     seen_phrases: set[str] = set()
 
-    for item in candidates:
+    for item in candidates[:25]:
         content = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 and item[1] is not None else str(item)
         ts_str = str(item[4]) if isinstance(item, (list, tuple)) and len(item) > 4 and item[4] is not None else ""
         dt = _parse_date(content, ts_str)
         if not dt:
             continue
 
-        phrase = _extract_event_phrase_generic(content)
+        phrase = _extract_event_phrase_generic(content, query)
         if phrase:
             p_norm = phrase.lower().strip()
             if p_norm not in seen_phrases and not any(p_norm in s or s in p_norm for s in seen_phrases):
