@@ -37,7 +37,7 @@ def _holder_script(lock_name: str, hold_s: float) -> str:
     )
 
 
-def _spawn_holder(lock_name: str, hold_s: float = 6.0):
+def _spawn_holder(lock_name: str, hold_s: float = 15.0):
     holder = _holder_script(lock_name, hold_s)
     p = subprocess.Popen(
         [sys.executable, "-c", holder, REPO_ROOT, lock_name, str(hold_s)],
@@ -46,7 +46,7 @@ def _spawn_holder(lock_name: str, hold_s: float = 6.0):
         cwd=str(REPO_ROOT),
     )
     # Give the holder time to acquire the lock before the contender starts.
-    time.sleep(1.0)
+    time.sleep(1.5)
     return p
 
 

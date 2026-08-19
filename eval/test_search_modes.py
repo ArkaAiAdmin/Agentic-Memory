@@ -89,7 +89,7 @@ def test_search_mode_fts(tmp_path):
         f"Expected 'JavaScript' in at least one result content, got: {contents[:3]}"
     )
 
-def test_search_mode_semantic(temp_db_path):
+def test_search_mode_semantic(tmp_path):
     """Test that semantic mode runs without error and returns correct response shape.
 
     NOTE: Content-correctness (i.e. finding 'apples' for 'fruit') is NOT asserted here
@@ -98,10 +98,14 @@ def test_search_mode_semantic(temp_db_path):
     first belongs in eval/longmemeval. This test only verifies the mode parameter is
     wired correctly end-to-end.
     """
-    save_memory(content="I love eating delicious apples.", category="lessons", title_slug="eating-apples", db_path=str(temp_db_path), safety_wiring=False)
-    save_memory(content="Programming in C++.", category="lessons", title_slug="cpp-prog", db_path=str(temp_db_path), safety_wiring=False)
+    from eval._fixtures import bootstrap_temp_db_clean
 
-    res = search_memories(temp_db_path, "fruit", mode="semantic")
+    db_path = tmp_path / "memory.db"
+    bootstrap_temp_db_clean(db_path)
+    save_memory(content="I love eating delicious apples.", category="lessons", title_slug="eating-apples", db_path=str(db_path), safety_wiring=False)
+    save_memory(content="Programming in C++.", category="lessons", title_slug="cpp-prog", db_path=str(db_path), safety_wiring=False)
+
+    res = search_memories(db_path, "fruit", mode="semantic")
 
     # Must return a well-formed response dict regardless of result count
     assert isinstance(res, dict), f"Expected dict, got {type(res)}"
