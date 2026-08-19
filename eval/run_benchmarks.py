@@ -187,6 +187,11 @@ def main() -> None:
         default=None,
         help="Custom directory to store results",
     )
+    parser.add_argument(
+        "--light",
+        action="store_true",
+        help="Run in light search mode (fast hybrid FTS evaluation without deep neural reranking)",
+    )
     args = parser.parse_args()
 
     # Determine limit
@@ -206,6 +211,7 @@ def main() -> None:
     print(f"\nAgentic-Memory Unified Benchmark Harness Starting...")
     print(f"Suites to evaluate: {', '.join(selected_suites)}")
     print(f"Quick Mode:         {args.quick} (limit={limit})")
+    print(f"Light Mode:         {args.light}")
     print(f"Use Cache DB:       {not args.no_cache}")
     print(f"Force Rebuild:      {args.rebuild}")
 
@@ -224,6 +230,7 @@ def main() -> None:
                     max_questions=limit,
                     use_cache_db=not args.no_cache,
                     force_rebuild=args.rebuild,
+                    config={"light": args.light} if args.light else None,
                 )
                 summaries.append({
                     "suite_name": summary.suite_name,

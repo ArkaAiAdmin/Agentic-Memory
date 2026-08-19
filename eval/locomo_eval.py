@@ -325,7 +325,7 @@ def run_search(
         db_path=db_path,
         query=query,
         limit=max(limit, 30),
-        include_global=True,
+        include_global=False,
         rerank=not light,
         include_facts=True,
         safety_wiring=False,
@@ -334,7 +334,8 @@ def run_search(
         hybrid=True,
         mode="fts" if light else "hybrid",
     )
-    ranked = [r["id"] for r in result.get("results", [])]
+    results = result.get("results", [])
+    ranked = [r["id"] if isinstance(r, dict) else (r[0] if isinstance(r, (list, tuple)) else str(r)) for r in results]
     phase_lats = result.get("phase_latencies", {})
     phase_errs = result.get("phase_errors", {})
     return ranked, phase_lats, phase_errs
@@ -475,6 +476,12 @@ def evaluate(
             per_question.clear()
             per_category_hits.clear()
             latencies.clear()
+    elif not resume:
+        if checkpoint_path.exists():
+            try:
+                checkpoint_path.unlink(missing_ok=True)
+            except OSError as err:
+                logger.debug("Failed to remove checkpoint %s: %s", checkpoint_path, err)
 
     # Phase 3: Warmup
     print_stage_banner(3, "Search Pipeline Warmup", "Pre-warming dense vectors & cross-encoders")
@@ -538,8 +545,8 @@ def evaluate(
             if qid in completed_qids or q["question"] in completed_qids:
                 continue
 
-            if hasattr(memory_mcp, "_search_cache"):
-                memory_mcp._search_cache.clear()
+            from infra.cache import clear_all_caches
+            clear_all_caches()
 
             q_start = time.time()
             retrieved, phase_lats, phase_errs = run_search(

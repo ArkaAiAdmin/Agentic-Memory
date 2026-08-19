@@ -7,6 +7,7 @@ but tests that need to call the helper directly should import from
 here.
 """
 
+import logging
 import os
 import shutil
 import sqlite3
@@ -14,6 +15,8 @@ import tempfile
 from pathlib import Path
 
 from infra.memory_common import get_memory_paths
+
+logger = logging.getLogger(__name__)
 
 
 def bootstrap_temp_db(db_path: Path) -> None:
@@ -72,8 +75,8 @@ def _get_or_create_template_db() -> Path:
         if tmp.exists():
             try:
                 tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except OSError as err:
+                logger.debug("Failed to remove stale template DB %s: %s", tmp, err)
         conn = sqlite3.connect(str(tmp), timeout=30.0)
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
@@ -100,8 +103,8 @@ def bootstrap_temp_db_clean(db_path: Path | str) -> None:
         if p.exists():
             try:
                 p.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except OSError as err:
+                logger.debug("Failed to remove sidecar file %s: %s", p, err)
 
 
 def set_benchmark_env() -> None:
@@ -114,7 +117,7 @@ def set_benchmark_env() -> None:
     os.environ["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
     os.environ["MEMORY_DB_FLOCK"] = "0"
     os.environ["MEMORY_AUTO_SAVE_DISABLED"] = "1"
-    os.environ["MEMORY_AGENT_ID"] = "beam"
+    os.environ["MEMORY_AGENT_ID"] = "default"
     os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -143,8 +146,8 @@ def populate_eval_memory_indexes(
 
         _qw5_ensure_schema(conn)
         _qw5_index_chunks_for(conn, memory_id, content)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Failed chunk FTS indexing for %s: %s", memory_id, err, exc_info=True)
 
     # 2. Vector Embedding indexing
     try:
@@ -158,8 +161,8 @@ def populate_eval_memory_indexes(
             tags=tags_list,
             source_file=memory_id,
         )
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Failed vector embedding indexing for %s: %s", memory_id, err, exc_info=True)
 
     # 3. ColBERT indexing
     try:
@@ -167,8 +170,8 @@ def populate_eval_memory_indexes(
 
         _ensure_colbert_schema(conn)
         index_memory_colbert_batch(conn, [(memory_id, content)])
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Failed ColBERT indexing for %s: %s", memory_id, err, exc_info=True)
 
     # 4. SPLADE indexing
     try:
@@ -176,8 +179,8 @@ def populate_eval_memory_indexes(
 
         _ensure_splade_schema(conn)
         index_memory_splade_batch(conn, [(memory_id, content)])
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Failed SPLADE indexing for %s: %s", memory_id, err, exc_info=True)
 
     # 5. KG indexing
     try:
@@ -185,8 +188,8 @@ def populate_eval_memory_indexes(
 
         ensure_kg_schema(conn)
         index_kg_for_memory(conn, memory_id, content)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Failed KG indexing for %s: %s", memory_id, err, exc_info=True)
 
     # 6. Facts indexing
     try:
@@ -194,8 +197,8 @@ def populate_eval_memory_indexes(
 
         ensure_facts_schema(conn)
         index_facts_for_memory(conn, memory_id, content)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Failed facts indexing for %s: %s", memory_id, err, exc_info=True)
 
 
 def populate_eval_memory_indexes_batch(
@@ -226,8 +229,8 @@ def populate_eval_memory_indexes_batch(
         for memory_id, content, _, _ in tqdm(items, desc="Chunk FTS5", disable=len(items) < 50):
             if content and content.strip():
                 _qw5_index_chunks_for(conn, memory_id, content)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Batch chunk FTS indexing error: %s", err, exc_info=True)
 
     # 2. Vector Embeddings (Batched)
     try:
@@ -237,8 +240,8 @@ def populate_eval_memory_indexes_batch(
         if embed_inputs:
             print("\n[2/6] Generating Dense Vector Embeddings (bge-base)...", flush=True)
             get_embedding_search().index_embeddings_batch(conn, embed_inputs)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Batch vector embeddings error: %s", err, exc_info=True)
 
     # 3. ColBERT (Batched)
     try:
@@ -249,8 +252,8 @@ def populate_eval_memory_indexes_batch(
         if colbert_inputs:
             print("\n[3/6] Indexing ColBERT Multi-Vector Tokens...", flush=True)
             index_memory_colbert_batch(conn, colbert_inputs)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Batch ColBERT indexing error: %s", err, exc_info=True)
 
     # 4. SPLADE (Batched)
     try:
@@ -261,8 +264,8 @@ def populate_eval_memory_indexes_batch(
         if splade_inputs:
             print("\n[4/6] Indexing SPLADE Neural Sparse Vectors...", flush=True)
             index_memory_splade_batch(conn, splade_inputs)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Batch SPLADE indexing error: %s", err, exc_info=True)
 
     kg_items = items[:max_kg_facts] if max_kg_facts is not None else items
 
@@ -275,8 +278,8 @@ def populate_eval_memory_indexes_batch(
         if kg_inputs:
             print(f"\n[5/6] Extracting Knowledge Graph Entities ({len(kg_inputs)} items)...", flush=True)
             index_kg_for_memory_batch(conn, kg_inputs)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Batch KG indexing error: %s", err, exc_info=True)
 
     # 6. Facts (Fast Mode by default for bulk benchmark ingestion)
     try:
@@ -299,13 +302,49 @@ def populate_eval_memory_indexes_batch(
                     os.environ["MEMORY_LLM_EXTRACTION"] = _old_llm_extraction
                 else:
                     os.environ.pop("MEMORY_LLM_EXTRACTION", None)
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Batch facts indexing error: %s", err, exc_info=True)
 
+    # 7. Synchronize tenant_id from memories to all multi-index tables
     try:
+        conn.execute(
+            """UPDATE memory_chunks SET tenant_id = (
+                   SELECT m.tenant_id FROM memories m WHERE m.id = memory_chunks.parent_id
+               ) WHERE EXISTS (
+                   SELECT 1 FROM memories m WHERE m.id = memory_chunks.parent_id AND m.tenant_id != memory_chunks.tenant_id
+               )"""
+        )
+        conn.execute(
+            """UPDATE memory_embeddings SET tenant_id = (
+                   SELECT m.tenant_id FROM memories m WHERE m.id = memory_embeddings.memory_id
+               ) WHERE EXISTS (
+                   SELECT 1 FROM memories m WHERE m.id = memory_embeddings.memory_id AND m.tenant_id != memory_embeddings.tenant_id
+               )"""
+        )
+        conn.execute(
+            """UPDATE splade_tokens SET tenant_id = (
+                   SELECT m.tenant_id FROM memories m WHERE m.id = splade_tokens.memory_id
+               ) WHERE EXISTS (
+                   SELECT 1 FROM memories m WHERE m.id = splade_tokens.memory_id AND m.tenant_id != splade_tokens.tenant_id
+               )"""
+        )
+        conn.execute(
+            """UPDATE colbert_tokens SET tenant_id = (
+                   SELECT m.tenant_id FROM memories m WHERE m.id = colbert_tokens.memory_id
+               ) WHERE EXISTS (
+                   SELECT 1 FROM memories m WHERE m.id = colbert_tokens.memory_id AND m.tenant_id != colbert_tokens.tenant_id
+               )"""
+        )
+        conn.execute(
+            """UPDATE kg_facts SET tenant_id = (
+                   SELECT m.tenant_id FROM memories m WHERE m.id = kg_facts.source_memory
+               ) WHERE EXISTS (
+                   SELECT 1 FROM memories m WHERE m.id = kg_facts.source_memory AND m.tenant_id != kg_facts.tenant_id
+               )"""
+        )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as err:
+        logger.warning("Tenant sync error in batch indexer: %s", err, exc_info=True)
 
 
 from eval.bench.observability import (
