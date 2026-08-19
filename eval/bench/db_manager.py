@@ -146,7 +146,7 @@ class BenchmarkDBManager:
             conn.commit()
 
             # Fast batched multi-indexing pass (ColBERT, SPLADE, USearch, Chunks, KG)
-            populate_eval_memory_indexes_batch(conn, batch_items)
+            populate_eval_memory_indexes_batch(conn, batch_items, tenant_id=tenant_id)
             conn.commit()
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             conn.commit()

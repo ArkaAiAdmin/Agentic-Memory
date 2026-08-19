@@ -950,11 +950,11 @@ def _expand_query(query: str) -> str:
                         syn_unique.append(s)
                         seen_forms.add(sl)
                 # Always include the original token
-                if low not in seen_forms:
-                    syn_unique.insert(0, tok)
-                    seen_forms.add(low)
-                quoted = " OR ".join((f'"{f}"' for f in syn_unique))
-                expanded_tokens.append(f"({quoted})")
+                if syn_unique:
+                    quoted = " OR ".join((f'"{f}"' for f in syn_unique))
+                    expanded_tokens.append(f"({quoted})")
+                else:
+                    expanded_tokens.append(f'"{tok}"')
             else:
                 # Try word form expansion (porters-stemmer cross-form matching)
                 expanded = False
@@ -966,12 +966,14 @@ def _expand_query(query: str) -> str:
                         for f in forms:
                             if f.lower() not in [u.lower() for u in exp_unique]:
                                 exp_unique.append(f)
-                        quoted = " OR ".join((f'"{f}"' for f in exp_unique))
-                        expanded_tokens.append(f"({quoted})")
-                        expanded = True
+                        if exp_unique:
+                            quoted = " OR ".join((f'"{f}"' for f in exp_unique))
+                            expanded_tokens.append(f"({quoted})")
+                            expanded = True
                         break
                 if not expanded:
                     expanded_tokens.append(f'"{tok}"')
+    expanded_tokens = [t for t in expanded_tokens if t and t != "()"]
     out_parts = [f'"{p}"' for p in phrases if p.strip()]
     out_parts.extend(expanded_tokens)
     if ym_token and ym_token not in out_parts:

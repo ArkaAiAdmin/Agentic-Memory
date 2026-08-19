@@ -129,12 +129,9 @@ def populate_eval_memory_indexes(
     content: str,
     category: str = "sessions",
     tags: list[str] | None = None,
+    tenant_id: str = "default",
 ) -> None:
-    """Index a memory row across chunk FTS, vector embedding, ColBERT, SPLADE, KG, and facts.
-
-    This ensures benchmark runs query the full 14-phase search orchestrator (dense + sparse + KG + reranker)
-    rather than falling back to BM25/FTS only.
-    """
+    """Populate multi-indexes (chunk FTS5, embeddings, colbert, splade, KG, facts) for an evaluation memory."""
     if not content or not content.strip():
         return
 
@@ -145,7 +142,7 @@ def populate_eval_memory_indexes(
         from search.chunk_index import _qw5_ensure_schema, _qw5_index_chunks_for
 
         _qw5_ensure_schema(conn)
-        _qw5_index_chunks_for(conn, memory_id, content)
+        _qw5_index_chunks_for(conn, memory_id, content, tenant_id=tenant_id)
     except Exception as err:
         logger.warning("Failed chunk FTS indexing for %s: %s", memory_id, err, exc_info=True)
 
@@ -206,6 +203,7 @@ def populate_eval_memory_indexes_batch(
     items: list[tuple[str, str, str, list[str] | None]],
     use_llm_facts: bool = False,
     max_kg_facts: int | None = 2000,
+    tenant_id: str = "default",
 ) -> None:
     """Batch-index multiple memories across all multi-indexes in parallel/batched passes.
 
@@ -228,7 +226,7 @@ def populate_eval_memory_indexes_batch(
         print("\n[1/6] Indexing Chunk FTS5...", flush=True)
         for memory_id, content, _, _ in tqdm(items, desc="Chunk FTS5", disable=len(items) < 50):
             if content and content.strip():
-                _qw5_index_chunks_for(conn, memory_id, content)
+                _qw5_index_chunks_for(conn, memory_id, content, tenant_id=tenant_id)
     except Exception as err:
         logger.warning("Batch chunk FTS indexing error: %s", err, exc_info=True)
 

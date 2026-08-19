@@ -1551,8 +1551,9 @@ def search_memories(
         bare_text = " ".join(_bare_tokens)
         graph_rag_terms: list[str] = []
     else:
+        mode_effective = "light" if light else mode
         normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
-            query, db_path, conn=db, mode=mode
+            query, db_path, conn=db, mode=mode_effective
         )
         _reasoning_t0 = time.time()
         expansion_terms = _reasoning_expand(db_path, query, conn=db)
@@ -2103,16 +2104,17 @@ def search_memories(
                 logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
             _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
 
-            # Text-based multi-hop traversal (no KG_ENABLED gate)
-            _t0_tmh = time.time()
-            try:
-                results = _text_multi_hop_traversal(
-                    db, results, query, limit, repo_filter, category=category or None,
-                )
-            except Exception as _tmh_exc:
-                _phase_inc("search.text_multi_hop", _tmh_exc)
-                logger.warning("text_multi_hop failed (degraded): %s", _tmh_exc)
-            _record_phase_latency("search.text_multi_hop", _t0_tmh)
+            if not light:
+                # Text-based multi-hop traversal (no KG_ENABLED gate)
+                _t0_tmh = time.time()
+                try:
+                    results = _text_multi_hop_traversal(
+                        db, results, query, limit, repo_filter, category=category or None,
+                    )
+                except Exception as _tmh_exc:
+                    _phase_inc("search.text_multi_hop", _tmh_exc)
+                    logger.warning("text_multi_hop failed (degraded): %s", _tmh_exc)
+                _record_phase_latency("search.text_multi_hop", _t0_tmh)
 
         # Phase 11: Reranking
         # fact_lookup and fts modes skip CE reranking — FTS5 rank is final.

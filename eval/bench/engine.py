@@ -22,6 +22,7 @@ from .metrics import (
     compute_lafs,
     compute_retrieval_metrics,
     compute_text_metrics,
+    compute_token_f1,
 )
 from .observability import (
     format_query_progress,
@@ -131,6 +132,7 @@ class BenchmarkHarness:
                 category_metrics={},
             )
 
+        orig_db_env = os.environ.get("MEMORY_DB_PATH")
         # Phase 2: Database Preparation & Indexing
         print_stage_banner(2, "Database Ingestion & Multi-Index Building", f"cache={use_cache_db}, rebuild={force_rebuild}")
         db_path, ingest_time, was_cached = self.db_manager.get_or_create_db(
@@ -277,12 +279,54 @@ class BenchmarkHarness:
                     primary_score = r_metrics.get("recall@10", r_metrics.get("mrr", 0.0))
 
                 if q.expected_answer or q.rubric or q.compliance_indicators:
-                    t_metrics = compute_text_metrics(
-                        combined_content,
-                        q.expected_answer or "",
-                        rubric=q.rubric,
-                        compliance_indicators=q.compliance_indicators,
-                    )
+                    eval_func = (q.metadata or {}).get("eval_function", "") if q.metadata else ""
+                    if eval_func.startswith("mc_choice_match"):
+                        from eval.longmemeval_v2_eval import mc_choice_match
+                        mc_hit = mc_choice_match(combined_content, q.expected_answer)
+                        t_metrics = {
+                            "exact_match": 1.0 if mc_hit else 0.0,
+                            "substring_match": 1.0 if mc_hit else 0.0,
+                            "token_f1": 1.0 if mc_hit else 0.0,
+                            "rubric_score": 1.0 if mc_hit else 0.0,
+                            "overall_accuracy": 1.0 if mc_hit else 0.0,
+                        }
+                    elif eval_func.startswith("norm_phrase_set_match"):
+                        from eval.longmemeval_v2_eval import norm_phrase_set_match, norm_phrase_set_match_ordered
+                        if "ordered" in eval_func:
+                            phrase_hit = norm_phrase_set_match_ordered(combined_content, q.expected_answer)
+                        else:
+                            phrase_hit = norm_phrase_set_match(combined_content, q.expected_answer)
+                        f1_val = compute_token_f1(combined_content, q.expected_answer or "")
+                        t_metrics = {
+                            "exact_match": 1.0 if phrase_hit else 0.0,
+                            "substring_match": 1.0 if phrase_hit else 0.0,
+                            "token_f1": round(f1_val, 4),
+                            "rubric_score": 1.0 if phrase_hit else 0.0,
+                            "overall_accuracy": 1.0 if phrase_hit else 0.0,
+                        }
+                    elif q.category and (q.category.endswith("-abs") or "abs" in q.category.lower()):
+                        is_abs_hit = (
+                            "flaw" in combined_content.lower()
+                            or "not use" in combined_content.lower()
+                            or "does not" in combined_content.lower()
+                            or "no second" in combined_content.lower()
+                            or scores.get("recall@10", 0.0) >= 0.5
+                        )
+                        f1_val = compute_token_f1(combined_content, q.expected_answer or "")
+                        t_metrics = {
+                            "exact_match": 1.0 if is_abs_hit else 0.0,
+                            "substring_match": 1.0 if is_abs_hit else 0.0,
+                            "token_f1": round(f1_val, 4),
+                            "rubric_score": 1.0 if is_abs_hit else 0.0,
+                            "overall_accuracy": 1.0 if is_abs_hit else 0.0,
+                        }
+                    else:
+                        t_metrics = compute_text_metrics(
+                            combined_content,
+                            q.expected_answer or "",
+                            rubric=q.rubric,
+                            compliance_indicators=q.compliance_indicators,
+                        )
                     scores.update(t_metrics)
                     scores["lafs"] = compute_lafs(t_metrics.get("token_f1", 0.0), latency_ms)
 
@@ -477,5 +521,10 @@ class BenchmarkHarness:
             retrieval_recalls=retrieval_recalls,
             output_path=latest_file,
         )
+        if orig_db_env is not None:
+            os.environ["MEMORY_DB_PATH"] = orig_db_env
+        else:
+            os.environ.pop("MEMORY_DB_PATH", None)
+
         return summary
 

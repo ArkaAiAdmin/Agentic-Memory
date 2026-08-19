@@ -20,8 +20,11 @@ venv/bin/python eval/run_benchmarks.py --suite all --quick
 
 Run a specific benchmark suite with custom question limit:
 ```bash
-venv/bin/python eval/run_benchmarks.py --suite locomo --limit 50
+venv/bin/python eval/longmemeval_v2_eval.py --quick
+venv/bin/python eval/longmemeval_v2_eval.py --rebuild --tier small
+venv/bin/python eval/locomo_eval.py --max-questions 50
 venv/bin/python eval/run_benchmarks.py --suite longmemeval_v2 --limit 20
+venv/bin/python eval/run_benchmarks.py --suite locomo --limit 50
 venv/bin/python eval/run_benchmarks.py --suite beam --limit 30
 venv/bin/python eval/run_benchmarks.py --suite adversarial
 venv/bin/python eval/run_benchmarks.py --suite golden

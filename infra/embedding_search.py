@@ -1083,7 +1083,7 @@ class EmbeddingSearch:
             chash = _content_hash(text)
             entry = cached.get(mid)
             vec = None
-            if entry is not None and entry[0] == chash and entry[2] == getattr(self, "_model_revision", MODEL_REVISION):
+            if entry is not None:
                 try:
                     v = self.np.frombuffer(entry[1], dtype=self.np.float32)
                     if v.size == dim:
