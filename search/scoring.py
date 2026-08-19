@@ -271,6 +271,48 @@ def _reciprocal_rank_fusion(
     return fused
 
 
+_WORD_TO_NUM_MAP: dict[str, float] = {
+    "a": 1.0, "an": 1.0, "one": 1.0, "two": 2.0, "three": 3.0, "four": 4.0, "five": 5.0,
+    "six": 6.0, "seven": 7.0, "eight": 8.0, "nine": 9.0, "ten": 10.0, "eleven": 11.0, "twelve": 12.0,
+    "thirteen": 13.0, "fourteen": 14.0, "fifteen": 15.0, "twenty": 20.0, "thirty": 30.0,
+}
+
+_RELATIVE_TIME_OFFSET_RE = re.compile(
+    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty|a|an)\s+(days?|weeks?|months?|years?)\s+(?:ago|before|prior to)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_relative_time_offset_days(query: str) -> Optional[float]:
+    """Extract past relative duration offset in days from natural query string.
+
+    Examples:
+        'two weeks ago' -> 14.0
+        '10 days ago' -> 10.0
+        '4 weeks ago' -> 28.0
+        'two months ago' -> 60.0
+    """
+    if not query:
+        return None
+    m = _RELATIVE_TIME_OFFSET_RE.search(query)
+    if not m:
+        return None
+    num_str = m.group(1).lower()
+    unit_str = m.group(2).lower()
+    val = float(num_str) if num_str.isdigit() else _WORD_TO_NUM_MAP.get(num_str, 0.0)
+    if val <= 0:
+        return None
+    if unit_str.startswith("day"):
+        return val
+    if unit_str.startswith("week"):
+        return val * 7.0
+    if unit_str.startswith("month"):
+        return val * 30.0
+    if unit_str.startswith("year"):
+        return val * 365.0
+    return None
+
+
 def _temporal_decay_factor(
     created: str,
     now_ts: Optional[float] = None,
@@ -571,12 +613,26 @@ def _compute_final_score(ctx) -> float:
             if tag_tokens:
                 hits = len(query_tokens & tag_tokens)
                 tag_match = min(1.0, hits / max(1, len(query_tokens)))
-    # Calculate recency score using temporal decay factor
+    # Calculate recency score using temporal decay factor or relative past time anchor
     created = getattr(ctx, "created", None) or ""
     last_accessed = getattr(ctx, "last_accessed", None)
-    recency_score = _temporal_decay_factor(
-        created, now_ts, last_accessed=last_accessed, as_of=now_ts
-    )
+    query_str = getattr(ctx, "query", "") or ""
+    relative_offset_days = _extract_relative_time_offset_days(query_str)
+    if relative_offset_days is not None and created and now_ts:
+        c_ts = _parse_timestamp(created)
+        if c_ts > 0:
+            target_ts = float(now_ts) - (relative_offset_days * 86400.0)
+            delta_days = abs(c_ts - target_ts) / 86400.0
+            sigma = max(2.5, relative_offset_days * 0.15)
+            recency_score = math.exp(-0.5 * (delta_days / sigma) ** 2)
+        else:
+            recency_score = _temporal_decay_factor(
+                created, now_ts, last_accessed=last_accessed, as_of=now_ts
+            )
+    else:
+        recency_score = _temporal_decay_factor(
+            created, now_ts, last_accessed=last_accessed, as_of=now_ts
+        )
     # A3.3: discount inferred (is_entailed=1) fact scores so directly
     # observed facts outrank derived knowledge.  is_entailed defaults to
     # 0 (direct fact) when absent on memory rows.

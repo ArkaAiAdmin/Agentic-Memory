@@ -191,6 +191,7 @@ class BenchmarkHarness:
                     limit=50,
                     include_global=not bool(target_tenant),
                     rerank=not use_light,
+                    light=use_light,
                     deep_rerank=False,
                     tenant_id=target_tenant,
                     as_of=q.as_of,
