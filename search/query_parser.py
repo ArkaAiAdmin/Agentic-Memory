@@ -156,9 +156,52 @@ _WORD_FORM_EXPANSIONS: dict[str, list[str]] = {
     'edg': ['edge', 'edges'],
     'path': ['path', 'paths'],
     'travers': ['traverse', 'traverses', 'traversed', 'traversing', 'traversal', 'traversals'],
-    'commun': ['community', 'communities', 'communicate', 'communicates', 'communicated', 'communicating', 'communication'],
-    'centr': ['central', 'centrally', 'center', 'centers', 'centered', 'centering', 'centrality'],
-    'between': ['between', 'betweenness'],
+    'select': ['select', 'selects', 'selected', 'selecting', 'selection', 'selections'],
+    'delet': ['delete', 'deletes', 'deleted', 'deleting', 'deletion', 'deletions'],
+    'order': ['order', 'orders', 'ordered', 'ordering'],
+    'categor': ['category', 'categories', 'categorize', 'categorized', 'categorizing', 'categorization'],
+    'attribut': ['attribute', 'attributes', 'attributed', 'attributing'],
+    'properti': ['property', 'properties'],
+    'assign': ['assign', 'assigns', 'assigned', 'assigning', 'assignment', 'assignments'],
+    'inventori': ['inventory', 'inventories'],
+    'notif': ['notify', 'notifies', 'notified', 'notifying', 'notification', 'notifications'],
+    'subscrib': ['subscribe', 'subscribes', 'subscribed', 'subscribing', 'subscription', 'subscriptions'],
+    'complet': ['complete', 'completes', 'completed', 'completing', 'completion', 'completions'],
+    'modul': ['module', 'modules', 'modular'],
+    'interact': ['interact', 'interacts', 'interacted', 'interacting', 'interaction', 'interactions'],
+    'custom': ['custom', 'customize', 'customizes', 'customized', 'customizing', 'customization', 'customizations'],
+    'column': ['column', 'columns'],
+    'page': ['page', 'pages', 'paging', 'pagination'],
+    'item': ['item', 'items'],
+    'product': ['product', 'products'],
+    'link': ['link', 'links', 'linked', 'linking'],
+    'dropdown': ['dropdown', 'dropdowns'],
+    'dialog': ['dialog', 'dialogs', 'dialogue', 'dialogues'],
+    'button': ['button', 'buttons'],
+    'tab': ['tab', 'tabs'],
+    'receipt': ['receipt', 'receipts'],
+    'post': ['post', 'posts', 'posted', 'posting'],
+    'comment': ['comment', 'comments', 'commented', 'commenting'],
+    'mouse': ['mouse', 'mice'],
+    'keyboard': ['keyboard', 'keyboards'],
+    'asset': ['asset', 'assets'],
+    'expens': ['expense', 'expenses', 'expenditure', 'expenditures'],
+    'warrant': ['warranty', 'warranties'],
+    'depreci': ['depreciate', 'depreciates', 'depreciated', 'depreciating', 'depreciation'],
+    'protocol': ['protocol', 'protocols'],
+    'incident': ['incident', 'incidents'],
+    'action': ['action', 'actions', 'act', 'acts', 'acted', 'acting'],
+    'option': ['option', 'options', 'optional'],
+    'detail': ['detail', 'details', 'detailed', 'detailing'],
+    'field': ['field', 'fields'],
+    'status': ['status', 'statuses'],
+    'record': ['record', 'records', 'recorded', 'recording'],
+    'label': ['label', 'labels', 'labeled', 'labelling', 'labeling'],
+    'submitt': ['submit', 'submits', 'submitted', 'submitting', 'submission', 'submissions'],
+    'user': ['user', 'users'],
+    'account': ['account', 'accounts', 'accounting'],
+    'profile': ['profile', 'profiles', 'profiled', 'profiling'],
+    'moder': ['moderate', 'moderates', 'moderated', 'moderating', 'moderator', 'moderators', 'moderation'],
 }
 
 # Synonym map: real semantic equivalents (not just morphological variants).
@@ -898,7 +941,12 @@ def _expand_query(query: str) -> str:
         return query
     phrases = re.findall('"([^"]*)"', query)
     bare = re.sub('"[^"]*"', " ", query)
-    bare_tokens = re.findall(r"[\w@\#\.\+\-]+", bare, flags=re.UNICODE)
+    raw_bare_tokens = re.findall(r"[\w@\#\.\+\-]+", bare, flags=re.UNICODE)
+    bare_tokens = []
+    for t in raw_bare_tokens:
+        clean_t = re.sub(r"^[^\w@\#\+]+|[^\w@\#\+]+$", "", t)
+        if clean_t:
+            bare_tokens.append(clean_t)
 
     _MONTH_MAP = {
         "january": "01", "february": "02", "march": "03", "april": "04",
@@ -1430,9 +1478,23 @@ def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybri
     Returns (normalized_query, fts_query, bare_query_text, graph_rag_terms).
     """
     normalized_query = normalize_unicode(query)
-    phrases = re.findall('"([^"]*)"', normalized_query)
-    bare = re.sub('"[^"]*"', " ", normalized_query)
-    bare_words = re.findall("[\\w@\\#\\.\\+\\-]+", bare, flags=re.UNICODE)
+    # Strip instruction boilerplate suffixes (e.g. "Mark your final answer...", "wrapped in \boxed{}")
+    _clean_q = re.sub(
+        r"(?:\n\s*(?:Mark your final answer|Put your final answer|Your final answer|Answer in English)[^\n]*)",
+        "",
+        normalized_query,
+        flags=re.IGNORECASE,
+    ).strip() or normalized_query
+
+    phrases = re.findall('"([^"]*)"', _clean_q)
+    bare = re.sub('"[^"]*"', " ", _clean_q)
+    raw_bare_words = re.findall(r"[\w@\#\.\+\-]+", bare, flags=re.UNICODE)
+    # Strip boundary punctuation (e.g. 'list.' -> 'list', 'website.' -> 'website')
+    bare_words = []
+    for w in raw_bare_words:
+        clean_w = re.sub(r"^[^\w@\#\+]+|[^\w@\#\+]+$", "", w)
+        if clean_w:
+            bare_words.append(clean_w)
     # Filter stop words from FTS terms (but keep bare_words for display)
     content_words = [w for w in bare_words if w.lower() not in _STOP_WORDS]
     # Generate adjacent bigram phrase queries for bare words
@@ -1452,7 +1514,7 @@ def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybri
             bigrams.append(_escape_phrase(f"{w1} {w2}"))
     bigram_terms = bigrams
 
-    expanded = _expand_query(normalized_query)
+    expanded = _expand_query(_clean_q)
 
     # Conceptual phrase expansion: append domain terms for intent phrases
     try:
@@ -1465,7 +1527,7 @@ def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybri
     # P0 fix #7b: skip semantic expansion for FTS and fact_lookup modes
     # to avoid loading SentenceTransformer model (loky deadlock on macOS)
     semantic_terms = []
-    if mode not in ("fts", "fact_lookup"):
+    if mode not in ("fts", "fact_lookup", "light"):
         try:
             semantic_terms = _semantic_expand(normalized_query, db_path)
         except Exception:

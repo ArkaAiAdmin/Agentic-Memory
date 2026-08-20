@@ -1473,9 +1473,14 @@ def search_memories(
         r"(?:can|could)\s+you\s+(?:find|show|tell me|give me))\s+",
         flags=re.IGNORECASE,
     )
-    q_body = re.split(r"\n\s*[A-H]\.\s+", query)[0]
+    _instruction_suffix_re = re.compile(
+        r"(?:\n\s*(?:Mark your final answer|Put your final answer|Your final answer|Answer in English)[^\n]*)",
+        flags=re.IGNORECASE,
+    )
+    q_no_instruction = _instruction_suffix_re.sub("", query).strip() or query
+    q_body = re.split(r"\n\s*[A-H]\.\s+", q_no_instruction)[0]
     quoted_terms = re.findall(r"[`\"]([^`\"]{2,60})[`\"]", q_body)
-    q_cleaned = _conv_prefix_re.sub("", query).strip()
+    q_cleaned = _conv_prefix_re.sub("", q_no_instruction).strip()
     if q_cleaned:
         if quoted_terms:
             query = f"{q_cleaned} " + " ".join(f'"{t}"' for t in quoted_terms)

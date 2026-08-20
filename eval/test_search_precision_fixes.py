@@ -263,5 +263,72 @@ class TestSearchPrecisionFixes(unittest.TestCase):
                 res = extract_session_findings(marker)
                 self.assertEqual(res.get("extracted"), 0)
 
+    # ─── Query cleaning, punctuation stripping, and entailment precision ───
+
+    def test_token_boundary_punctuation_stripped(self):
+        """Tokens with trailing periods or commas must be stripped of boundary punctuation."""
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "memory.db"
+        norm, fts, bare, kg = _parse_search_query("On the item list. Select a range, from dropdown:", db_path)
+        self.assertIn('"list"', fts)
+        self.assertIn('"range"', fts)
+        self.assertIn('"dropdown"', fts)
+        self.assertNotIn('"list."', fts)
+        self.assertNotIn('"range,"', fts)
+        self.assertNotIn('"dropdown:"', fts)
+        self.assertIn('"item list"', fts)
+
+    def test_hyphenated_and_symbol_words_preserved(self):
+        """Internal hyphens and symbols in technical words must be preserved."""
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "memory.db"
+        norm, fts, bare, kg = _parse_search_query("using local-first and @component-name", db_path)
+        self.assertIn("local-first", fts)
+        self.assertIn("@component-name", fts)
+
+    def test_instruction_boilerplate_stripped(self):
+        """Prompt instruction suffixes like 'Mark your final answer...' must not pollute FTS clauses."""
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "memory.db"
+        raw_query = (
+            "What field is marked customer visible on the task page?\n\n"
+            "Mark your final answer (should be one or more short phrases) in \\boxed{}."
+        )
+        norm, fts, bare, kg = _parse_search_query(raw_query, db_path)
+        self.assertIn('"customer visible"', fts)
+        self.assertIn('"task page"', fts)
+        self.assertNotIn("boxed", fts)
+        self.assertNotIn('"Mark final"', fts)
+        self.assertNotIn('"final answer"', fts)
+        self.assertNotIn('"short phrases"', fts)
+
+    def test_reasoning_expand_no_trigger_on_bare_is(self):
+        """Bare linking verb 'is' must NOT trigger reasoning expansion on normal English sentences."""
+        from search.phases.retrieve import _reasoning_expand
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "memory.db"
+        conn = sqlite3.connect(str(db_path))
+        query = "Which menu item is displayed at the top?"
+        expansions = _reasoning_expand(db_path, query, conn=conn)
+        self.assertEqual(expansions, [])
+        conn.close()
+
+    def test_kg_search_token_sanitization_no_fts_syntax_error(self):
+        """Quoted tokens in _match_query_entities must not generate invalid FTS5 triple quotes."""
+        from knowledge_graph.kg_search import _match_query_entities
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "memory.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE kg_entities (id TEXT PRIMARY KEY, name TEXT, entity_type TEXT, mentions INTEGER DEFAULT 1)")
+        conn.execute("CREATE VIRTUAL TABLE kg_entities_fts USING fts5(name, entity_type, content='kg_entities', content_rowid='rowid')")
+        conn.execute("INSERT INTO kg_entities (rowid, id, name, entity_type) VALUES (1, 'e1', 'ServiceNow', 'system')")
+        conn.execute("INSERT INTO kg_entities_fts (rowid, name, entity_type) VALUES (1, 'ServiceNow', 'system')")
+        conn.commit()
+
+        results = _match_query_entities(conn, 'on "servicenow" page', limit=5)
+        self.assertTrue(len(results) > 0)
+        self.assertEqual(results[0][1], "ServiceNow")
+        conn.close()
+
 if __name__ == "__main__":
     unittest.main()

@@ -320,7 +320,6 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None, tena
         "part_of",
         "has_part",
         "located_in",
-        "is",
     )
     # Normalize query lower-case for predicate detection.
     q_lower = query.lower()
@@ -335,7 +334,7 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None, tena
         return []
     # Extract entity term: take the longest word sequence around the predicate.
     parts = re.split(
-        r"\b(?:is a|is type of|subclass of|instance of|part of|has part|located in|is)\b",
+        r"\b(?:is a|is type of|subclass of|instance of|part of|has part|located in)\b",
         q_lower,
         flags=re.IGNORECASE,
     )
