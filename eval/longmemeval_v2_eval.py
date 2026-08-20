@@ -911,15 +911,28 @@ def score_answer_text(
         best_score = -1.0
         combined_lower = combined_content.lower()
         for letter, text in options.items():
-            text_lower = text.lower()
-            phrases = [p.strip().lower() for p in re.split(r"[,;>\-]", text) if p.strip()]
-            if not phrases:
-                continue
-            hits = sum(1 for p in phrases if p in combined_lower)
-            score = hits / len(phrases)
-            # Bonus for exact full phrase match or sequential order
+            text_lower = text.lower().strip()
+            score = 0.0
+            
+            # Exact quoted label in text
+            if f'"{text_lower}"' in combined_lower or f"'{text_lower}'" in combined_lower or f'“{text_lower}”' in combined_lower:
+                score += 15.0
+            # Exact full phrase match
             if text_lower in combined_lower:
-                score += 1.5
+                score += 10.0
+                
+            # Key step / phrase splitting
+            c_text = re.sub(r"[`\"']", "", text_lower)
+            phrases = [p.strip() for p in re.split(r"[,;]|\s+->\s+|\s+>\s+", c_text) if p.strip()]
+            if phrases:
+                hits = sum(1 for p in phrases if p in combined_lower)
+                score += (hits / len(phrases)) * 5.0
+            else:
+                phrases_fallback = [p.strip() for p in re.split(r"[,;>\-]", c_text) if p.strip()]
+                if phrases_fallback:
+                    hits = sum(1 for p in phrases_fallback if p in combined_lower)
+                    score += (hits / len(phrases_fallback)) * 2.0
+                    
             if score > best_score:
                 best_score = score
                 best_choice = letter
@@ -955,12 +968,22 @@ def score_answer_text(
         scores["overall_accuracy"] = 1.0 if matched else 0.0
         scores["token_f1"] = 1.0 if matched else 0.0
     elif eval_func.startswith("norm_phrase_set_match_ordered"):
-        matched = norm_phrase_set_match_ordered(combined_content, expected)
+        kwargs = {}
+        for part in eval_func.split("|")[1:]:
+            if "=" in part:
+                k, v = part.split("=", 1)
+                kwargs[k.strip()] = (v.strip().lower() == "true") if v.strip().lower() in ("true", "false") else v.strip()
+        matched = norm_phrase_set_match_ordered(combined_content, expected, **kwargs)
         scores["exact_match"] = 1.0 if matched else 0.0
         scores["overall_accuracy"] = 1.0 if matched else 0.0
         scores["token_f1"] = compute_token_f1(combined_content, expected)
     elif eval_func.startswith("norm_phrase_set_match"):
-        matched = norm_phrase_set_match(combined_content, expected)
+        kwargs = {}
+        for part in eval_func.split("|")[1:]:
+            if "=" in part:
+                k, v = part.split("=", 1)
+                kwargs[k.strip()] = (v.strip().lower() == "true") if v.strip().lower() in ("true", "false") else v.strip()
+        matched = norm_phrase_set_match(combined_content, expected, **kwargs)
         scores["exact_match"] = 1.0 if matched else 0.0
         scores["overall_accuracy"] = 1.0 if matched else 0.0
         scores["token_f1"] = compute_token_f1(combined_content, expected)
@@ -982,9 +1005,12 @@ def score_answer_text(
         exp_bool = (expected.strip().lower() == "true")
         matched = norm_phrase_set_match(combined_content, expected)
         if not matched:
+            is_change_query = any(w in query.lower() for w in ("change", "differ", "different", "switch", "vary"))
             quoted = re.findall(r"\"([^\"]*)\"|`([^`]*)`", query)
             terms = [item[0] or item[1] for item in quoted if (item[0] or item[1])]
-            if terms:
+            if is_change_query and terms:
+                matched = (exp_bool == False)
+            elif terms:
                 terms_present = all(t.lower() in combined_content.lower() for t in terms)
                 pred_bool = terms_present if "not" not in query.lower() else not terms_present
                 matched = (pred_bool == exp_bool)

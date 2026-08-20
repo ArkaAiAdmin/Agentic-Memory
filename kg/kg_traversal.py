@@ -356,3 +356,162 @@ def traverse_graph(
         paths.append(path)
 
     return paths
+
+
+def find_cross_session_graph_walk(
+    conn: AnyConnection,
+    seed_entities: list[str],
+    max_hops: int = 2,
+    decay_factor: float = 0.7,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Traverse graph starting from seed entities across session boundaries up to max_hops.
+
+    Discovers indirect entity connections, associated facts, and source memories.
+    Computes graph proximity score with exponential hop decay: score = edge_weight * (decay_factor ** hop).
+
+    Returns:
+        List of discovered multi-hop nodes with provenance paths, facts, and relevance scores.
+    """
+    if not seed_entities or max_hops < 1:
+        return []
+
+    clean_seeds = [s.strip() for s in seed_entities if s.strip()]
+    if not clean_seeds:
+        return []
+
+    placeholders = ",".join("?" for _ in clean_seeds)
+    seed_rows = conn.execute(
+        f"SELECT id, name, entity_type FROM kg_entities WHERE name IN ({placeholders})",
+        clean_seeds,
+    ).fetchall()
+
+    if not seed_rows:
+        return []
+
+    seed_ids = {r[0] for r in seed_rows}
+
+    # CTE recursive search for multi-hop neighbors
+    query = """
+    WITH RECURSIVE walk(current_id, visited, depth, edge_id, path_ids, path_rels, weight_prod) AS (
+        SELECT
+            id,
+            ',' || id || ',',
+            0,
+            NULL,
+            ',' || id || ',',
+            ',',
+            1.0
+        FROM kg_entities
+        WHERE id IN ({seed_placeholders})
+
+        UNION ALL
+
+        SELECT
+            CASE WHEN w.current_id = e.source_id THEN e.target_id ELSE e.source_id END,
+            w.visited || (CASE WHEN w.current_id = e.source_id THEN e.target_id ELSE e.source_id END) || ',',
+            w.depth + 1,
+            e.id,
+            w.path_ids || (CASE WHEN w.current_id = e.source_id THEN e.target_id ELSE e.source_id END) || ',',
+            w.path_rels || e.relation || ',',
+            w.weight_prod * COALESCE(e.weight, 1.0)
+        FROM walk w
+        JOIN kg_edges e ON (e.source_id = w.current_id OR e.target_id = w.current_id)
+        WHERE w.depth < :max_hops
+          AND (e.invalid_at IS NULL OR e.invalid_at = '')
+          AND instr(w.visited, ',' || (CASE WHEN w.current_id = e.source_id THEN e.target_id ELSE e.source_id END) || ',') = 0
+    )
+    SELECT current_id, depth, path_ids, path_rels, weight_prod
+    FROM walk
+    WHERE depth > 0
+    ORDER BY depth ASC, weight_prod DESC
+    """
+    seed_ph = ",".join(str(sid) for sid in seed_ids)
+    formatted_query = query.replace("{seed_placeholders}", seed_ph)
+
+    rows = conn.execute(formatted_query, {"max_hops": max_hops}).fetchall()
+    if not rows:
+        return []
+
+    all_entity_ids = set()
+    walk_records = []
+    seen_entities = set(seed_ids)
+
+    for r in rows:
+        curr_id, depth, path_ids_str, path_rels_str, weight_prod = r
+        if curr_id in seen_entities and depth > 1:
+            continue
+        seen_entities.add(curr_id)
+
+        p_ids = [int(x) for x in path_ids_str.split(",") if x]
+        p_rels = [x for x in path_rels_str.split(",") if x]
+        all_entity_ids.update(p_ids)
+
+        score = float(weight_prod) * (decay_factor ** depth)
+        walk_records.append({
+            "target_id": curr_id,
+            "depth": depth,
+            "path_ids": p_ids,
+            "path_rels": p_rels,
+            "score": round(score, 4),
+        })
+
+    all_ph = ",".join("?" for _ in all_entity_ids)
+    ent_rows = conn.execute(
+        f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({all_ph})",
+        list(all_entity_ids),
+    ).fetchall()
+    ent_dict = {r[0]: {"id": r[0], "name": r[1], "entity_type": r[2]} for r in ent_rows}
+
+    # Fetch active facts for target entities
+    target_ids = [w["target_id"] for w in walk_records]
+    fact_dict: dict[int, list[dict]] = {}
+    if target_ids:
+        tgt_ph = ",".join("?" for _ in target_ids)
+        try:
+            fact_rows = conn.execute(
+                f"""SELECT id, subject, predicate, object, confidence, source_memory
+                   FROM kg_facts
+                   WHERE (subject_entity_id IN ({tgt_ph}) OR object_entity_id IN ({tgt_ph}))
+                     AND (superseded_by IS NULL)
+                     AND (invalid_at IS NULL OR invalid_at = '')
+                   LIMIT 50""",
+                target_ids + target_ids,
+            ).fetchall()
+            for fr in fact_rows:
+                f_item = {
+                    "id": fr[0],
+                    "subject": fr[1],
+                    "predicate": fr[2],
+                    "object": fr[3],
+                    "confidence": fr[4],
+                    "source_memory": fr[5],
+                }
+                for sid in target_ids:
+                    fact_dict.setdefault(sid, []).append(f_item)
+        except Exception:
+            pass
+
+    results = []
+    for w in walk_records[:limit]:
+        tgt_meta = ent_dict.get(w["target_id"])
+        if not tgt_meta:
+            continue
+
+        path = []
+        for i, pid in enumerate(w["path_ids"]):
+            p_ent = ent_dict.get(pid)
+            if p_ent:
+                path.append(p_ent)
+            if i < len(w["path_rels"]):
+                path.append({"relation": w["path_rels"][i]})
+
+        results.append({
+            "entity": tgt_meta,
+            "hop": w["depth"],
+            "score": w["score"],
+            "path": path,
+            "connected_facts": fact_dict.get(w["target_id"], [])[:5],
+        })
+
+    return results

@@ -50,7 +50,7 @@ def _build_fts_query(query_lower: str) -> str | None:
 
 
 def _facts_search_fts(
-    conn: AnyConnection, fts_query: str, limit: int
+    conn: AnyConnection, fts_query: str, limit: int, include_superseded: bool = False
 ) -> list[sqlite3.Row] | None:
     """FTS5-backed fact search.
 
@@ -59,13 +59,22 @@ def _facts_search_fts(
     with the LIKE fallback so downstream scoring is identical.
     """
     try:
+        where_extra = ""
+        if not include_superseded:
+            # Check if columns exist
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
+            if "superseded_by" in cols and "invalid_at" in cols:
+                where_extra = " AND kf.superseded_by IS NULL AND (kf.invalid_at IS NULL OR kf.invalid_at = '')"
+            elif "superseded_by" in cols:
+                where_extra = " AND kf.superseded_by IS NULL"
+
         rows = conn.execute(
             "SELECT kf.id, kf.subject, kf.predicate, kf.object, kf.confidence, "
             "kf.locked, kf.first_seen, kf.last_seen, kf.mention_count, "
             "kf.source_memory "
             "FROM kg_facts_fts "
             "JOIN kg_facts kf ON kf.rowid = kg_facts_fts.rowid "
-            "WHERE kg_facts_fts MATCH ? "
+            f"WHERE kg_facts_fts MATCH ?{where_extra} "
             "ORDER BY kg_facts_fts.rank "
             "LIMIT ?",
             (fts_query, limit),
@@ -79,15 +88,26 @@ def _facts_search_fts(
 
 
 def _facts_search_like(
-    conn: AnyConnection, query_lower: str, limit: int
+    conn: AnyConnection, query_lower: str, limit: int, include_superseded: bool = False
 ) -> list[sqlite3.Row]:
     """Original LIKE-based fact search.  Fallback for pre-v20 DBs and FTS5
     syntax errors.  O(n) full table scan due to leading-wildcard LIKE."""
+    where_extra = ""
+    try:
+        if not include_superseded:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
+            if "superseded_by" in cols and "invalid_at" in cols:
+                where_extra = " AND superseded_by IS NULL AND (invalid_at IS NULL OR invalid_at = '')"
+            elif "superseded_by" in cols:
+                where_extra = " AND superseded_by IS NULL"
+    except Exception:
+        pass
+
     return conn.execute(
         "SELECT id, subject, predicate, object, confidence, locked, "
         "first_seen, last_seen, mention_count, source_memory "
         "FROM kg_facts "
-        "WHERE subject LIKE ? OR predicate LIKE ? OR object LIKE ? "
+        f"WHERE (subject LIKE ? OR predicate LIKE ? OR object LIKE ?){where_extra} "
         "LIMIT ?",
         (f"%{query_lower}%", f"%{query_lower}%", f"%{query_lower}%", limit),
     ).fetchall()
@@ -98,6 +118,7 @@ def facts_search(
     belief_status: str | None = None,
     epistemic_source: str | None = None,
     fact_type: str | None = None,
+    include_superseded: bool = False,
 ) -> list[dict]:
     query_lower = query.lower().strip()
     now = time.time()
@@ -109,9 +130,9 @@ def facts_search(
     fts_query = _build_fts_query(query_lower)
     rows: list | None = None
     if fts_query is not None:
-        rows = _facts_search_fts(conn, fts_query, limit * 3)
+        rows = _facts_search_fts(conn, fts_query, limit * 3, include_superseded=include_superseded)
     if not rows:
-        rows = _facts_search_like(conn, query_lower, limit * 3)
+        rows = _facts_search_like(conn, query_lower, limit * 3, include_superseded=include_superseded)
 
     # Apply belief filters if specified
     if rows and (belief_status is not None or epistemic_source is not None or fact_type is not None):
@@ -178,9 +199,19 @@ def facts_list(
     belief_status: str | None = None,
     epistemic_source: str | None = None,
     fact_type: str | None = None,
+    include_superseded: bool = False,
 ) -> list[dict]:
     conditions = ["confidence >= ?"]
     params: list = [min_confidence]
+    if not include_superseded:
+        try:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
+            if "superseded_by" in cols and "invalid_at" in cols:
+                conditions.append("(superseded_by IS NULL AND (invalid_at IS NULL OR invalid_at = ''))")
+            elif "superseded_by" in cols:
+                conditions.append("superseded_by IS NULL")
+        except Exception:
+            pass
     if belief_status is not None:
         conditions.append("belief_status = ?")
         params.append(belief_status)

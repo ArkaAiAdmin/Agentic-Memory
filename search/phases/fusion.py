@@ -329,7 +329,8 @@ def _hybrid_fusion(
             key=lambda x: (
                 x[_RRF_FIELD_IDX]
                 if len(x) > _RRF_FIELD_IDX and x[_RRF_FIELD_IDX] is not None
-                else (x[5] if len(x) > 5 and x[5] is not None else 0.0)
+                else (x[5] if len(x) > 5 and x[5] is not None else 0.0),
+                str(x[0]) if len(x) > 0 and x[0] is not None else "",
             )
         )
         return merged

@@ -265,7 +265,7 @@ def apply_strong_match_boost(state: PipelineState) -> None:
         # final_score.  The CE reranker owns ordering; strong-match is
         # a pure score boost, not an ordering override.
         state.result_items.sort(
-            key=lambda _ri: float(_ri.get("final_score") or 0.0),
+            key=lambda _ri: (float(_ri.get("final_score") or 0.0), str(_ri.get("id") or "")),
             reverse=True,
         )
         _new_order_ids = [ri["id"] for ri in state.result_items]

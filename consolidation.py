@@ -22,6 +22,7 @@ __all__ = [
     "cluster_related",
     "merge_suggestions",
     "consolidation_stats",
+    "compact_episodic_traces",
 ]
 
 # CONSOLIDATION_ENABLED is dynamically resolved via __getattr__
@@ -311,6 +312,176 @@ def consolidation_stats(conn: AnyConnection) -> dict:
         }
     except sqlite3.OperationalError:
         return {"enabled": True, "error": "consolidation stats unavailable"}
+
+
+# ---------------------------------------------------------------------------
+# Episodic-to-Semantic Compaction (Sleep-Time Consolidation)
+# ---------------------------------------------------------------------------
+
+
+def compact_episodic_traces(
+    conn: AnyConnection,
+    min_steps: int = 4,
+    db_path: str | None = None,
+    tenant_id: str = "default",
+    save_to_db: bool = False,
+) -> list[dict]:
+    """Sleep-time consolidation: clusters granular episodic steps into high-density semantic notes.
+
+    1. Groups episodic memory records by session_id / trajectory_id / title_slug.
+    2. Identifies key goals, observations, state transitions, and outcomes.
+    3. Synthesizes a structured consolidation summary with provenance tracking (derived_from_ids).
+    4. Routes writes through save_memory (Rule 1) while preserving raw episodic traces (Rule 19).
+    5. Returns list of synthesized consolidation notes.
+    """
+    try:
+        rows = conn.execute(
+            """SELECT id, source_file, content, created_at, category, tags
+               FROM memories
+               WHERE deleted_at IS NULL
+                 AND (
+                     category IN ('sessions', 'events', 'steps')
+                     OR content LIKE '%[Trajectory %'
+                     OR content LIKE '%Step % Observation:%'
+                     OR source_file LIKE '%traj_%'
+                     OR source_file LIKE '%session_%'
+                 )
+               ORDER BY created_at ASC"""
+        ).fetchall()
+        if not rows:
+            return []
+
+        session_groups: dict[str, list[dict]] = {}
+        for r in rows:
+            mid, s_file, content, created_at, cat, tags_raw = r
+            sess_key = None
+
+            # 1. Prefer explicit session/trajectory tag in content header
+            if content:
+                m = re.search(r"\[(?:Trajectory|Session)\s+([a-zA-Z0-9_-]+)\]", content, re.IGNORECASE)
+                if m:
+                    sess_key = f"traj_{m.group(1)}"
+                else:
+                    m2 = re.search(r"^\[([a-zA-Z0-9_-]+)\]\s+Step\s+", content)
+                    if m2:
+                        tok = m2.group(1)
+                        sess_key = tok if (tok.startswith("traj_") or tok.startswith("session_")) else f"traj_{tok}"
+
+            # 2. Fall back to structured filename prefixes
+            if not sess_key and s_file:
+                base_name = s_file.split("/")[-1].replace(".md", "")
+                parts = base_name.split("_")
+                if base_name.startswith("step_") and len(parts) >= 3:
+                    sess_key = f"{parts[1]}_{parts[2]}"
+                elif any(base_name.startswith(p) for p in ("traj_", "session_", "fact_")):
+                    if len(parts) >= 2:
+                        sess_key = f"{parts[0]}_{parts[1]}"
+
+            if not sess_key:
+                sess_key = s_file or "general_session"
+
+            session_groups.setdefault(sess_key, []).append({
+                "id": mid,
+                "source_file": s_file,
+                "content": content or "",
+                "created_at": created_at,
+                "category": cat,
+            })
+
+        consolidated_results = []
+        for sess_key, steps in session_groups.items():
+            if len(steps) < min_steps:
+                continue
+
+            already_consolidated = conn.execute(
+                "SELECT id FROM memories WHERE deleted_at IS NULL AND (source_file LIKE ? OR tags LIKE ?)",
+                (f"%consolidated_{sess_key}%", f'%session:{sess_key}%'),
+            ).fetchone()
+            if already_consolidated:
+                continue
+
+            derived_from_ids = [s["id"] for s in steps]
+            goal = None
+            status = "UNKNOWN"
+            key_facts = []
+
+            for s in steps:
+                text = s["content"]
+                if not goal:
+                    gm = re.search(r"Goal:\s*([^\n]+)", text, re.IGNORECASE)
+                    if gm:
+                        g_str = gm.group(1).strip()
+                        g_str = re.sub(r"\s*\[(?:STATUS|OUTCOME):[^\]]+\]\s*$", "", g_str).strip()
+                        goal = g_str
+                if "[STATUS:" in text:
+                    sm = re.search(r"\[STATUS:\s*([A-Z_]+)\]", text)
+                    if sm:
+                        status = sm.group(1).strip()
+                elif "[OUTCOME:" in text:
+                    sm = re.search(r"\[OUTCOME:\s*([A-Z_]+)\]", text)
+                    if sm:
+                        status = sm.group(1).strip()
+
+                obs_m = re.search(r"Step\s+\d+\s+Observation:\s*([^\n]+)", text)
+                if obs_m:
+                    obs_raw = obs_m.group(1).strip()
+                    # Extract primary sentence / informative summary (up to 150 chars)
+                    first_sent = obs_raw.split(". ")[0].strip()
+                    if not first_sent.endswith("."):
+                        first_sent += "."
+                    obs_text = first_sent if len(first_sent) <= 150 else first_sent[:147] + "..."
+                    if obs_text and obs_text not in key_facts:
+                        key_facts.append(obs_text)
+
+            summary_lines = [
+                f"[Consolidated Session {sess_key}]",
+                f"Goal: {goal or 'Unspecified task objective'}",
+                f"Outcome Status: {status}",
+                f"Total Episodic Steps Consolidated: {len(steps)}",
+                "",
+                "Key State Transitions & Observations:",
+            ]
+            for i, f in enumerate(key_facts[:10], 1):
+                summary_lines.append(f"{i}. {f}")
+
+            summary_lines.append("")
+            summary_lines.append(f"Derived From: {', '.join(derived_from_ids[:20])}")
+            consolidated_content = "\n".join(summary_lines)
+
+            consolidated_entry = {
+                "session_key": sess_key,
+                "goal": goal,
+                "status": status,
+                "step_count": len(steps),
+                "derived_from_ids": derived_from_ids,
+                "content": consolidated_content,
+            }
+
+            if save_to_db:
+                try:
+                    from save.pipeline import save_memory
+                    saved_id = save_memory(
+                        content=consolidated_content,
+                        category="sessions",
+                        title_slug=f"consolidated_{sess_key}",
+                        tags=["consolidated", "sleep-time", f"session:{sess_key}"],
+                        importance=4,
+                        db_path=db_path,
+                        tenant_id=tenant_id,
+                        evidence_chain=derived_from_ids,
+                        fact_type="derived",
+                        epistemic_source="cron",
+                    )
+                    consolidated_entry["saved_id"] = saved_id
+                except Exception as e:
+                    logger.warning("Failed to save consolidated memory for %s: %s", sess_key, e)
+
+            consolidated_results.append(consolidated_entry)
+
+        return consolidated_results
+    except Exception as e:
+        logger.error("compact_episodic_traces failed: %s", e, exc_info=True)
+        return []
 
 
 from infra.memory_common import make_lazy_getattr
