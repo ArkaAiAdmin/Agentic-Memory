@@ -386,13 +386,12 @@ def find_cross_session_graph_walk(
         clean_seeds,
     ).fetchall()
 
-    if not seed_rows:
-        return []
-
     seed_ids = {r[0] for r in seed_rows}
+    seed_id_list = list(seed_ids)
+    seed_ph = ",".join("?" for _ in seed_id_list)
 
     # CTE recursive search for multi-hop neighbors
-    query = """
+    query = f"""
     WITH RECURSIVE walk(current_id, visited, depth, edge_id, path_ids, path_rels, weight_prod) AS (
         SELECT
             id,
@@ -403,7 +402,7 @@ def find_cross_session_graph_walk(
             ',',
             1.0
         FROM kg_entities
-        WHERE id IN ({seed_placeholders})
+        WHERE id IN ({seed_ph})
 
         UNION ALL
 
@@ -417,7 +416,7 @@ def find_cross_session_graph_walk(
             w.weight_prod * COALESCE(e.weight, 1.0)
         FROM walk w
         JOIN kg_edges e ON (e.source_id = w.current_id OR e.target_id = w.current_id)
-        WHERE w.depth < :max_hops
+        WHERE w.depth < ?
           AND (e.invalid_at IS NULL OR e.invalid_at = '')
           AND instr(w.visited, ',' || (CASE WHEN w.current_id = e.source_id THEN e.target_id ELSE e.source_id END) || ',') = 0
     )
@@ -426,10 +425,8 @@ def find_cross_session_graph_walk(
     WHERE depth > 0
     ORDER BY depth ASC, weight_prod DESC
     """
-    seed_ph = ",".join(str(sid) for sid in seed_ids)
-    formatted_query = query.replace("{seed_placeholders}", seed_ph)
 
-    rows = conn.execute(formatted_query, {"max_hops": max_hops}).fetchall()
+    rows = conn.execute(query, seed_id_list + [max_hops]).fetchall()
     if not rows:
         return []
 
@@ -465,12 +462,14 @@ def find_cross_session_graph_walk(
 
     # Fetch active facts for target entities
     target_ids = [w["target_id"] for w in walk_records]
+    target_id_set = set(target_ids)
     fact_dict: dict[int, list[dict]] = {}
     if target_ids:
         tgt_ph = ",".join("?" for _ in target_ids)
         try:
             fact_rows = conn.execute(
-                f"""SELECT id, subject, predicate, object, confidence, source_memory
+                f"""SELECT id, subject, predicate, object, confidence, source_memory,
+                          subject_entity_id, object_entity_id
                    FROM kg_facts
                    WHERE (subject_entity_id IN ({tgt_ph}) OR object_entity_id IN ({tgt_ph}))
                      AND (superseded_by IS NULL)
@@ -487,8 +486,12 @@ def find_cross_session_graph_walk(
                     "confidence": fr[4],
                     "source_memory": fr[5],
                 }
-                for sid in target_ids:
-                    fact_dict.setdefault(sid, []).append(f_item)
+                sub_id = fr[6]
+                obj_id = fr[7]
+                if sub_id is not None and sub_id in target_id_set:
+                    fact_dict.setdefault(sub_id, []).append(f_item)
+                if obj_id is not None and obj_id in target_id_set and obj_id != sub_id:
+                    fact_dict.setdefault(obj_id, []).append(f_item)
         except Exception:
             pass
 

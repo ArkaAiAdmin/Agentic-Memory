@@ -224,33 +224,43 @@ def _hybrid_fusion(
                 _fts_w *= 1.30
                 _sem_w *= 0.85
             
-            # UI element & DOM state query calibration: observation facts live in chunk FTS & SPLADE
+            # Structural / localized observation query calibration: granular facts live in chunk FTS
             q_lower = normalized_query.lower()
-            if any(
-                kw in q_lower
-                for kw in (
-                    "dropdown", "checkbox", "checkboxes", "button", "dialog", "popup",
-                    "selected label", "personalize", "comparator", "state dropdown",
-                    "default value", "completion code", "title of that box",
-                    "bottom-most", "checked by default", "unchecked", "menu values",
-                    "sort row", "sort field", "related links", "menu item", "menu items",
-                    "confirmation page"
-                )
-            ):
+            _is_ui_structure = bool(re.search(
+                r"\b(dropdown|select|option|options|menu|button|checkbox|checkboxes|dialog|popup|"
+                r"value|values|label|field|fields|column|table|row|header|link|links|tab|tabs|"
+                r"filter|filters|sort|sorted|default|status|state|page|form|section)\b",
+                q_lower,
+            ))
+            if _is_ui_structure:
                 _chunk_fts_w *= 1.25
-                _splade_w *= 1.20
+                _splade_w *= 1.15
+
+            _is_procedure = (q_type == "procedure") or bool(re.search(
+                r"\b(procedure|workflow|sequence|steps|navigate|create and assign|single procedure)\b",
+                q_lower,
+            ))
+            if _is_procedure:
+                _fts_w *= 1.15
+                _sem_w *= 1.20
+                _chunk_fts_w *= 1.05
         except Exception:
+            _is_procedure = False
             pass
 
-        # Adaptive weighting: boost semantic for abstract/synonym queries
-        # Check if FTS has few results (indicates vocabulary mismatch)
+        # Adaptive weighting:
+        # 1. Boost semantic for abstract/synonym queries when FTS has few results
+        # 2. When FTS has high-confidence lexical results (>20) and query is not multi-hop,
+        #    prioritize lexical channels over dense neural noise
         fts_count = len(fts_ranked)
         _sem_boost_threshold = int(getattr(_sc, "hybrid_sem_boost_threshold", 0))
         if _sem_boost_threshold > 0 and fts_count < _sem_boost_threshold:
-            # FTS found few results — this is likely an abstract query
-            # Boost semantic weight to find semantically similar content
             _sem_w = _sem_w * 2.0
             logger.debug("hybrid_fusion: boosting semantic weight for abstract query (fts=%d)", fts_count)
+        elif fts_count >= 20 and q_type not in ("multihop", "inference"):
+            _fts_w *= 1.20
+            _chunk_fts_w *= 1.15
+            _sem_w *= 0.80
 
         # Fusion over Document FTS, Semantic, Chunk FTS, and SPLADE
         rrf = _reciprocal_rank_fusion(
@@ -258,6 +268,11 @@ def _hybrid_fusion(
             k=_rrf_k,
             weights=[_fts_w, _sem_w, _chunk_fts_w, _splade_w]
         )
+
+        if _is_procedure:
+            for doc_id in list(rrf.keys()):
+                if doc_id.startswith("consolidated_") or "session" in doc_id:
+                    rrf[doc_id] *= 1.25
 
         # Single-channel rescue: documents appearing in only 1 channel
         # but ranking high there get a floor score so they aren't buried.
@@ -451,6 +466,43 @@ def _enhance_with_chunks(
                 )
             )
             seen_ids.add(parent_id)
+
+        # Search-side session bundling: bundle consolidated session summaries for top hits
+        # so multi-step narrative context is genuinely retrieved by the search engine
+        bundle_mids = []
+        for r in results[:5]:
+            rid = str(r[0]) if r and len(r) > 0 else ""
+            m_sess = re.search(r"traj_([0-9a-fA-F]+)", rid)
+            if m_sess:
+                sess_key = m_sess.group(1)
+                for cand in (f"consolidated_traj_{sess_key}", f"traj_{sess_key}"):
+                    if cand not in seen_ids and cand not in bundle_mids:
+                        bundle_mids.append(cand)
+
+        if bundle_mids:
+            bundle_rows = _fetch_rows_by_ids(db, bundle_mids, extra_filter=repo_filter)
+            base_rank = min((float(r[5]) for r in results if len(r) > 5 and r[5] is not None), default=0.0)
+            _supp_rank = base_rank + 0.1
+            for b_mid, b_row in bundle_rows.items():
+                if b_mid not in seen_ids:
+                    seen_ids.add(b_mid)
+                    results.append(
+                        (
+                            b_mid,
+                            b_row[1] if len(b_row) > 1 else "",
+                            b_row[2] if len(b_row) > 2 else "",
+                            b_row[3] if len(b_row) > 3 else None,
+                            b_row[4] if len(b_row) > 4 else "",
+                            _supp_rank,
+                            b_row[5] if len(b_row) > 5 else None,
+                            b_row[6] if len(b_row) > 6 else None,
+                            b_row[7] if len(b_row) > 7 else None,
+                            b_row[8] if len(b_row) > 8 else None,
+                            b_row[9] if len(b_row) > 9 else None,
+                            b_row[10] if len(b_row) > 10 else 1,
+                        )
+                    )
+                    _supp_rank += 0.05
     except Exception as _chunk_exc:
         _phase_inc("search.chunk_enhancement", _chunk_exc)
         logger.warning("chunk_enhancement failed: %s", _chunk_exc)

@@ -49,6 +49,24 @@ def _build_fts_query(query_lower: str) -> str | None:
     return " OR ".join(safe)
 
 
+_KG_FACTS_COLS_CACHE: dict[int, set[str]] = {}
+
+
+def _get_kg_facts_cols(conn: AnyConnection) -> set[str]:
+    conn_id = id(conn)
+    cols = _KG_FACTS_COLS_CACHE.get(conn_id)
+    if cols is not None:
+        return cols
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
+        if cols:
+            _KG_FACTS_COLS_CACHE[conn_id] = cols
+            return cols
+    except Exception:
+        pass
+    return set()
+
+
 def _facts_search_fts(
     conn: AnyConnection, fts_query: str, limit: int, include_superseded: bool = False
 ) -> list[sqlite3.Row] | None:
@@ -61,8 +79,7 @@ def _facts_search_fts(
     try:
         where_extra = ""
         if not include_superseded:
-            # Check if columns exist
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
+            cols = _get_kg_facts_cols(conn)
             if "superseded_by" in cols and "invalid_at" in cols:
                 where_extra = " AND kf.superseded_by IS NULL AND (kf.invalid_at IS NULL OR kf.invalid_at = '')"
             elif "superseded_by" in cols:
@@ -95,7 +112,7 @@ def _facts_search_like(
     where_extra = ""
     try:
         if not include_superseded:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
+            cols = _get_kg_facts_cols(conn)
             if "superseded_by" in cols and "invalid_at" in cols:
                 where_extra = " AND superseded_by IS NULL AND (invalid_at IS NULL OR invalid_at = '')"
             elif "superseded_by" in cols:
@@ -205,7 +222,7 @@ def facts_list(
     params: list = [min_confidence]
     if not include_superseded:
         try:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
+            cols = _get_kg_facts_cols(conn)
             if "superseded_by" in cols and "invalid_at" in cols:
                 conditions.append("(superseded_by IS NULL AND (invalid_at IS NULL OR invalid_at = ''))")
             elif "superseded_by" in cols:

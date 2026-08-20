@@ -202,12 +202,9 @@ _WORD_FORM_EXPANSIONS: dict[str, list[str]] = {
 _SYNONYM_MAP: dict[str, set[str]] = {
     # Docker / container ecosystem
     "docker": {"container", "containerize", "containerization", "containerd", "dockerd", "moby"},
-    "container": {"docker", "containerize", "containerization", "containerd", "oci", "image"},
+    "container": {"docker", "containerize", "containerization"},
     "containerize": {"docker", "container", "containerization"},
     "containerization": {"docker", "container", "containerize"},
-    "image": {"container", "docker", "layer", "snapshot"},
-    "registry": {"dockerhub", "harbor", "quay", "ecr", "gcr", "artifact"},
-    "compose": {"docker-compose", "docker compose", "stack", "service"},
     "dockerfile": {"dockerfile", "containerfile", "build"},
     "containerd": {"docker", "container", "cri-o", "cri"},
     "cri-o": {"containerd", "cri", "container"},
@@ -216,24 +213,17 @@ _SYNONYM_MAP: dict[str, set[str]] = {
     "kubernetes": {"k8s", "kube", "orchestration", "cluster"},
     "k8s": {"kubernetes", "kube", "orchestration"},
     "kube": {"kubernetes", "k8s"},
-    "pod": {"kubernetes", "k8s", "workload", "container"},
-    "deployment": {"kubernetes", "k8s", "rollout", "release", "kustomize"},
-    "service": {"kubernetes", "k8s", "endpoint", "lb", "loadbalancer"},
-    "ingress": {"kubernetes", "k8s", "gateway", "loadbalancer", "proxy"},
+    "kubectl": {"kubernetes", "k8s", "cli", "ctl"},
     "helm": {"kubernetes", "k8s", "chart", "package"},
     "kustomize": {"kubernetes", "k8s", "overlay", "patch"},
     "etcd": {"kubernetes", "k8s", "distributed", "key-value", "raft"},
     "kubelet": {"kubernetes", "k8s", "node", "agent"},
-    "kubectl": {"kubernetes", "k8s", "cli", "ctl"},
-    "namespace": {"kubernetes", "k8s", "ns", "tenant", "scope", "isolation", "workspace"},
     "configmap": {"kubernetes", "k8s", "config", "env"},
-    "secret": {"kubernetes", "k8s", "credential", "vault"},
     "persistentvolume": {"kubernetes", "k8s", "pv", "pvc", "storage"},
     "persistentvolumeclaim": {"kubernetes", "k8s", "pvc", "pv", "storage"},
     "statefulset": {"kubernetes", "k8s", "sts", "stateful"},
     "daemonset": {"kubernetes", "k8s", "ds", "daemon"},
-    "job": {"kubernetes", "k8s", "cronjob", "batch"},
-    "cronjob": {"kubernetes", "k8s", "job", "schedule", "cron"},
+    "cronjob": {"kubernetes", "k8s", "schedule", "cron"},
     "hpa": {"kubernetes", "k8s", "autoscaling", "horizontal", "scale"},
     "serviceaccount": {"kubernetes", "k8s", "sa", "rbac", "auth"},
     "rbac": {"kubernetes", "k8s", "access", "permission", "auth", "serviceaccount", "role-based access", "access control", "authorization", "permissions"},
@@ -250,18 +240,11 @@ _SYNONYM_MAP: dict[str, set[str]] = {
     "valkey": {"redis", "cache", "key-value"},
     "mongodb": {"mongo", "nosql", "document", "atlas"},
     "mongo": {"mongodb", "nosql", "document"},
-    "query": {"search", "lookup", "find", "retrieve", "select", "sql"},
-    "index": {"search", "lookup", "query", "key"},
-    "schema": {"migration", "ddl", "structure", "table", "blueprint"},
+    "schema": {"migration", "ddl", "structure", "blueprint"},
     "migration": {"schema", "ddl", "migrate", "evolve"},
-    "table": {"relation", "entity", "collection", "view"},
-    "view": {"table", "query", "materialized"},
-    "trigger": {"hook", "callback", "event", "notify"},
-    "constraint": {"validation", "check", "rule", "foreign", "unique", "key"},
     "transaction": {"tx", "atomic", "commit", "rollback", "acid"},
     "acid": {"transaction", "atomic", "consistency", "isolation", "durability"},
     "orm": {"sqlalchemy", "prisma", "django", "sequelize", "entity", "hibernate"},
-    "join": {"relation", "association", "merge", "link"},
     "shard": {"partition", "horizontal", "scale", "fragment"},
     "replica": {"standby", "read-only", "secondary", "failover"},
     "backup": {"dump", "snapshot", "restore", "save", "copy", "archive", "preserve"},
@@ -844,7 +827,7 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "orchestrat": ["orchestrate", "orchestrates", "orchestrated", "orchestrating", "orchestration", "orchestrator", "orchestrators"],
     "observ": ["observe", "observes", "observed", "observing", "observation", "observations", "observability", "observable"],
     "package": ["pkg", "packages", "library", "containerize", "services"],
-    "applications": ["services", "apps", "app", "containerized"],
+    "applications": ["application", "applications", "apps", "app"],
     "index": ["indexes", "indexed", "indexing", "indices", "search", "lookup"],
     "queries": ["search", "lookup", "find", "retrieval"],
     # Personal/lifestyle expansions for LongMemEval-style queries
@@ -855,7 +838,7 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "favorite": ["favorite", "favourite", "preferred", "best", "top"],
     "music": ["music", "song", "songs", "playlist", "artist", "band", "album"],
     "streaming": ["streaming", "stream", "spotify", "apple music", "youtube music", "tidal", "pandora"],
-    "service": ["service", "platform", "app", "application"],
+    "service": ["service", "services"],
     "coffee": ["coffee", "cafe", "brew", "espresso", "latte"],
     "recipe": ["recipe", "recipes", "dish", "meal", "cook", "cooking"],
     "restaurant": ["restaurant", "dining", "eat", "food", "cuisine"],
@@ -1473,7 +1456,7 @@ def _extract_inference_entity(query: str) -> tuple[str | None, list[str]]:
     return entity, concept_words
 
 
-def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybrid") -> tuple[str, str, str, list[str]]:
+def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybrid", q_type: str | None = None) -> tuple[str, str, str, list[str]]:
     """Parse a search query into components.
 
     Returns (normalized_query, fts_query, bare_query_text, graph_rag_terms).
@@ -1555,6 +1538,46 @@ def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybri
             terms = [_escape_phrase(p) for p in phrases if p.strip()]
             terms += [_escape_fts_query(w) for w in content_words if w]
             fts_query = " AND ".join(terms) if terms else ""
+
+    # Anchor Entity Extraction for negative / abstention queries
+    # When a query asks if a specific non-existent field/action exists (e.g. "contains 'Amortiz'"),
+    # extract the container anchor entity (e.g. "Personalize Form dialog", "Hardware Asset record")
+    # so search retrieves the grounding session rather than matching zero on the negative keyword.
+    # Gate on q_type ending in '-abs' to avoid stripping legitimate answer tokens from
+    # non-abstention queries (e.g. "which filter contains 'Incident'" where Incident IS the answer).
+    anchor_terms = []
+    if q_type and q_type.endswith("-abs"):
+        neg_match = re.search(
+            r"(?:which|what)\s+.*(?:contain|have|show|with|is)\s+.*['\"]([^'\"]+)['\"]|is there any\s+.*with\b|\bdoes not\b",
+            _clean_q,
+            re.IGNORECASE,
+        )
+        if neg_match:
+            containers = re.findall(
+                r"(?:dialog|form|record|list|page|view|table|tab|section|menu)\s*['\"]?([^'\"\n,;\.]{3,35})",
+                _clean_q,
+                re.IGNORECASE,
+            )
+            for c in containers:
+                c_clean = c.strip()
+                if len(c_clean) > 3 and c_clean.lower() not in _STOP_WORDS:
+                    anchor_terms.append(c_clean)
+
+    # Exact UI Phrase & Section Extraction (Opportunities 3 & 4)
+    # Extract capitalized UI elements, quoted dialog names, and section headers (e.g. 'Personalize Form', 'Related Links')
+    ui_phrases = re.findall(r"[`'\"]([A-Z][\w\s\-]{2,35})[`'\"]", _clean_q)
+    if "related links" in _clean_q.lower() or "related items" in _clean_q.lower():
+        ui_phrases.append("Related Links")
+
+    clean_ui = [p.strip() for p in ui_phrases if len(p.strip()) > 3 and p.strip().lower() not in _STOP_WORDS]
+
+    extra_boost_terms = list(anchor_terms) + [p for p in clean_ui if p not in anchor_terms]
+    if extra_boost_terms:
+        boost_clause = " OR ".join(_escape_phrase(b) for b in extra_boost_terms)
+        if fts_query:
+            fts_query = f"({fts_query}) OR ({boost_clause})"
+        else:
+            fts_query = boost_clause
 
     if not fts_query.strip() and bare_words:
         # Fallback for stopword-only queries: use original bare words as FTS terms

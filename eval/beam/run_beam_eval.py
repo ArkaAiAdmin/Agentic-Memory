@@ -736,18 +736,18 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
 
         score = 0.0
         if q["type"] == "abstention":
+            # Honest abstention: only 1.0 if retrieved context actually abstains
+            # Empty results = system correctly withholds -> 1.0, otherwise require explicit abstention phrase
             if not search_results:
                 score = 1.0
             else:
-                has_confident = False
                 for r in search_results[:3]:
                     content = r["content"].lower()
                     if any(w in content for w in ["unknown", "not mentioned", "no information",
                                                    "not specified", "unclear", "don't know"]):
                         score = 1.0
                         break
-                if score == 0.0:
-                    score = 1.0
+                # No fallback — if no abstention phrase found, score stays 0.0 (hallucinated)
         else:
             if search_results:
                 if q["type"] == "multi_hop" and " and " in q["expected_answer"]:

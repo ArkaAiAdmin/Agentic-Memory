@@ -389,15 +389,34 @@ def compact_episodic_traces(
             })
 
         consolidated_results = []
+        # Pre-fetch existing consolidated sessions in a single query (O(1) lookup per group)
+        existing_consolidated_sessions: set[str] = set()
+        try:
+            for (c_sfile, c_tags_raw) in conn.execute(
+                """SELECT source_file, tags FROM memories
+                   WHERE deleted_at IS NULL
+                     AND (source_file LIKE '%consolidated_%' OR tags LIKE '%session:%')"""
+            ).fetchall():
+                if c_sfile:
+                    base = c_sfile.split("/")[-1].replace(".md", "")
+                    if base.startswith("consolidated_"):
+                        existing_consolidated_sessions.add(base[len("consolidated_"):])
+                if c_tags_raw:
+                    try:
+                        t_list = json.loads(c_tags_raw) if c_tags_raw.startswith("[") else [t.strip() for t in c_tags_raw.split(",")]
+                        for tag in t_list:
+                            if tag.startswith("session:"):
+                                existing_consolidated_sessions.add(tag[len("session:"):])
+                    except Exception:
+                        pass
+        except Exception as _e:
+            logger.debug("Failed to pre-fetch existing consolidated sessions: %s", _e)
+
         for sess_key, steps in session_groups.items():
             if len(steps) < min_steps:
                 continue
 
-            already_consolidated = conn.execute(
-                "SELECT id FROM memories WHERE deleted_at IS NULL AND (source_file LIKE ? OR tags LIKE ?)",
-                (f"%consolidated_{sess_key}%", f'%session:{sess_key}%'),
-            ).fetchone()
-            if already_consolidated:
+            if sess_key in existing_consolidated_sessions:
                 continue
 
             derived_from_ids = [s["id"] for s in steps]

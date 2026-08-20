@@ -1574,8 +1574,9 @@ def search_memories(
         graph_rag_terms: list[str] = []
     else:
         mode_effective = "light" if light else mode
+        _search_qtype = _detect_query_type(query)
         normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
-            query, db_path, conn=db, mode=mode_effective
+            query, db_path, conn=db, mode=mode_effective, q_type=_search_qtype
         )
         _reasoning_t0 = time.time()
         expansion_terms = _reasoning_expand(db_path, query, conn=db)
