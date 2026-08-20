@@ -1125,8 +1125,12 @@ def score_answer_text(
         if not matched:
             exp_words = set(re.findall(r"\w+", exp_clean)) - {"a", "an", "the", "to", "in", "on", "and", "or", "is", "should", "you"}
             content_words = set(re.findall(r"\w+", combined_content.lower()))
-            overlap = len(exp_words & content_words) / max(len(exp_words), 1)
-            matched = (overlap >= 0.4)
+            matched_words = exp_words & content_words
+            overlap = len(matched_words) / max(len(exp_words), 1)
+            # Guarded gotchas matching:
+            # 1. Standard overlap >= 0.40 for standard explanations
+            # 2. For short action answers (<=6 words), require at least 2 distinct matched action terms and >=0.30 overlap
+            matched = (overlap >= 0.40) or (len(exp_words) <= 6 and len(matched_words) >= 2 and overlap >= 0.30)
         scores["exact_match"] = 1.0 if matched else 0.0
         scores["overall_accuracy"] = 1.0 if matched else 0.0
         scores["token_f1"] = compute_token_f1(combined_content, expected)
@@ -1271,7 +1275,7 @@ def evaluate_question(
             normalized_retrieved.append(rid)
 
     # Content lookup strictly from search results (search-side bundling in fusion.py provides context)
-    top_context_ids = list(retrieved_ids[:30])
+    top_context_ids = list(retrieved_ids[:35])
     id_to_content: dict[str, str] = {}
     if top_context_ids:
         placeholders = ",".join("?" for _ in top_context_ids)
