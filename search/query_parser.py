@@ -943,18 +943,15 @@ def _expand_query(query: str) -> str:
             # Try synonym map expansion
             synonyms = _SYNONYM_MAP.get(low)
             if synonyms:
-                syn_unique: list[str] = []
+                syn_unique: list[str] = [tok]
+                seen_forms.add(low)
                 for s in sorted(synonyms, key=len, reverse=True):
                     sl = s.lower()
                     if sl not in seen_forms:
                         syn_unique.append(s)
                         seen_forms.add(sl)
-                # Always include the original token
-                if syn_unique:
-                    quoted = " OR ".join((f'"{f}"' for f in syn_unique))
-                    expanded_tokens.append(f"({quoted})")
-                else:
-                    expanded_tokens.append(f'"{tok}"')
+                quoted = " OR ".join((f'"{f}"' for f in syn_unique))
+                expanded_tokens.append(f"({quoted})")
             else:
                 # Try word form expansion (porters-stemmer cross-form matching)
                 expanded = False

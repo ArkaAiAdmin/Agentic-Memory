@@ -103,19 +103,22 @@ def _match_query_entities(conn, query_lower: str, limit: int) -> list:
     """
     entities: list = []
     try:
-        tokens = query_lower.split()
-        if len(tokens) == 1:
-            fts_query = f'"{tokens[0]}"'
-        else:
-            fts_query = " OR ".join(f'"{t}"' for t in tokens)
-        entities = conn.execute(
-            "SELECT ge.id, ge.name, ge.entity_type, ge.mentions "
-            "FROM kg_entities_fts "
-            "JOIN kg_entities ge ON ge.rowid = kg_entities_fts.rowid "
-            "WHERE kg_entities_fts MATCH ? "
-            "LIMIT ?",
-            (fts_query, limit * 3),
-        ).fetchall()
+        import re as _re
+        clean_tokens = [_re.sub(r'["\']', '', t).strip() for t in query_lower.split()]
+        clean_tokens = [t for t in clean_tokens if t]
+        if clean_tokens:
+            if len(clean_tokens) == 1:
+                fts_query = f'"{clean_tokens[0]}"'
+            else:
+                fts_query = " OR ".join(f'"{t}"' for t in clean_tokens)
+            entities = conn.execute(
+                "SELECT ge.id, ge.name, ge.entity_type, ge.mentions "
+                "FROM kg_entities_fts "
+                "JOIN kg_entities ge ON ge.rowid = kg_entities_fts.rowid "
+                "WHERE kg_entities_fts MATCH ? "
+                "LIMIT ?",
+                (fts_query, limit * 3),
+            ).fetchall()
     except Exception:
         logger.warning("FTS5 query failed for entity search, falling back to LIKE scan")
 

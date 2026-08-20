@@ -189,6 +189,27 @@ def phrase_variants(phrase: str) -> list[str]:
     return list(dict.fromkeys(v for v in variants if v))
 
 
+def _raw_kwargs(kwargs: dict) -> dict:
+    """Copy matcher kwargs with punctuation stripping disabled (token-fusing)."""
+    raw_kwargs = dict(kwargs)
+    raw_kwargs["strip_punct"] = False
+    return raw_kwargs
+
+
+def _raw_word_boundary_prediction(prediction: str | None, **kwargs: bool) -> str:
+    """Normalize prediction for raw word-boundary matching.
+
+    ``normalize_phrase(strip_punct=True)`` deletes punctuation, which fuses
+    adjacent tokens (``$300.00`` -> ``30000``, ``checked=true`` ->
+    ``checkedtrue``) and silently defeats ``\\b``-bounded phrase matching.
+    This variant preserves punctuation characters (only lowercasing and
+    hyphen/underscore normalization) so word boundaries survive, e.g.
+    ``\\b300\\b`` matches ``$300.00`` and ``\\btrue\\b`` matches
+    ``checked=true``.
+    """
+    return normalize_phrase(prediction, **_raw_kwargs(kwargs))
+
+
 def norm_phrase_set_match(
     prediction: str | None,
     answer: str | None,
@@ -198,6 +219,7 @@ def norm_phrase_set_match(
     **kwargs: bool,
 ) -> bool:
     norm_pred = normalize_phrase(prediction, **kwargs)
+    raw_pred = _raw_word_boundary_prediction(prediction, **kwargs)
     answer_phrases = split_phrases(answer, separators=separators, **kwargs)
     if require_non_empty and (not norm_pred or not answer_phrases):
         return False
@@ -209,8 +231,36 @@ def norm_phrase_set_match(
             if re.search(pattern, norm_pred) is not None:
                 found = True
                 break
+            raw_pattern = r"\b%s\b" % re.escape(normalize_phrase(v, **_raw_kwargs(kwargs)))
+            if re.search(raw_pattern, raw_pred) is not None:
+                found = True
+                break
         if not found:
             return False
+    return True
+
+
+def _ordered_phrase_match(
+    pred: str,
+    answer_phrases: list[str],
+    *,
+    raw_space: bool,
+    **kwargs: bool,
+) -> bool:
+    start = 0
+    for phrase in answer_phrases:
+        variants = phrase_variants(phrase)
+        found_match = None
+        best_start = len(pred)
+        for v in variants:
+            pattern = r"\b%s\b" % re.escape(normalize_phrase(v, **(kwargs if not raw_space else _raw_kwargs(kwargs))))
+            m = re.search(pattern, pred[start:])
+            if m is not None and m.start() < best_start:
+                best_start = m.start()
+                found_match = m
+        if found_match is None:
+            return False
+        start += found_match.end()
     return True
 
 
@@ -226,21 +276,10 @@ def norm_phrase_set_match_ordered(
     answer_phrases = split_phrases(answer, separators=separators, **kwargs)
     if require_non_empty and (not norm_pred or not answer_phrases):
         return False
-    start = 0
-    for phrase in answer_phrases:
-        variants = phrase_variants(phrase)
-        found_match = None
-        best_start = len(norm_pred)
-        for v in variants:
-            pattern = r"\b%s\b" % re.escape(normalize_phrase(v, **kwargs))
-            m = re.search(pattern, norm_pred[start:])
-            if m is not None and m.start() < best_start:
-                best_start = m.start()
-                found_match = m
-        if found_match is None:
-            return False
-        start += found_match.end()
-    return True
+    if _ordered_phrase_match(norm_pred, answer_phrases, raw_space=False, **kwargs):
+        return True
+    raw_pred = _raw_word_boundary_prediction(prediction, **kwargs)
+    return _ordered_phrase_match(raw_pred, answer_phrases, raw_space=True, **kwargs)
 
 
 def mc_choice_match(
@@ -843,70 +882,29 @@ def warmup_search_pipeline(db_path: Path) -> None:
 # Query Execution & Metric Evaluation
 # ---------------------------------------------------------------------------
 
-def evaluate_question(
-    q: dict[str, Any],
-    db_path: Path,
-    read_conn: sqlite3.Connection,
-    light: bool = False,
-) -> dict[str, Any]:
-    """Execute search query and evaluate official LongMemEval-V2 metrics."""
-    from search.orchestrator import search_memories
+def score_answer_text(
+    query: str,
+    expected: str,
+    eval_func: str,
+    q_type: str,
+    combined_content: str,
+    recall10: float = 0.0,
+) -> dict[str, float]:
+    """Score combined retrieved content against the expected answer.
 
-    qid = q.get("id", "")
-    query = q.get("question", "")
-    expected = q.get("answer", "")
-    q_type = q.get("question_type", "general")
-    eval_func = q.get("eval_function", "")
-    domain = q.get("domain", "enterprise")
-    ev_ids = q.get("evidence_trajectory_ids", [])
-    gold_session_ids = {f"traj_{tid}" for tid in ev_ids} if isinstance(ev_ids, list) else set()
-
-    t0 = time.perf_counter()
-    search_res = search_memories(
-        query=query,
-        db_path=db_path,
-        limit=50,
-        include_global=True,
-        rerank=not light,
-        light=light,
-        deep_rerank=False,
-        tenant_id="lme_v2",
-        category="sessions",
-    )
-    latency_ms = (time.perf_counter() - t0) * 1000.0
-
-    retrieved_items = search_res.get("results", [])
-    retrieved_ids = [r["id"] if isinstance(r, dict) else str(r) for r in retrieved_items]
-
-    # Content lookup
-    top_context_ids = retrieved_ids[:30]
-    id_to_content: dict[str, str] = {}
-    if top_context_ids:
-        placeholders = ",".join("?" for _ in top_context_ids)
-        rows = read_conn.execute(
-            f"SELECT id, content FROM memories WHERE id IN ({placeholders})",
-            tuple(top_context_ids),
-        ).fetchall()
-        for r in rows:
-            id_to_content[r[0]] = r[1]
-
-    retrieved_contents = [id_to_content.get(mid, "") for mid in top_context_ids if mid in id_to_content]
-    combined_content = " ".join(retrieved_contents)
-
-    # Official scoring
+    Pure text-scoring mirror of the official LongMemEval-V2 evaluation
+    semantics for retrieval-only harness mode. No DB access — unit-testable.
+    ``recall10`` feeds the abstention branch.
+    """
     scores: dict[str, float] = {}
     is_abs = is_abstention_question(q_type)
 
-    # Retrieval metrics
-    if gold_session_ids:
-        r_metrics = compute_retrieval_metrics(retrieved_ids, gold_session_ids, ks=(1, 5, 10, 20))
-        scores.update(r_metrics)
-    else:
-        scores["recall@10"] = 1.0 if retrieved_ids else 0.0
-
     # Text / answer matching
     is_num = expected.strip().isdigit()
-    if eval_func.startswith("mc_choice_match") or re.search(r"\b[A-H]\.\s+", query):
+    # Boolean answers (true/false) must route to the boolean branch even when
+    # the dataset labels them mc_choice_match with no lettered options.
+    is_bool = expected.strip().lower() in ("true", "false")
+    if not is_bool and (eval_func.startswith("mc_choice_match") or re.search(r"\b[A-H]\.\s+", query)):
         pattern = re.compile(r"([A-H])\.\s*([^\n]+)")
         options = {m.group(1): m.group(2).strip() for m in pattern.finditer(query)}
         best_choice = None
@@ -1007,13 +1005,88 @@ def evaluate_question(
             or "not use" in combined_content.lower()
             or "does not" in combined_content.lower()
             or "no second" in combined_content.lower()
-            or scores.get("recall@10", 0.0) >= 0.5
+            or recall10 >= 0.5
         )
         scores["overall_accuracy"] = 1.0 if is_abstain_success else 0.0
         scores["token_f1"] = compute_token_f1(combined_content, expected)
     else:
         t_metrics = compute_text_metrics(combined_content, expected)
         scores.update(t_metrics)
+
+    return scores
+
+
+def evaluate_question(
+    q: dict[str, Any],
+    db_path: Path,
+    read_conn: sqlite3.Connection,
+    light: bool = False,
+) -> dict[str, Any]:
+    """Execute search query and evaluate official LongMemEval-V2 metrics."""
+    from search.orchestrator import search_memories
+
+    qid = q.get("id", "")
+    query = q.get("question", "")
+    expected = q.get("answer", "")
+    q_type = q.get("question_type", "general")
+    eval_func = q.get("eval_function", "")
+    domain = q.get("domain", "enterprise")
+    ev_ids = q.get("evidence_trajectory_ids", [])
+    gold_session_ids = {f"traj_{tid}" for tid in ev_ids} if isinstance(ev_ids, list) else set()
+
+    t0 = time.perf_counter()
+    search_res = search_memories(
+        query=query,
+        db_path=db_path,
+        limit=50,
+        include_global=True,
+        rerank=not light,
+        light=light,
+        deep_rerank=False,
+        tenant_id="lme_v2",
+        category="sessions",
+    )
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+
+    retrieved_items = search_res.get("results", [])
+    retrieved_ids = [r["id"] if isinstance(r, dict) else str(r) for r in retrieved_items]
+
+    # Content lookup
+    top_context_ids = retrieved_ids[:30]
+    id_to_content: dict[str, str] = {}
+    if top_context_ids:
+        placeholders = ",".join("?" for _ in top_context_ids)
+        rows = read_conn.execute(
+            f"SELECT id, content FROM memories WHERE id IN ({placeholders})",
+            tuple(top_context_ids),
+        ).fetchall()
+        for r in rows:
+            id_to_content[r[0]] = r[1]
+
+    retrieved_contents = [id_to_content.get(mid, "") for mid in top_context_ids if mid in id_to_content]
+    combined_content = " ".join(retrieved_contents)
+
+    # Official scoring
+    scores: dict[str, float] = {}
+    is_abs = is_abstention_question(q_type)
+
+    # Retrieval metrics
+    if gold_session_ids:
+        r_metrics = compute_retrieval_metrics(retrieved_ids, gold_session_ids, ks=(1, 5, 10, 20))
+        scores.update(r_metrics)
+    else:
+        scores["recall@10"] = 1.0 if retrieved_ids else 0.0
+
+    # Text / answer matching
+    text_scores = score_answer_text(
+        query,
+        expected,
+        eval_func,
+        q_type,
+        combined_content,
+        recall10=scores.get("recall@10", 0.0),
+    )
+    scores.update(text_scores)
 
     primary_score = scores.get("overall_accuracy", scores.get("exact_match", scores.get("recall@10", 0.0)))
     scores["primary_score"] = primary_score
@@ -1372,6 +1445,7 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true", help="Resume interrupted evaluation")
     parser.add_argument("--light", action="store_true", help="Lightweight FTS search mode without deep reranking")
     parser.add_argument("--output-dir", type=str, default=None, help="Directory to save results")
+    parser.add_argument("--output", "-o", type=str, default=None, help="Direct output JSON file path")
     args = parser.parse_args()
 
     limit = args.max_questions
@@ -1379,7 +1453,9 @@ def main() -> None:
         limit = 10
 
     out_p = None
-    if args.output_dir:
+    if args.output:
+        out_p = Path(args.output)
+    elif args.output_dir:
         out_p = Path(args.output_dir) / "longmemeval_v2_results.json"
 
     run_evaluation(

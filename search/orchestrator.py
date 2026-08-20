@@ -1455,7 +1455,7 @@ def search_memories(
 
     # Guard: whitespace-only or empty queries should return 0 results
     # immediately, before reasoning-expand can inject spurious OR terms.
-    if not query or not query.strip():
+    if not query or not str(query).strip():
         return {
             "results": [],
             "count": 0,
@@ -1464,6 +1464,23 @@ def search_memories(
             "agent_scope": _get_agent_scope(),
             "query_id": uuid.uuid4().hex,
         }
+
+    # General conversational query prefix normalization (e.g. "I am looking for...", "Please find...")
+    # and backtick/quote literal phrase extraction from question body.
+    _conv_prefix_re = re.compile(
+        r"^(?:(?:i am|i'm)\s+(?:working on|looking for|trying to find|searching for|in need of)|"
+        r"please\s+(?:find|show|give me|tell me)|"
+        r"(?:can|could)\s+you\s+(?:find|show|tell me|give me))\s+",
+        flags=re.IGNORECASE,
+    )
+    q_body = re.split(r"\n\s*[A-H]\.\s+", query)[0]
+    quoted_terms = re.findall(r"[`\"]([^`\"]{2,60})[`\"]", q_body)
+    q_cleaned = _conv_prefix_re.sub("", query).strip()
+    if q_cleaned:
+        if quoted_terms:
+            query = f"{q_cleaned} " + " ".join(f'"{t}"' for t in quoted_terms)
+        else:
+            query = q_cleaned
 
     # M8 fix: per-call latency dict via threading.local() so concurrent
     # searches don't overwrite each other's phase timings.
