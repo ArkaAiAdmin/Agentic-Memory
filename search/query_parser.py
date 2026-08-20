@@ -1176,7 +1176,14 @@ def _top_recent_notes(db_path, limit: int = 5, tenant_id: str = "default") -> li
                 "\n                SELECT id, substr(content, 1, 80) as preview, observed_at\n                FROM tenant_memories\n                ORDER BY observed_at DESC\n                LIMIT ?\n            ",
                 (limit,),
             ).fetchall()
-            return [{"id": r[0], "preview": r[1], "observed_at": r[2]} for r in rows]
+            return [
+                {
+                    "id": r[0] if len(r) > 0 else "",
+                    "preview": r[1] if len(r) > 1 else "",
+                    "observed_at": r[2] if len(r) > 2 else "",
+                }
+                for r in rows
+            ]
         finally:
             safe_close_db(conn)
     except (sqlite3.OperationalError, sqlite3.DatabaseError):

@@ -327,14 +327,14 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None, tena
     for pred in _ENTAILMENT_PREDICATES:
         # Support both with and without internal underscores in the user query.
         readable = pred.replace("_", " ")
-        if readable in q_lower:
+        if readable in q_lower or (pred == "is_a" and re.search(r"\bis\b", q_lower)):
             matched_predicate = pred
             break
     if matched_predicate is None:
         return []
     # Extract entity term: take the longest word sequence around the predicate.
     parts = re.split(
-        r"\b(?:is a|is type of|subclass of|instance of|part of|has part|located in)\b",
+        r"\b(?:is a|is type of|subclass of|instance of|part of|has part|located in|is)\b",
         q_lower,
         flags=re.IGNORECASE,
     )

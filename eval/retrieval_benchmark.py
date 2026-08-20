@@ -157,7 +157,7 @@ def _insert_memory(
                 (id, content, source_file, tags, created_at, updated_at,
                  observed_at, pinned, importance, category, repo_id,
                  access_count, success_score, fitness_score, tenant_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, ?, ?, 1, 0.0, 1.0, 'bench')
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, ?, ?, 1, 0.0, 1.0, 'default')
             """,
             (
                 note_id,

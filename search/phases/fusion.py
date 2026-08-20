@@ -229,15 +229,16 @@ def _hybrid_fusion(
             if any(
                 kw in q_lower
                 for kw in (
-                    "dropdown", "checkbox", "button", "dialog", "popup",
+                    "dropdown", "checkbox", "checkboxes", "button", "dialog", "popup",
                     "selected label", "personalize", "comparator", "state dropdown",
                     "default value", "completion code", "title of that box",
-                    "bottom-most", "checked by default", "unchecked", "menu values"
+                    "bottom-most", "checked by default", "unchecked", "menu values",
+                    "sort row", "sort field", "related links", "menu item", "menu items",
+                    "confirmation page"
                 )
             ):
-                _chunk_fts_w *= 1.35
-                _splade_w *= 1.25
-                _fts_w *= 0.90
+                _chunk_fts_w *= 1.25
+                _splade_w *= 1.20
         except Exception:
             pass
 

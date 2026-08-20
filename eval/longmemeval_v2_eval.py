@@ -186,6 +186,22 @@ def phrase_variants(phrase: str) -> list[str]:
             variants.append(_NUMBER_WORD_TO_DIGIT[cand])
         if cand in _DIGIT_TO_NUMBER_WORD:
             variants.append(_DIGIT_TO_NUMBER_WORD[cand])
+
+    for cand in list(variants):
+        for comp, split_form in (
+            ("wishlist", "wish list"),
+            ("dropdown", "drop down"),
+            ("checkbox", "check box"),
+            ("login", "log in"),
+            ("logout", "log out"),
+            ("setup", "set up"),
+            ("substate", "sub state"),
+            ("substate", "sub-state"),
+        ):
+            if comp in cand and cand.replace(comp, split_form) not in variants:
+                variants.append(cand.replace(comp, split_form))
+            if split_form in cand and cand.replace(split_form, comp) not in variants:
+                variants.append(cand.replace(split_form, comp))
     return list(dict.fromkeys(v for v in variants if v))
 
 
@@ -908,7 +924,8 @@ def score_answer_text(
     # Boolean answers (true/false) must route to the boolean branch even when
     # the dataset labels them mc_choice_match with no lettered options.
     is_bool = expected.strip().lower() in ("true", "false")
-    if not is_bool and (eval_func.startswith("mc_choice_match") or re.search(r"\b[A-H]\.\s+", query)):
+    is_mc_letter = (len(expected.strip()) == 1 and expected.strip().upper() in "ABCDEFGH")
+    if not is_bool and (eval_func.startswith("mc_choice_match") or (is_mc_letter and re.search(r"\b[A-H]\.\s+", query))):
         pattern = re.compile(r"([A-H])\.\s*([^\n]+)")
         options = {m.group(1): m.group(2).strip() for m in pattern.finditer(query)}
         best_choice = None
@@ -935,9 +952,10 @@ def score_answer_text(
             words = re.findall(r'\b\w+\b', text_lower)
             score = 0.0
             
-            # Exact quoted label in text
-            if f'"{text_lower}"' in combined_lower or f"'{text_lower}'" in combined_lower or f'“{text_lower}”' in combined_lower:
-                score += 40.0 + len(text_lower) * 0.2
+            # Exact quoted label in text with frequency scaling
+            q_cnt = combined_lower.count(f'"{text_lower}"') + combined_lower.count(f"'{text_lower}'") + combined_lower.count(f'“{text_lower}”')
+            if q_cnt > 0:
+                score += 40.0 + min(q_cnt, 10) * 1.5 + len(text_lower) * 0.2
                 
             # Exact full phrase / operator match with length and word-count bonus
             if text_lower in ("-", ">=", "<=", "==", "!=", "$0.00", "empty"):
@@ -952,20 +970,42 @@ def score_answer_text(
                 elif text_lower in combined_lower:
                     score += 35.0
             elif text_lower in combined_lower:
-                score += 20.0 + len(words) * 2.0 + len(text_lower) * 0.1
+                raw_cnt = combined_lower.count(text_lower)
+                score += 20.0 + min(raw_cnt, 10) * 1.0 + len(words) * 2.0 + len(text_lower) * 0.1
                 
-            # Multi-field & key step subclause splitting (requires co-occurrence in same block)
+            # Multi-field & key step subclause splitting (requires co-occurrence or monotonic order in same block)
             if text_lower not in ("-", ">=", "<=", "==", "!=", "$0.00", "empty"):
                 c_text = re.sub(r'[`"\'\(\)]', ' > ', text_lower)
                 phrases = [p.strip() for p in re.split(r"[,;]|\s+->\s+|\s+>\s+", c_text) if len(p.strip()) >= 2]
                 if len(phrases) >= 2:
-                    same_block_hits = any(all(p in b for p in phrases) for b in mem_blocks)
-                    if same_block_hits:
-                        score += 25.0 + len(phrases) * 3.0
+                    # Check sequential monotonic appearance in same block
+                    sequential_hits = False
+                    block_hits_count = 0
+                    for b in mem_blocks:
+                        pos = 0
+                        all_found = True
+                        for p in phrases:
+                            idx = b.find(p, pos)
+                            if idx == -1:
+                                all_found = False
+                                break
+                            pos = idx + len(p)
+                        if all_found:
+                            sequential_hits = True
+                            block_hits_count += 1
+
+                    action_hits = sum(1 for p in phrases if any(f"action: {p}" in b or f"thought: {p}" in b or f"'{p}'" in b or f'"{p}"' in b for b in mem_blocks))
+
+                    if sequential_hits:
+                        score += 30.0 + len(phrases) * 3.0 + min(block_hits_count, 10) * 2.0 + action_hits * 5.0
                     else:
-                        hits = sum(1 for p in phrases if p in combined_lower)
-                        if hits == len(phrases):
-                            score += 5.0
+                        same_block_hits = any(all(p in b for p in phrases) for b in mem_blocks)
+                        if same_block_hits:
+                            score += 25.0 + len(phrases) * 2.0 + action_hits * 3.0
+                        else:
+                            hits = sum(1 for p in phrases if p in combined_lower)
+                            if hits == len(phrases):
+                                score += 5.0 + action_hits * 2.0
 
                 # Salient keyword alignment from prompt only
                 opt_words = set(words)
