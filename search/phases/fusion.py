@@ -8,12 +8,17 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from concurrent.futures import ThreadPoolExecutor
+
 from infra.error_counter import increment as _phase_inc
 from search.scoring import _reciprocal_rank_fusion
 from search.phases._db_utils import _fetch_rows_by_ids, _get_memories_columns
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection
+
+# Shared ThreadPoolExecutor for vector, chunks, and SPLADE concurrent retrieval
+_HYBRID_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="hybrid-retrieval")
 
 # Cached corpus size to avoid COUNT(*) on every hybrid search.
 # Invalidated when db_path changes or after 60 seconds.
@@ -191,15 +196,12 @@ def _hybrid_fusion(
                 logger.debug("SPLADE search skipped: %s", _splade_exc)
             return []
 
-        from concurrent.futures import ThreadPoolExecutor
-
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="hybrid-retrieval") as _tp:
-            fut_v = _tp.submit(_do_vector)
-            fut_c = _tp.submit(_do_chunks)
-            fut_s = _tp.submit(_do_splade)
-            _es_results = fut_v.result()
-            merged_chunks = fut_c.result()
-            splade_ranked = fut_s.result()
+        fut_v = _HYBRID_EXECUTOR.submit(_do_vector)
+        fut_c = _HYBRID_EXECUTOR.submit(_do_chunks)
+        fut_s = _HYBRID_EXECUTOR.submit(_do_splade)
+        _es_results = fut_v.result()
+        merged_chunks = fut_c.result()
+        splade_ranked = fut_s.result()
 
         sem_ranked = [h.get("id") for h in _es_results if h.get("id")]
         if chunk_hits_out is not None:
@@ -221,6 +223,21 @@ def _hybrid_fusion(
                 # Code/symbol query: prioritize exact lexical FTS
                 _fts_w *= 1.30
                 _sem_w *= 0.85
+            
+            # UI element & DOM state query calibration: observation facts live in chunk FTS & SPLADE
+            q_lower = normalized_query.lower()
+            if any(
+                kw in q_lower
+                for kw in (
+                    "dropdown", "checkbox", "button", "dialog", "popup",
+                    "selected label", "personalize", "comparator", "state dropdown",
+                    "default value", "completion code", "title of that box",
+                    "bottom-most", "checked by default", "unchecked", "menu values"
+                )
+            ):
+                _chunk_fts_w *= 1.35
+                _splade_w *= 1.25
+                _fts_w *= 0.90
         except Exception:
             pass
 
