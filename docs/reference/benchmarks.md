@@ -63,6 +63,41 @@ Reproducible evaluation results for agentic-memory across three benchmark suites
 
 ---
 
+## LongMemEval_V2 (Web & Enterprise Agent Memory)
+
+**Dataset**: [xiaowu0162/LongMemEval-V2](https://github.com/xiaowu0162/LongMemEval-V2) (2026 SOTA Agent Memory Benchmark)  
+**N**: 451 manually curated questions across 1,870 multimodal trajectories (25M–115M tokens)  
+**Domains**: Enterprise (ServiceNow-style) and Web (Magento-style, Reddit-style, Custom)  
+**5 Core Abilities Tested**: Static state recall, Dynamic state tracking, Workflow knowledge, Environment gotchas, Premise awareness (epistemic abstention)  
+**System**: Production 14-phase search orchestrator (Hybrid FTS5 + Dense BGE-v1.5 + SPLADE sparse + Temporal KG + Session Bundling + Epistemic Grounding)  
+**Eval harness**: `eval/longmemeval_v2_eval.py`  
+**Results**: `eval/results/longmemeval_v2_baseline_summary.json`
+
+### Headline Accuracy (451 questions, full suite)
+
+| Category | Questions | Passed | Accuracy | Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| **`dynamic-environment-abs`** | 41 | 41 | **100.0%** | Perfect epistemic abstention |
+| **`procedure-abs`** | 32 | 32 | **100.0%** | Perfect epistemic abstention |
+| **`static-environment-abs`** | 55 | 55 | **100.0%** | Perfect epistemic abstention |
+| **`errors-gotchas`** | 29 | 28 | **96.55%** | Two-tier failure mode action recall |
+| **`static-environment`** | 134 | 116 | **86.57%** | Step 0 initial form & layout recall |
+| **`procedure`** | 74 | 62 | **83.78%** | Multi-step action sequence synthesis |
+| **`dynamic-environment`** | 86 | 58 | **67.44%** | Complex temporal state mutations |
+| **OVERALL** | **451** | **392** | **86.92%** | **New SOTA (14.42% above prior leader)** |
+
+### Industry Leaderboard Comparison
+
+| System / Method | Type | Accuracy | Latency |
+| :--- | :--- | :---: | :--- |
+| **Agentic-Memory (This Work)** | **Production 14-Phase Search Orchestrator** | **86.92%** | **4.07s p50 (Light)** |
+| AgentRunbook-C (Wu et al., 2026) | Scaffolded Sandbox Coding Agent Memory | 72.50% | High (Multi-turn LLM Sandbox) |
+| Off-the-shelf Coding Agent | ReAct Agent with filesystem search | 69.30% | Very High |
+| Strongest Published RAG Baseline | BM25 + Dense Embeddings | 48.50% | ~2.5s |
+| Full-Context Direct Ingestion | 25M–115M token window (GPT-4o / Claude) | < 35.0% | Extreme context saturation & cost |
+
+---
+
 ## LoCoMo (Long Conversation Memory)
 
 **Dataset**: [snap-research/locomo](https://github.com/snap-research/locomo) — 10 long conversations, 1986 QA pairs  
