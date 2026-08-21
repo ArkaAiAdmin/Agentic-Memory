@@ -212,7 +212,37 @@ def _pending_count(journal_path: Path) -> int:
         return 0
 
 
+# Process-level memoization of journal schema initialization (2026-08-21).
+# init_journal_db used to run CREATE TABLE/INDEX IF NOT EXISTS + full column
+# verification + an empty COMMIT on EVERY enqueue (~1,500 internal calls,
+# 22k posix.stats, ~40ms per save). Schema is immutable once created for a
+# given path within this process, so we verify once and skip afterwards.
+# A cheap os.stat re-validates the file still exists (tests recreate temp
+# DBs; a vanished journal re-initializes from scratch).
+_INITIALIZED_JOURNAL_PATHS: set[str] = set()
+# RLock, not Lock: _get_journal_conn -> init_journal_db is a re-entrant
+# call chain on the same thread; a plain Lock self-deadlocks there.
+_INIT_JOURNAL_LOCK = threading.RLock()
+
+
 def init_journal_db(journal_path: Path) -> None:
+    """Create the write_journal table if not exists. Idempotent."""
+    key = str(journal_path)
+    if key in _INITIALIZED_JOURNAL_PATHS:
+        try:
+            os.stat(key)
+            return
+        except OSError:
+            with _INIT_JOURNAL_LOCK:
+                _INITIALIZED_JOURNAL_PATHS.discard(key)
+    with _INIT_JOURNAL_LOCK:
+        if key in _INITIALIZED_JOURNAL_PATHS:
+            return
+        _init_journal_db_uncached(journal_path)
+        _INITIALIZED_JOURNAL_PATHS.add(key)
+
+
+def _init_journal_db_uncached(journal_path: Path) -> None:
     """Create the write_journal table if not exists. Idempotent."""
     conn = _get_journal_conn(journal_path)
     conn.execute(
