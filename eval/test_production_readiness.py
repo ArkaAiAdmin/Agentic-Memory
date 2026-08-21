@@ -273,7 +273,9 @@ class TestEffectiveConfigMatchesCodeDefaults:
     def test_effective_daemon_idle_seconds(self):
         reset_config()
         cfg = get_config()
-        assert cfg.auto_save.daemon_idle_seconds == 300
+        # 900s (15 min) aligns the idle-exit with the 15-min watchdog
+        # cadence — see fix: ownership-gated lock/pid cleanup (thrash loop).
+        assert cfg.auto_save.daemon_idle_seconds == 900
 
 
 # ---------------------------------------------------------------------------
