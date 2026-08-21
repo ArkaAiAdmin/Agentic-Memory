@@ -83,6 +83,33 @@ _INSTRUCTION_SUFFIX_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+# UI-state inventory view (Phase 9.1). OFF by default: requires migration 079
+# plus a populated ui_state_inventory table (consolidation-time build via
+# knowledge_graph/ui_state_inventory.build_ui_state_inventory).
+# Enable with MEMORY_UI_STATE_VIEW=1.
+_UI_STATE_VIEW_ENABLED = os.environ.get("MEMORY_UI_STATE_VIEW", "0").lower() in (
+    "1", "true", "yes",
+)
+# Structural gate: query asks about UI state/options/fields. Deliberately
+# broad — a gate hit only costs one cheap FTS lookup over the inventory.
+_UI_STATE_QUERY_RE = re.compile(
+    r"\b(dropdown|field picker|field-picker|personalize|list column|form|"
+    r"field|fields|options|values|menu|dialog|record|page|tab|section)\b"
+)
+_UISI_IDF_CACHE: dict[str, dict[str, float]] = {}
+
+
+def _get_uisi_idf(db, db_path) -> dict[str, float]:
+    """Per-process cached IDF over the UI-state inventory for this DB."""
+    key = str(db_path)
+    if key not in _UISI_IDF_CACHE:
+        try:
+            from knowledge_graph.ui_state_inventory import compute_inventory_idf
+            _UISI_IDF_CACHE[key] = compute_inventory_idf(db)
+        except Exception:
+            _UISI_IDF_CACHE[key] = {}
+    return _UISI_IDF_CACHE[key]
+
 from infra.cache import (
 
 
@@ -2098,6 +2125,54 @@ def search_memories(
                 db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
                 merged_chunks=_merged_chunks,
             )
+            # Phase 9.1: UI-state inventory lookup (flag-gated, default off).
+            # Structured synthesis over materialized dropdown/option
+            # observations — answers "what values/fields/options" questions by
+            # lookup instead of lexical retrieval. See migration 079 and
+            # knowledge_graph/ui_state_inventory.py.
+            if _UI_STATE_VIEW_ENABLED:
+                _t0_uisi = time.time()
+                try:
+                    from knowledge_graph.ui_state_inventory import (
+                        compute_inventory_idf,
+                        lookup_ui_state,
+                    )
+
+                    _idf = _get_uisi_idf(db, db_path)
+                    _qtoks = [t.lower() for t in re.findall(r"[A-Za-z]{4,}", normalized_query)]
+                    if _UI_STATE_QUERY_RE.search(normalized_query.lower()) and _qtoks:
+                        _uisi_hits = lookup_ui_state(db, _qtoks, limit=3, idf=_idf)
+                        for _h in reversed(_uisi_hits):
+                            _uid = f"uistate_{_h['traj_id']}_{_h['step']}"
+                            _ucontent = (
+                                f"UI State [{_h['traj_id']} step {_h['step']}] "
+                                f"values: {_h['vals']} | context: {_h['ctx']}"
+                            )
+                            results.insert(0, (
+                                _uid, _ucontent, "ui_state://inventory", "[]", "",
+                                -(_h["score"] + 1.0), 1.0, 1.0, 5, 0, None, "{}", None,
+                            ))
+                except Exception as _uisi_exc:
+                    _phase_inc("search.ui_state_view", _uisi_exc)
+                    logger.debug("ui_state_view skipped: %s", _uisi_exc)
+                _record_phase_latency("search.ui_state_view", _t0_uisi)
+
+            # Phase 9.2: per-query cap on synthesized UI-state docs. They are
+            # lexically dense short rows that can otherwise flood the result
+            # window (observed: 6 of 30 slots for one laptop-catalog query),
+            # displacing the evidence-bearing sessions. Keep the best-ranked
+            # few; drop the rest.
+            _MAX_UISTATE_PER_QUERY = 2
+            _uisi_seen = 0
+            _kept = []
+            for _r in results:
+                if isinstance(_r[0], str) and _r[0].startswith("uistate_"):
+                    _uisi_seen += 1
+                    if _uisi_seen > _MAX_UISTATE_PER_QUERY:
+                        continue
+                _kept.append(_r)
+            if len(_kept) != len(results):
+                results = _kept
             # Session-aware clustering
             _t0_sc = time.time()
             session_boost_ids: set = set()

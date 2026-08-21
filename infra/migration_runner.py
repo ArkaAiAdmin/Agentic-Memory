@@ -60,7 +60,7 @@ def _get_db_path_from_conn(conn: "AnyConnection") -> Path | str | None:
 
 
 @contextlib.contextmanager
-def _migration_lock(conn: "AnyConnection" | None = None):
+def _migration_lock(conn: "AnyConnection | None" = None):
     """Acquire exclusive migration lock per DB path for single-writer safety."""
     db_path = _get_db_path_from_conn(conn) if conn is not None else None
     if db_path and str(db_path) != ":memory:":
@@ -164,7 +164,7 @@ def _migration_lock(conn: "AnyConnection" | None = None):
 # 2026-07-25: bumped to 74 — recreate two indexes silently destroyed by
 # table-recreation migrations (017 destroyed idx_backlinks_source_id,
 # 042 destroyed idx_memories_active partial index).
-SCHEMA_VERSION = 78
+SCHEMA_VERSION = 79
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the
