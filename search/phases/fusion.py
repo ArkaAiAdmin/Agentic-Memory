@@ -28,6 +28,14 @@ _HYBRID_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="hybrid-retrieval",
 )
 
+# Chunk-vector RRF channel (5th channel). OFF by default: it requires
+# memory_chunk_embeddings plus the memory_chunk_vec_idx usearch blob to be
+# populated (rebuild_vec_index.py --subsystems embeddings,chunk_vec_idx).
+# Enable with MEMORY_CHUNK_VEC_CHANNEL=1.
+_CHUNK_VEC_CHANNEL_ENABLED = os.environ.get("MEMORY_CHUNK_VEC_CHANNEL", "0").lower() in (
+    "1", "true", "yes",
+)
+
 # Cached corpus size to avoid COUNT(*) on every hybrid search.
 # Invalidated when db_path changes or after 60 seconds.
 _corpus_size_cache: dict[str, tuple[float, int]] = {}
@@ -160,6 +168,7 @@ def _hybrid_fusion(
             _sem_w = embedding_weight_override
         _chunk_fts_w = float(getattr(_sc, "hybrid_chunk_fts_weight", 0.8))
         _splade_w = float(getattr(_sc, "hybrid_splade_weight", 0.6))
+        _chunk_vec_w = float(getattr(_sc, "hybrid_chunk_vec_weight", 0.5))
 
         fts_ranked = [r[0] for r in results]
 
@@ -204,12 +213,37 @@ def _hybrid_fusion(
                 logger.debug("SPLADE search skipped: %s", _splade_exc)
             return []
 
+        def _do_chunk_vec() -> list:
+            """Chunk-level dense channel (5th RRF channel).
+
+            Closes the half-wired multi-vector feature: save-time indexing
+            populates memory_chunk_embeddings, but no read path ever consumed
+            it. Session-level dense truncates content to the first 500 chars,
+            so answers buried mid-session are invisible to the semantic
+            channel — chunk-level dense sees every ~405-char chunk.
+            Returns parent_ids ranked by best-chunk score.
+            """
+            if not _CHUNK_VEC_CHANNEL_ENABLED:
+                return []
+            try:
+                hits = _es.search_chunks(db, normalized_query, limit=limit * 2, db_path=str(db_path))
+                return [
+                    h["parent_id"]
+                    for h in (hits or [])
+                    if isinstance(h, dict) and h.get("parent_id")
+                ]
+            except Exception as _cv_exc:
+                logger.debug("chunk-vec channel skipped: %s", _cv_exc)
+                return []
+
         fut_v = _HYBRID_EXECUTOR.submit(_do_vector)
         fut_c = _HYBRID_EXECUTOR.submit(_do_chunks)
         fut_s = _HYBRID_EXECUTOR.submit(_do_splade)
+        fut_cv = _HYBRID_EXECUTOR.submit(_do_chunk_vec)
         _es_results = fut_v.result()
         merged_chunks = fut_c.result()
         splade_ranked = fut_s.result()
+        chunk_vec_ranked = fut_cv.result()
 
         sem_ranked = [h.get("id") for h in _es_results if h.get("id")]
         if chunk_hits_out is not None:
@@ -260,12 +294,14 @@ def _hybrid_fusion(
             _chunk_fts_w *= 1.15
             _sem_w *= 0.80
 
-        # Fusion over Document FTS, Semantic, Chunk FTS, and SPLADE
-        rrf = _reciprocal_rank_fusion(
-            [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked],
-            k=_rrf_k,
-            weights=[_fts_w, _sem_w, _chunk_fts_w, _splade_w]
-        )
+        # Fusion over Document FTS, Semantic, Chunk FTS, SPLADE, and
+        # (flag-gated) Chunk-vector channels.
+        _rrf_lists = [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked]
+        _rrf_weights = [_fts_w, _sem_w, _chunk_fts_w, _splade_w]
+        if _CHUNK_VEC_CHANNEL_ENABLED:
+            _rrf_lists.append(chunk_vec_ranked)
+            _rrf_weights.append(_chunk_vec_w)
+        rrf = _reciprocal_rank_fusion(_rrf_lists, k=_rrf_k, weights=_rrf_weights)
 
         if _is_procedure:
             for doc_id in list(rrf.keys()):
@@ -277,13 +313,13 @@ def _hybrid_fusion(
         # This is domain-agnostic — it boosts ANY high-ranking single-channel
         # hit, not just specific topics.
         _channel_presence: dict[str, int] = {}
-        for ch_ranked in [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked]:
+        for ch_ranked in _rrf_lists:
             for rank, doc_id in enumerate(ch_ranked):
                 if doc_id:
                     _channel_presence[doc_id] = _channel_presence.get(doc_id, 0) + 1
         _SINGLE_CHANNEL_FLOOR_RANK = 15  # top-N in a single channel
         _SINGLE_CHANNEL_FLOOR_SCORE = 0.008  # enough to surface in top-20
-        for ch_ranked in [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked]:
+        for ch_ranked in _rrf_lists:
             for rank, doc_id in enumerate(ch_ranked):
                 if doc_id and _channel_presence.get(doc_id, 0) == 1 and rank < _SINGLE_CHANNEL_FLOOR_RANK:
                     current = rrf.get(doc_id, 0.0)
@@ -295,7 +331,9 @@ def _hybrid_fusion(
                         )
         existing_ids = {r[0]: i for i, r in enumerate(results)}
         new_hit_ids = []
-        for hit_id in sem_ranked + chunk_fts_ranked + splade_ranked:
+        for hit_id in sem_ranked + chunk_fts_ranked + splade_ranked + (
+            chunk_vec_ranked if _CHUNK_VEC_CHANNEL_ENABLED else []
+        ):
             if hit_id and hit_id not in existing_ids and hit_id not in new_hit_ids:
                 new_hit_ids.append(hit_id)
         cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
