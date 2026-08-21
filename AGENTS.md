@@ -85,7 +85,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 2. **Connection pool is per-DB-path.** 🔍 `connection_pool.get(str(db_path))` on a deleted/missing path must evict the stale pooled connection and reopen, never return an FD into a deleted file. (`test_rule2_pool_get_evicts_stale_on_missing_path`)
 3. **Vec key/index drift after warm-up.** 🔍 Run `venv/bin/python rebuild_vec_index.py` after any warm-up chain, never before — `test_rule3_backfill_rebuilds_last` asserts the backfill chain (`backfill/orchestrator.py`) rebuilds the vec index only AFTER embeddings/chunks.
 4. **Schema changes are numbered migrations only.** `migrations/NNN_name.sql` + `NNN_name.down.sql`, then bump `SCHEMA_VERSION`. Current: <!--AUTO-GEN:START key="hard_rule_4"-->
-78
+79
 <!--AUTO-GEN:END key="hard_rule_4"-->. Never `ALTER TABLE` in Python.
 5. **Default search: `include_global=True`** 🔍 with blended RRF. Don't override "for safety." (`eval/test_rule_enforcement.py` asserts the `search_memories` default.)
 6. **<!--AUTO-GEN:START key="hard_rule_6"-->
