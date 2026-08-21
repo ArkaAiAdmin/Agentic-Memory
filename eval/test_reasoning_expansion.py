@@ -125,7 +125,9 @@ class TestReasoningExpandTerms:
         conn.commit()
         conn.close()
 
-        terms = _orch._reasoning_expand(db_path, "what is python")
+        # NOTE: since 25ab38d7a, is_a detection requires literal "is a/an"
+        # (bare "is" caused spurious expansions on V2 "what is X" queries).
+        terms = _orch._reasoning_expand(db_path, "what is a python")
         expanded_str = " ".join(terms).lower()
         assert "language" in expanded_str or "interpreted" in expanded_str, (
             f"_reasoning_expand should return expansion terms; got {terms}"
@@ -181,7 +183,7 @@ class TestReasoningExpandInFts:
 
             from search.orchestrator import search_memories
             try:
-                search_memories(db_path=db_path, query="what is python",
+                search_memories(db_path=db_path, query="what is a python",
                                 limit=5, include_facts=True, rerank=False, light=True)
             except Exception:
                 pass
