@@ -187,7 +187,7 @@ denylist = "filesystem_list_allowed_directories,filesystem_list_directory,filesy
 # Async/batch auto-save daemon settings
 batch_interval_seconds = 5.0           # AUTO_SAVE_BATCH_INTERVAL
 batch_size = 50                       # AUTO_SAVE_BATCH_SIZE
-daemon_idle_seconds = 300             # AUTO_SAVE_DAEMON_IDLE_S
+daemon_idle_seconds = 900             # AUTO_SAVE_DAEMON_IDLE_S (15 min — aligns with watchdog cadence; reduces spawn churn)
 async_enabled = true                 # MEMORY_ASYNC_AUTOSAVE (1=enabled, 0=disabled)
 inbox_max_bytes = 500000              # AUTO_SAVE_INBOX_MAX_BYTES (500 KB)
 keyword_routing = true               # MEMORY_AUTO_SAVE_KEYWORD_ROUTING — enable keyword heuristic to route high-signal tool invocations to category=lessons (with auto-capture+draft tags). Set to false to disable routing; all saves go to sessions/.

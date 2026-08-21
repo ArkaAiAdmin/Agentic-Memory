@@ -212,7 +212,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Weekly KG backfill cron")
     parser.add_argument("--dry-run", action="store_true", help="Health check only")
-    parser.add_argument("--incremental", action="store_true", default=False, help="Incremental backfill (safe, no table drops)")
+    parser.add_argument("--incremental", action=argparse.BooleanOptionalAction, default=True, help="Incremental backfill (safe, no table drops). Default True — Rule 7: cron must never launch a bare/full backfill; pass --no-incremental explicitly for a full rebuild.")
     parser.add_argument("--commit-every", type=int, default=25)
     parser.add_argument("--progress-every", type=int, default=100)
     parser.add_argument(

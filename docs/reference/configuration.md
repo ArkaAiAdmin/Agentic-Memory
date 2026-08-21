@@ -129,7 +129,7 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 | `MEMORY_AUTO_SAVE_BATCH_INTERVAL_SECONDS` | `5.0` | TOML: `auto_save.batch_interval_seconds=5.0` |
 | `MEMORY_AUTO_SAVE_BATCH_SIZE` | `50` | TOML: `auto_save.batch_size=50` |
 | `MEMORY_AUTO_SAVE_CIRCUIT_BREAKER_SECONDS` | `300.0` | TOML: `auto_save.circuit_breaker_seconds=300.0` |
-| `MEMORY_AUTO_SAVE_DAEMON_IDLE_SECONDS` | `300` | TOML: `auto_save.daemon_idle_seconds=300` |
+| `MEMORY_AUTO_SAVE_DAEMON_IDLE_SECONDS` | `300` | TOML: `auto_save.daemon_idle_seconds=900` |
 | `AUTO_SAVE_TOOL_DENYLIST` | `filesystem_list_allowed_directories` | TOML: `auto_save.denylist=filesystem_list_allowed_directories,filesystem_list_directory,filesystem_directory_tree,filesystem_read_multiple_files,filesystem_search_files,filesystem_get_file_info,filesystem_list_directory_with_sizes,memory_session_start,memory_user_profile,memory_recall_context,memory_profile_access,memory_record_ctr_feedback,memory_check_concept_drift,todo,process,read_terminal` |
 | `MEMORY_AUTO_SAVE_FAILURE_WINDOW_SECONDS` | `60.0` | TOML: `auto_save.failure_window_seconds=60.0` |
 | `MEMORY_AUTO_SAVE_HEALTH_CHECK_MINUTES` | `15` |  |
@@ -420,7 +420,7 @@ denylist = "filesystem_list_allowed_directories,filesystem_list_directory,filesy
 # Async/batch auto-save daemon settings
 batch_interval_seconds = 5.0           # AUTO_SAVE_BATCH_INTERVAL
 batch_size = 50                       # AUTO_SAVE_BATCH_SIZE
-daemon_idle_seconds = 300             # AUTO_SAVE_DAEMON_IDLE_S
+daemon_idle_seconds = 900             # AUTO_SAVE_DAEMON_IDLE_S (15 min — aligns with watchdog cadence; reduces spawn churn)
 async_enabled = true                 # MEMORY_ASYNC_AUTOSAVE (1=enabled, 0=disabled)
 inbox_max_bytes = 500000              # AUTO_SAVE_INBOX_MAX_BYTES (500 KB)
 keyword_routing = true               # MEMORY_AUTO_SAVE_KEYWORD_ROUTING — enable keyword heuristic to route high-signal tool invocations to category=lessons (with auto-capture+draft tags). Set to false to disable routing; all saves go to sessions/.

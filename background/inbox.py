@@ -241,9 +241,20 @@ def _write_pid_file() -> bool:
 
 
 def _remove_pid_file() -> None:
-    """Best-effort PID file removal.  Idempotent — missing is fine."""
+    """Best-effort PID file removal.  Idempotent — missing is fine.
+
+    Ownership-gated: only removes the file if it names OUR pid, so a
+    caller can never delete a successor daemon's PID file.
+    """
     try:
-        get_auto_save_pid_path().unlink(missing_ok=True)
+        pid_path = get_auto_save_pid_path()
+        if not pid_path.exists():
+            return
+        try:
+            if int(pid_path.read_text().strip()) == os.getpid():
+                pid_path.unlink(missing_ok=True)
+        except (ValueError, OSError):
+            pass
     except Exception as _wp_exc:
         logger.warning("_remove_pid_file: broad except swallowed: %s", _wp_exc)
         pass
@@ -506,11 +517,15 @@ def _cleanup_stale_daemon_lock() -> bool:
         pass
     finally:
         if lock_fd is not None:
+            # Acquire failed — the lock is held by a LIVE process (the PID
+            # file was merely stale). Never unlink the lock file here:
+            # deleting the path while another process flocks the inode
+            # makes that holder invisible to every liveness check and
+            # triggers the spawn/idle-exit thrash loop.
             try:
                 lock_fd.close()
-                lock_path.unlink(missing_ok=True)
             except Exception as e:
-                logger.warning("auto-save: failed to clean stale lock: %s", e)
+                logger.warning("auto-save: failed to close stale lock fd: %s", e)
     return False
 
 def _start_daemon_if_needed() -> bool:

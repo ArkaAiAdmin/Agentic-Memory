@@ -373,18 +373,50 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
                 "warning", "auto_save_final_flush_failed", error=str(exc)
             )
 
-        # Always clean up PID and lock on exit.
+        # Always clean up PID and lock on exit — but ONLY if we still
+        # own them. With two independent spawners (cron watchdog +
+        # hook-driven _start_daemon_if_needed), a successor daemon may
+        # have rewritten the PID file or created a fresh lock inode by
+        # the time we shut down. Deleting shared paths unconditionally
+        # makes the successor invisible to every liveness check and
+        # causes the spawn/idle-exit thrash loop.
         try:
             pid_path = get_auto_save_pid_path()
-            pid_path.unlink(missing_ok=True)
+            try:
+                if pid_path.exists() and int(pid_path.read_text().strip()) == os.getpid():
+                    pid_path.unlink(missing_ok=True)
+            except (ValueError, OSError):
+                pass  # unreadable/foreign PID file — leave it alone
         except Exception as _ce:
             logger.debug("daemon cleanup (pid_path): %s", _ce)
         try:
             lock_path = get_auto_save_lock_path()
             fd = _DAEMON_LOCKS.pop("auto_save_daemon", None)
             if fd is not None:
+                # Ownership check BEFORE release_flock: it closes the fd,
+                # so fstat must happen while the fd is still open.
+                owns_path = False
+                try:
+                    st_path = os.stat(lock_path)
+                    st_fd = os.fstat(fd.fileno())
+                    owns_path = (st_path.st_dev, st_path.st_ino) == (
+                        st_fd.st_dev,
+                        st_fd.st_ino,
+                    )
+                except FileNotFoundError:
+                    pass
+                except (OSError, ValueError) as _fstat_exc:
+                    logger.debug(
+                        "daemon cleanup (lock fstat): %s", _fstat_exc
+                    )
+                # release_flock unlocks AND closes the fd.
                 release_flock(fd)
-            lock_path.unlink(missing_ok=True)
+                # Delete the lock FILE only if it still refers to the inode
+                # we locked. If a successor created a fresh inode at this
+                # path during our shutdown, leave their file in place —
+                # deleting it would make them invisible to liveness checks.
+                if owns_path:
+                    lock_path.unlink(missing_ok=True)
         except Exception as _ce:
             logger.debug("daemon cleanup (lock_path): %s", _ce)
         try:
