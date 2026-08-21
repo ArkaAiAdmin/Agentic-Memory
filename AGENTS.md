@@ -19,13 +19,15 @@ using the system: [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memor
 
 | # | When | Action |
 |---|---|---|
-| 1 | Every session start | `agentic-memory_memory_session_start(query="<subsystem>")` |
+| 1 | Every session start | `agentic-memory_memory_session_start(query="<subsystem>")` — anchors a real DB-backed session (writes `.current_session.json` with the authoritative id) and returns the briefing. The harness hook does this automatically when wired; the verb is the fallback and is self-sufficient. |
 | 2 | Before any task | `agentic-memory_memory_search(query="<topic>")` |
 | 3 | After bug/decision fix | `agentic-memory_memory_save(category="lessons" or "decisions")` |
 | 4 | After test/index/cron op | `agentic-memory_memory_advanced(operation="auto_save_status")` — only when cron is down or immediate results are needed (Rule 21) |
-| 5 | Before ending session | `agentic-memory_memory_save(category="sessions")` |
+| 5 | Before ending session | `agentic-memory_memory_save(category="sessions")`, then `memory_session_end(summary=...)`. **No session handle needed** — end falls back to the state file, then to the most recent active session for this agent; with nothing active it returns a structured no-op instead of erroring. |
 
 Minimum every session: #1 + #5. Save a **context-rich** `projects` note (importance=4) at every significant milestone — enough context to be useful weeks later, not a timestamped log line.
+
+Session persistence requires `[session_memory] enabled = true` (on since 2026-08-22). Skill extraction vetoes eval/test residue memory ids (`skill_extractor.is_junk_memory_id`) and strips YAML frontmatter before topic/description generation — junk skills must not return; sweep with `scripts/purge_junk_skills.py` if they ever do.
 
 **Save-time rule (row 3):** if a new lesson **contradicts an existing note**, call `memory_note(note_id, action="supersede", rationale="...")` instead of a fresh `memory_save` — it writes to `memory_revision_log` and retires the stale note rather than leaving two conflicting memories. Search first (`memory_search`) to find the note to supersede.
 

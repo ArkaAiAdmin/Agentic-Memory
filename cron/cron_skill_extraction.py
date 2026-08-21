@@ -55,6 +55,7 @@ from skill_extractor import (
     extract_skill_from_memory,
     save_skill,
     is_skill_worthy,
+    is_junk_memory_id,
 )
 from typing import TYPE_CHECKING
 
@@ -152,6 +153,9 @@ def run_extraction(
         rid = r[0]
         content = r[1]
         cat = r[3] or (rid.split("/", 1)[0] if "/" in rid else "")
+        if is_junk_memory_id(rid):
+            skipped += 1
+            continue
         if not is_skill_worthy(content, category=cat):
             skipped += 1
             continue

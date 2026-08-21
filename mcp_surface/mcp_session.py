@@ -141,8 +141,36 @@ def memory_list_threads(
         return _err(ErrorCode.DB_ERROR, str(e))
 
 
+def _latest_active_session_id() -> str:
+    """Most recent active session id for this agent, or "" if none.
+
+    Protocol hardening: session_end must work even when the caller
+    never saw a session_id (e.g. the hook that starts sessions didn't
+    run, or ``ensure_session_active`` wrote a session-less state file).
+    The sessions table is authoritative — mirror start_session's own
+    crash-recovery resume logic.
+    """
+    try:
+        mgr = _session_manager()
+        conn = mgr._conn()
+        try:
+            agent = os.environ.get("MEMORY_AGENT_ID", "")
+            row = conn.execute(
+                "SELECT id FROM sessions WHERE status='active' "
+                "AND (?='' OR agent_id=?) ORDER BY started_at DESC LIMIT 1",
+                (agent, agent),
+            ).fetchone()
+        finally:
+            from infra.db import safe_close_db
+
+            safe_close_db(conn)
+        return str(row[0]) if row else ""
+    except Exception as exc:
+        logger.warning("_latest_active_session_id: %s", exc)
+        return ""
+
+
 @mcp.tool()
-@with_audit("memory_session_end")
 def memory_session_end(session_id: str = "", summary: str = "") -> str:
     """End a session, save summary, defer open threads."""
     try:
@@ -156,15 +184,28 @@ def memory_session_end(session_id: str = "", summary: str = "") -> str:
                 cs = json.loads(state_file.read_text())
                 session_id = cs.get("session_id", "")
         if not session_id:
-            return _err(ErrorCode.INVALID_PARAMS, "session_id is required")
+            # Fallback: end the most recent active session for this agent.
+            # A missing handle must degrade gracefully, not error out —
+            # "end of session" is bookkeeping, not a caller fault.
+            session_id = _latest_active_session_id()
+        if not session_id:
+            return _json(
+                {
+                    "ok": True,
+                    "ended": False,
+                    "reason": "no active session",
+                    "session_id": "",
+                }
+            )
 
         ok = mgr.end_session(session_id=session_id, summary=summary)
-        return _json({"ok": ok, "session_id": session_id})
+        return _json({"ok": bool(ok), "ended": bool(ok), "session_id": session_id})
     except Exception as e:
         logger.error("memory_session_end: %s", e)
         return _err(ErrorCode.DB_ERROR, str(e))
 
-
+@mcp.tool()
+@with_audit("memory_session_end")
 @mcp.tool()
 @with_audit("memory_resolve_thread")
 def memory_resolve_thread(

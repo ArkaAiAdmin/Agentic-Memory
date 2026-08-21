@@ -662,6 +662,7 @@ def ensure_session_active(max_age_seconds: float = 3600.0) -> bool:
     data = {
         "started_at": time.time(),
         "started_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "agent_id": os.environ.get("MEMORY_AGENT_ID", ""),
         "source": "ensure_session_active",
     }
     try:

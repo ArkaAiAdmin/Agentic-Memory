@@ -31,7 +31,7 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 | `MEMORY_SELF_EDITING` | `True` | TOML: `features.self_editing=True` |
 | `MEMORY_SESSION_CROSS_ENTITY_BOOST` | `True` | TOML: `session_memory.cross_entity_boost=True` |
 | `MEMORY_SESSION_DECISION_LLM` | `False` | TOML: `session_memory.decision_llm=False` |
-| `MEMORY_SESSION_MEMORY` | `False` | TOML: `session_memory.enabled=False` |
+| `MEMORY_SESSION_MEMORY` | `False` | TOML: `session_memory.enabled=True` |
 | `MEMORY_SUMMARIZATION` | `True` |  |
 | `MEMORY_TEMPORAL_KG_LLM_TIER` | `light` | TOML: `features.temporal_kg_llm_tier=light` |
 | `MEMORY_TEMPORAL_SSM_ENABLED` | `False` | TOML: `features.temporal_ssm_enabled=True` |
@@ -433,7 +433,7 @@ tier1_hot_days = 7                   # MEMORY_RECALL_TIER1_DAYS — lookback win
 tier_fallback_threshold = 5           # MEMORY_RECALL_TIER_FALLBACK_THRESHOLD — total items from tiers 1-3 below which Tier 4 (recent sessions) is activated.
 
 [session_memory]
-enabled = false                         # MEMORY_SESSION_MEMORY — enable session/thread/compaction tracking (v22). Off by default.
+enabled = true                          # MEMORY_SESSION_MEMORY — enable session/thread/compaction tracking (v22). ON as of 2026-08-22: required for session persistence across time (start/end handshake, open threads). Previously off — session_end had nothing to end.
 decision_llm = false                    # MEMORY_SESSION_DECISION_LLM — use LLM to enrich decision candidates (Sprint 6 opt-in). Adds ~100-200ms per save in decisions/lessons/projects/architecture categories.
 cross_entity_boost = true              # MEMORY_SESSION_CROSS_ENTITY_BOOST — cross-session entity affinity boosting. Detects shared entities between sessions via KG and boosts results from sessions with overlapping topics. Default ON.
 

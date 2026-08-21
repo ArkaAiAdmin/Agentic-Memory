@@ -187,6 +187,46 @@ _JUNK_TOOL_ECHO_MARKERS = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 
+# Veto by memory ID — eval/fixture residue that leaks into the prod DB
+# must never compile into user-facing skills. Anchored on the ID itself
+# (not content) so legitimate lessons *about* testing still pass.
+_JUNK_MEMORY_ID_RE = re.compile(
+    r"("
+    r"^eval/"                       # eval fixture notes
+    r"|^tests?[-_/]"                # test-… / tests/…
+    r"|^search-note-\d+$"
+    r"|^stress-test-memory-\d+"
+    r"|^test-memory-number-\d+"
+    r"|^test-note\b"
+    r"|^marker-tok-"
+    r"|^category-lessons-title-slug-"
+    r"|^mcp-smoke-test"
+    r"|smoke-test-note"
+    r")",
+    re.IGNORECASE,
+)
+
+_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(?:.*?\n)?---[ \t]*\n?", re.DOTALL)
+
+
+def strip_frontmatter(content: str) -> str:
+    """Remove leading YAML frontmatter so it never becomes topic/description.
+
+    Without this, memories whose body starts with ``---`` produce skills
+    with literal ``---`` topics and empty descriptions.
+    """
+    if not content:
+        return content
+    return _FRONTMATTER_RE.sub("", content, count=1)
+
+
+def is_junk_memory_id(memory_id: str) -> bool:
+    """True if this memory id is eval/test residue and must never compile."""
+    if not memory_id:
+        return False
+    return bool(_JUNK_MEMORY_ID_RE.search(memory_id))
+
+
 
 # Backwards-compat alias for callers (and tests) that imported the
 # old name.
@@ -432,6 +472,9 @@ def extract_skill_from_memory(
     # supplied. Many older memories predate the category column.
     if not category and "/" in memory_id:
         category = memory_id.split("/", 1)[0]
+    if is_junk_memory_id(memory_id):
+        return None
+    content = strip_frontmatter(content)
     if not is_skill_worthy(content, category=category):
         return None
 

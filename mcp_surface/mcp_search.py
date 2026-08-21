@@ -6,6 +6,8 @@ Search MCP tools — memory_search, memory_semantic_search, memory_recall_contex
 
 import os
 import sys
+import json
+import logging
 from pathlib import Path
 
 
@@ -25,6 +27,8 @@ from mcp_surface.mcp_common import (
 from mcp_surface.mcp_instance import mcp
 from search_pipeline import search_memories as _search_memories_impl
 from search_pipeline import _bb2_resolve, _bb2_record_turn
+
+logger = logging.getLogger(__name__)
 
 # B1 fix (2026-06-22): alias the canonical implementation so
 # ``from mcp_surface.mcp_search import search_memories`` resolves to the same
@@ -335,6 +339,44 @@ def memory_session_start(query: str = "") -> str:
         return (
             "Session already initialized. Use memory_search or memory_save to continue."
         )
+
+    # Protocol hardening: anchor a real DB-backed session here so that
+    # memory_session_end has an authoritative handle later, even when the
+    # harness session-start hook never ran. Mirrors the hook's state-file
+    # schema (session_id + started_at) — see hooks/memory-session-start.py.
+    try:
+        import time as _time
+
+        from infra.memory_common import get_sessions_dir
+
+        sessions_dir = get_sessions_dir()
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        state_file = sessions_dir / ".current_session.json"
+        existing_state: dict = {}
+        if state_file.exists():
+            try:
+                existing_state = json.loads(state_file.read_text())
+            except Exception:
+                existing_state = {}
+        if not existing_state.get("session_id"):
+            from session_manager import SessionManager
+
+            mgr = (
+                SessionManager(db_path=db_path)
+                if db_path.exists()
+                else SessionManager()
+            )
+            ctx = mgr.start_session(project_root=str(Path.cwd()))
+            if ctx is not None:
+                existing_state["session_id"] = ctx.session.id
+        existing_state.setdefault("started_at", _time.time())
+        existing_state.setdefault(
+            "started_iso", _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+        )
+        existing_state.setdefault("source", "memory_session_start_verb")
+        state_file.write_text(json.dumps(existing_state, indent=2))
+    except Exception as _ss_exc:
+        logger.warning("memory_session_start: could not anchor session: %s", _ss_exc)
 
     from recall.recall import recall_context
     from self_directed import SELF_DIRECTED_ENABLED
