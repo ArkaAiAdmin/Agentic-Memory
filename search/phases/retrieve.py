@@ -117,9 +117,9 @@ def _fallback_embedding_search(
         if not _es_results:
             return []
         hit_ids = [hit.get("id") for hit in _es_results if hit.get("id")]
-        _cat_params = (category,) if (category and "m.category = ?" in _base_filter) else ()
+        _cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
         _params = _cat_params + tag_filter_params
-        rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=_base_filter, extra_params=_params)
+        rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=repo_filter, extra_params=_params)
 
         fb_rows = []
         for hit in _es_results:
@@ -373,7 +373,7 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None, tena
                                    'part_of','has_part','located_in','subclass_of')
               AND kf.belief_status = 'active'
               AND kf.is_entailed = 1
-              AND kf.tenant_id = ?
+              AND (kf.tenant_id = ? OR kf.tenant_id IS NULL)
               AND (kf.subject LIKE ? ESCAPE '\\' OR kf.object LIKE ? ESCAPE '\\')
             LIMIT ?
             """,

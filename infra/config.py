@@ -1524,9 +1524,15 @@ def get_config() -> MemoryConfig:
     global _instance
     import sys
 
+    # NOTE: do NOT use "unittest" in sys.modules as a testing signal.
+    # Production ML stacks (torch/transformers) import unittest.mock at
+    # runtime, which permanently flipped this check to True in real
+    # processes — defeating the singleton and forcing a full TOML parse +
+    # dataclass rebuild on EVERY get_config() call (~0.4ms each, thousands
+    # per search query). pytest-based tests are always covered by the two
+    # remaining signals below.
     is_testing = (
         "pytest" in sys.modules
-        or "unittest" in sys.modules
         or os.environ.get("PYTEST_CURRENT_TEST") is not None
     )
     if _instance is not None and not is_testing:
