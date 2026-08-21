@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -17,8 +18,15 @@ from search.phases._db_utils import _fetch_rows_by_ids, _get_memories_columns
 if TYPE_CHECKING:
     from infra.db import AnyConnection
 
-# Shared ThreadPoolExecutor for vector, chunks, and SPLADE concurrent retrieval
-_HYBRID_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="hybrid-retrieval")
+# Shared ThreadPoolExecutor for vector, chunks, and SPLADE concurrent retrieval.
+# Sized via MEMORY_HYBRID_WORKERS (default 6 = 2 concurrent searches × 3 channels).
+# The old max_workers=3 gave exactly one search's worth of capacity: a second
+# concurrent search queued behind the first, amplifying tail latency for
+# multi-agent workloads. Thread creation cost is negligible vs model inference.
+_HYBRID_EXECUTOR = ThreadPoolExecutor(
+    max_workers=max(3, int(os.environ.get("MEMORY_HYBRID_WORKERS", "6"))),
+    thread_name_prefix="hybrid-retrieval",
+)
 
 # Cached corpus size to avoid COUNT(*) on every hybrid search.
 # Invalidated when db_path changes or after 60 seconds.
@@ -208,7 +216,18 @@ def _hybrid_fusion(
             chunk_hits_out.append(merged_chunks)
         chunk_fts_ranked = [p_id for p_id, _, _, _, _ in merged_chunks]
 
-        # Query-type aware channel calibration
+        # Query-type aware channel calibration.
+        # NOTE: this block previously contained keyword-regex calibrations
+        # (UI-element nouns, procedural phrases). Those were DEAD CODE: the
+        # module never imported ``re``, so every regex call raised NameError
+        # inside this try and was silently swallowed. They contributed nothing
+        # to any validated baseline and have been removed. Only the q_type
+        # channel weights below were ever live.
+        # q_type/_is_procedure are initialized BEFORE the try so a calibration
+        # failure can never raise NameError at the adaptive-weighting branch
+        # below (which would abort fusion and silently drop 3 of 4 channels).
+        q_type = "general"
+        _is_procedure = False
         try:
             from search.query_parser import _detect_query_type
             q_type = _detect_query_type(normalized_query)
@@ -223,29 +242,8 @@ def _hybrid_fusion(
                 # Code/symbol query: prioritize exact lexical FTS
                 _fts_w *= 1.30
                 _sem_w *= 0.85
-            
-            # Structural / localized observation query calibration: granular facts live in chunk FTS
-            q_lower = normalized_query.lower()
-            _is_ui_structure = bool(re.search(
-                r"\b(dropdown|select|option|options|menu|button|checkbox|checkboxes|dialog|popup|"
-                r"value|values|label|field|fields|column|table|row|header|link|links|tab|tabs|"
-                r"filter|filters|sort|sorted|default|status|state|page|form|section)\b",
-                q_lower,
-            ))
-            if _is_ui_structure:
-                _chunk_fts_w *= 1.25
-                _splade_w *= 1.15
-
-            _is_procedure = (q_type == "procedure") or bool(re.search(
-                r"\b(procedure|workflow|sequence|steps|navigate|create and assign|single procedure)\b",
-                q_lower,
-            ))
-            if _is_procedure:
-                _fts_w *= 1.15
-                _sem_w *= 1.20
-                _chunk_fts_w *= 1.05
+            _is_procedure = q_type == "procedure"
         except Exception:
-            _is_procedure = False
             pass
 
         # Adaptive weighting:
@@ -467,42 +465,6 @@ def _enhance_with_chunks(
             )
             seen_ids.add(parent_id)
 
-        # Search-side session bundling: bundle consolidated session summaries for top hits
-        # so multi-step narrative context is genuinely retrieved by the search engine
-        bundle_mids = []
-        for r in results[:5]:
-            rid = str(r[0]) if r and len(r) > 0 else ""
-            m_sess = re.search(r"traj_([0-9a-fA-F]+)", rid)
-            if m_sess:
-                sess_key = m_sess.group(1)
-                for cand in (f"consolidated_traj_{sess_key}", f"traj_{sess_key}"):
-                    if cand not in seen_ids and cand not in bundle_mids:
-                        bundle_mids.append(cand)
-
-        if bundle_mids:
-            bundle_rows = _fetch_rows_by_ids(db, bundle_mids, extra_filter=repo_filter)
-            base_rank = min((float(r[5]) for r in results if len(r) > 5 and r[5] is not None), default=0.0)
-            _supp_rank = base_rank + 0.1
-            for b_mid, b_row in bundle_rows.items():
-                if b_mid not in seen_ids:
-                    seen_ids.add(b_mid)
-                    results.append(
-                        (
-                            b_mid,
-                            b_row[1] if len(b_row) > 1 else "",
-                            b_row[2] if len(b_row) > 2 else "",
-                            b_row[3] if len(b_row) > 3 else None,
-                            b_row[4] if len(b_row) > 4 else "",
-                            _supp_rank,
-                            b_row[5] if len(b_row) > 5 else None,
-                            b_row[6] if len(b_row) > 6 else None,
-                            b_row[7] if len(b_row) > 7 else None,
-                            b_row[8] if len(b_row) > 8 else None,
-                            b_row[9] if len(b_row) > 9 else None,
-                            b_row[10] if len(b_row) > 10 else 1,
-                        )
-                    )
-                    _supp_rank += 0.05
     except Exception as _chunk_exc:
         _phase_inc("search.chunk_enhancement", _chunk_exc)
         logger.warning("chunk_enhancement failed: %s", _chunk_exc)

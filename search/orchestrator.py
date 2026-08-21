@@ -69,6 +69,20 @@ _COMPLEX_REASONING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Conversational query prefix normalization (e.g. "I am looking for...", "Please find...")
+# and instruction boilerplate suffix stripping. Compiled once at module level —
+# these were previously recompiled inside search_memories on every call.
+_CONV_PREFIX_RE = re.compile(
+    r"^(?:(?:i am|i'm)\s+(?:working on|looking for|trying to find|searching for|in need of)|"
+    r"please\s+(?:find|show|give me|tell me)|"
+    r"(?:can|could)\s+you\s+(?:find|show|tell me|give me))\s+",
+    flags=re.IGNORECASE,
+)
+_INSTRUCTION_SUFFIX_RE = re.compile(
+    r"(?:\n\s*(?:Mark your final answer|Put your final answer|Your final answer|Answer in English)[^\n]*)",
+    flags=re.IGNORECASE,
+)
+
 from infra.cache import (
 
 
@@ -610,7 +624,7 @@ def _counting_phase(
                     "",
                     0, 1.0, 1.0, 5, 0, None, "{}", None,
                 )
-                new_results = [synthetic]
+                new_results: list[tuple] = [synthetic]
                 existing_ids = {synthetic[0]}
                 for mem_id in ledger_state.get("source_memories", []):
                     m_row = db.execute(
@@ -712,7 +726,7 @@ def _counting_phase(
                     "{}", # metadata
                     None, # supersedes
                 )
-                new_results = [synthetic]
+                new_results: list[tuple] = [synthetic]
                 existing_ids = {synthetic[0]}
                 for r in val_rows:
                     if r[0] not in existing_ids:
@@ -1467,20 +1481,11 @@ def search_memories(
 
     # General conversational query prefix normalization (e.g. "I am looking for...", "Please find...")
     # and backtick/quote literal phrase extraction from question body.
-    _conv_prefix_re = re.compile(
-        r"^(?:(?:i am|i'm)\s+(?:working on|looking for|trying to find|searching for|in need of)|"
-        r"please\s+(?:find|show|give me|tell me)|"
-        r"(?:can|could)\s+you\s+(?:find|show|tell me|give me))\s+",
-        flags=re.IGNORECASE,
-    )
-    _instruction_suffix_re = re.compile(
-        r"(?:\n\s*(?:Mark your final answer|Put your final answer|Your final answer|Answer in English)[^\n]*)",
-        flags=re.IGNORECASE,
-    )
-    q_no_instruction = _instruction_suffix_re.sub("", query).strip() or query
+    # Regexes are module-level (_CONV_PREFIX_RE / _INSTRUCTION_SUFFIX_RE).
+    q_no_instruction = _INSTRUCTION_SUFFIX_RE.sub("", query).strip() or query
     q_body = re.split(r"\n\s*[A-H]\.\s+", q_no_instruction)[0]
     quoted_terms = re.findall(r"[`\"]([^`\"]{2,60})[`\"]", q_body)
-    q_cleaned = _conv_prefix_re.sub("", q_no_instruction).strip()
+    q_cleaned = _CONV_PREFIX_RE.sub("", q_no_instruction).strip()
     if q_cleaned:
         if quoted_terms:
             query = f"{q_cleaned} " + " ".join(f'"{t}"' for t in quoted_terms)
