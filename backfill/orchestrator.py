@@ -589,14 +589,17 @@ def backfill_all(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_db_path(db_path_arg: str | None) -> Path:
-    if db_path_arg:
-        return Path(db_path_arg).resolve()
+def _resolve_db(db_path: str | Path | None) -> Path:
+    if db_path is not None:
+        return Path(db_path).resolve()
     env_db = os.environ.get("MEMORY_DB_PATH")
     if env_db:
         return Path(env_db).resolve()
     from infra.infrastructure import resolve_active_memory_dir
     return resolve_active_memory_dir() / "memory.db"
+
+
+_resolve_db_path = _resolve_db
 
 
 def _resolve_source(source_dir: str | Path | None, db_path: Path) -> Path:
