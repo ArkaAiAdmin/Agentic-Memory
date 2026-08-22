@@ -50,8 +50,12 @@ __version__ = "1.1.0"
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(_REPO_ROOT) not in sys.path:
+_PKG_DIR = Path(__file__).resolve().parent
+if str(_PKG_DIR) not in sys.path:
+    sys.path.insert(0, str(_PKG_DIR))
+
+_REPO_ROOT = _PKG_DIR.parent
+if (_REPO_ROOT / "infra").exists() and str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 # New SDK (typed, feature-complete)

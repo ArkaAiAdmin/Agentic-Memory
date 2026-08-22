@@ -430,7 +430,20 @@ def test_rule4_no_raw_alter_table_in_python():
     for py_file in REPO_ROOT.glob("**/*.py"):
         rel = py_file.relative_to(REPO_ROOT)
         if (
-            rel.parts[0] in ("eval", "venv", ".venv", "tests", "migrations", "docs", "scripts")
+            rel.parts[0]
+            in (
+                "eval",
+                "venv",
+                ".venv",
+                "tests",
+                "migrations",
+                "docs",
+                "scripts",
+                "build",
+                "dist",
+                ".eggs",
+                ".git",
+            )
             or str(rel) in exempt_paths
         ):
             continue
@@ -446,11 +459,11 @@ def test_rule4_no_raw_alter_table_in_python():
             ]
             if lines:
                 # Exclude purely backward-compatible fallback migrations
-                real_violations = [l for l in lines if "conn.execute" in l and "ALTER TABLE" in l]
+                real_violations = [line for line in lines if "conn.execute" in line and "ALTER TABLE" in line]
                 if real_violations and str(rel) not in ("memory_sharing.py", "knowledge_graph/kg_schema.py", "infra/write_journal.py", "kg/kg_crdt.py"):
                     violations.append(f"{rel}: {real_violations[:2]}")
     assert not violations, (
-        f"Rule 4: Found raw ALTER TABLE in application code:\n" + "\n".join(violations)
+        "Rule 4: Found raw ALTER TABLE in application code:\n" + "\n".join(violations)
     )
 
 

@@ -2844,6 +2844,23 @@ class APIServer(ThreadingHTTPServer):
         # Write runtime discovery file for dynamic port allocation
         self._discovery_file = _write_kernel_discovery(self.port, self.token, os.getpid())
 
+        import atexit
+        import signal
+        import sys
+
+        atexit.register(_remove_kernel_discovery, os.getpid())
+
+        def _sig_cleanup(signum: int, frame: Any) -> None:
+            _remove_kernel_discovery(os.getpid())
+            sys.exit(0)
+
+        try:
+            signal.signal(signal.SIGTERM, _sig_cleanup)
+            signal.signal(signal.SIGINT, _sig_cleanup)
+        except (ValueError, RuntimeError):
+            # Signal handling may only work in the main thread
+            pass
+
         # Start SQLite Outbox Broadcaster
         self._outbox_thread = threading.Thread(target=self._outbox_loop, daemon=True)
         self._outbox_thread.start()
