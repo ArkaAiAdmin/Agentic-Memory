@@ -163,7 +163,8 @@ def main():
         if not db_path.exists():
             db_path = local_mem / "memory.db"
     else:
-        db_path = Path.home() / ".config" / "agentic-memory" / "memory" / "memory.db"
+        from infra.infrastructure import resolve_active_memory_dir
+        db_path = resolve_active_memory_dir() / "memory.db"
         if not db_path.exists():
             db_path = Path.cwd() / "memory" / "memory.db"
     if not db_path.exists():

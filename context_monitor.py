@@ -30,9 +30,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 logger = logging.getLogger(__name__)
 
+from infra.infrastructure import resolve_active_memory_dir
+
 MEMORY_DIR = Path(
     os.environ.get(
-        "AGENTIC_MEMORY_DIR", Path.home() / ".config" / "agentic-memory" / "memory"
+        "AGENTIC_MEMORY_DIR", str(resolve_active_memory_dir())
     )
 )
 SESSIONS_DIR = MEMORY_DIR / "sessions"

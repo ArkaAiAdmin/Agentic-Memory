@@ -40,10 +40,13 @@ import sys
 import time
 from pathlib import Path
 
+from infra.infrastructure import resolve_active_memory_dir
+
 REPO = Path(__file__).resolve().parent.parent
 CRON_DIR = REPO / "cron"
-TRACE_DIR = REPO / "memory" / "stack_traces"
-LOG_FILE = REPO / "memory" / "watchdog.log"
+ACTIVE_MEM = resolve_active_memory_dir()
+TRACE_DIR = ACTIVE_MEM / "stack_traces"
+LOG_FILE = ACTIVE_MEM / "watchdog.log"
 
 DEFAULT_MAX_AGE_SECONDS = 600  # 10 minutes
 

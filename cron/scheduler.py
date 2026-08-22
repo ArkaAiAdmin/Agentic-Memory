@@ -210,7 +210,8 @@ def _run_job(name: str, job: dict, dry_run: bool = False) -> dict:
 
 def _write_status(due_jobs: list[str], results: dict[str, dict]) -> None:
     """Write consolidated status to .cron_status.json."""
-    status_path = Path(JOB_ROOT) / "memory" / ".cron_status.json"
+    from infra.infrastructure import resolve_active_memory_dir
+    status_path = resolve_active_memory_dir() / ".cron_status.json"
     try:
         from cron.cron_runs import query_recent
 

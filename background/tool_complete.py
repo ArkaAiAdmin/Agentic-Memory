@@ -530,9 +530,8 @@ def tool_complete(
         try:
             import json as _json
             import datetime as _dt
-            from pathlib import Path
-            _am_dir = Path(__file__).resolve().parent.parent
-            _err_path = _am_dir / "memory" / "hook-errors.jsonl"
+            from infra.infrastructure import resolve_active_memory_dir
+            _err_path = resolve_active_memory_dir() / "hook-errors.jsonl"
             _err_path.parent.mkdir(parents=True, exist_ok=True)
             _entry = {
                 "ts": int(_dt.datetime.now().timestamp() * 1000),

@@ -26,9 +26,10 @@ from typing import cast
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from infra.infrastructure import resolve_active_memory_dir
 from infra.log import setup_logging
 logger = setup_logging("cron_daemon_watchdog")
-LOG_FILE = REPO / "memory" / "watchdog-daemon.log"
+LOG_FILE = resolve_active_memory_dir() / "watchdog-daemon.log"
 
 
 def log(msg: str) -> None:

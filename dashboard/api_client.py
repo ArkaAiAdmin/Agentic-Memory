@@ -33,8 +33,9 @@ def resolve_api_token(memory_dir: str | None = None) -> str:
     if env_token:
         return env_token
     if memory_dir is None:
+        from infra.infrastructure import resolve_active_memory_dir
         memory_dir = os.environ.get(
-            "MEMORY_DIR", str(Path.home() / ".config" / "agentic-memory" / "memory")
+            "MEMORY_DIR", str(resolve_active_memory_dir())
         )
     token_file = Path(memory_dir) / ".api_token"
     try:

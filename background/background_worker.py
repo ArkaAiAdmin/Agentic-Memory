@@ -1436,10 +1436,7 @@ def main():
             import fcntl
 
             _lock_path = (
-                Path.home()
-                / ".config"
-                / "agentic-memory"
-                / "memory"
+                resolve_active_memory_dir()
                 / "locks"
                 / f"{_lock_name}.lock"
             )

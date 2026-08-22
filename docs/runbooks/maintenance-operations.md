@@ -56,3 +56,9 @@ lock contention, not freshness: journal drain (`journal_reconciler`),
 queue drain (`background_worker --drain`), consolidation sweep,
 `daily_digest`, `auto_share`, `sync_usage`, watchdogs. If they appear
 broken, diagnose (table above) — don't double-run them.
+
+## Disaster Recovery & Backup Restoration
+
+For step-by-step procedures on restoring database snapshots or point-in-time archives from `$MEMORY_HOME/backups/` into `$MEMORY_HOME/data/`, see:
+- [restore-backup.md](file:///Users/arka/.config/agentic-memory/docs/runbooks/restore-backup.md)
+

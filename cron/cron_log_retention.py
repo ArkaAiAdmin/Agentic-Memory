@@ -9,10 +9,13 @@ Usage:
 """
 
 from _flock import acquire_lock_or_exit
-import shutil
-from pathlib import Path
+import sys
+_parent = Path(__file__).resolve().parent.parent
+if str(_parent) not in sys.path:
+    sys.path.insert(0, str(_parent))
+from infra.infrastructure import resolve_active_memory_dir
 
-MEMORY_DIR = Path(__file__).resolve().parent.parent / "memory"
+MEMORY_DIR = resolve_active_memory_dir()
 ARCHIVE_DIR = MEMORY_DIR / "log-archive"
 MAX_LOG_BYTES = 1_000_000
 MAX_GENERATIONS = 2
