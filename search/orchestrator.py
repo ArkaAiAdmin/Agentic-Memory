@@ -2225,7 +2225,10 @@ def search_memories(
             results_to_display = [
                 (
                     r[0], r[1], r[2], r[3], r[4], r[5],
-                    -r[5], None, None, None,
+                    -r[5],
+                    r[6] if len(r) > 6 and r[6] is not None else 0.5,
+                    r[7] if len(r) > 7 and r[7] is not None else 3,
+                    bool(r[8]) if len(r) > 8 and r[8] is not None else False,
                     r[9] if len(r) > 9 else None,
                     r[10] if len(r) > 10 else None,
                     None,
@@ -2264,7 +2267,10 @@ def search_memories(
                     results_to_display = [
                         cast(Any, (
                             r[0], r[1], r[2], r[3], r[4], r[5],
-                            -r[5], None, None, None,
+                            -r[5],
+                            r[6] if len(r) > 6 and r[6] is not None else 0.5,
+                            r[7] if len(r) > 7 and r[7] is not None else 3,
+                            bool(r[8]) if len(r) > 8 and r[8] is not None else False,
                             r[9] if len(r) > 9 else None,
                             r[10] if len(r) > 10 else None,
                             r[11] if len(r) > 11 else None,
@@ -2276,7 +2282,10 @@ def search_memories(
                     results_to_display = [
                         (
                             r[0], r[1], r[2], r[3], r[4], r[5],
-                            -r[5], None, None, None,
+                            -r[5],
+                            r[6] if len(r) > 6 and r[6] is not None else 0.5,
+                            r[7] if len(r) > 7 and r[7] is not None else 3,
+                            bool(r[8]) if len(r) > 8 and r[8] is not None else False,
                             r[9] if len(r) > 9 else None,
                             r[10] if len(r) > 10 else None,
                             None,

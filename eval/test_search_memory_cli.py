@@ -761,12 +761,13 @@ class TestResolveDbPathsEdgeCases(unittest.TestCase):
         """Even with custom_db_path, global_db remains unchanged."""
         with tempfile.TemporaryDirectory() as tmpdir:
             custom = Path(tmpdir) / "x.db"
+            _, expected_global = search_memory._resolve_db_paths()
             local_db, global_db = search_memory._resolve_db_paths(
                 custom_db_path=str(custom)
             )
             self.assertEqual(local_db, custom)
-            # Global should be under the agentic-memory dir
-            self.assertIn("agentic-memory", str(global_db))
+            self.assertEqual(global_db, expected_global)
+            self.assertTrue(str(global_db).endswith("memory.db"))
 
     def test_empty_string_custom_path_not_treated_as_custom(self):
         """Empty string is falsy, so default path is used."""

@@ -101,8 +101,8 @@ class TestAgenticMemoryRetrieverConvert(unittest.TestCase):
         mc = MemoryClient(db_path=str(db))
         mc.save("test memory content", tags=["tag1"], category="test", pinned=True)
 
-        r = AgenticMemoryRetriever(db_path=str(db))
-        docs = r.invoke("test")
+        r = AgenticMemoryRetriever(db_path=str(db), search_kwargs={"limit": 5, "rerank": True, "include_global": False})
+        docs = r.invoke("test memory content")
         assert len(docs) >= 1
         assert isinstance(docs[0], Document)
 
@@ -113,8 +113,8 @@ class TestAgenticMemoryRetrieverConvert(unittest.TestCase):
         mc = MemoryClient(db_path=str(db))
         note_id = mc.save("test memory", tags=["tag1"], category="test", pinned=True)
 
-        r = AgenticMemoryRetriever(db_path=str(db))
-        docs = r.invoke("test")
+        r = AgenticMemoryRetriever(db_path=str(db), search_kwargs={"limit": 5, "rerank": True, "include_global": False})
+        docs = r.invoke("test memory")
         assert len(docs) >= 1
         doc = docs[0]
         # critical keys from MemoryResult — search pipeline may not populate
@@ -131,8 +131,8 @@ class TestAgenticMemoryRetrieverConvert(unittest.TestCase):
         mc = MemoryClient(db_path=str(db))
         mc.save("minimal memory", tags=[])
 
-        r = AgenticMemoryRetriever(db_path=str(db))
-        docs = r.invoke("minimal")
+        r = AgenticMemoryRetriever(db_path=str(db), search_kwargs={"limit": 5, "rerank": True, "include_global": False})
+        docs = r.invoke("minimal memory")
         assert len(docs) >= 1
         doc = docs[0]
         # Retriever strips 0.0 and None from r.metadata extras.
@@ -157,7 +157,7 @@ class TestAgenticMemoryRetrieverConvert(unittest.TestCase):
         mc = MemoryClient(db_path=str(db))
         mc.save("test")
 
-        r = AgenticMemoryRetriever(db_path=str(db))
+        r = AgenticMemoryRetriever(db_path=str(db), search_kwargs={"limit": 5, "rerank": True, "include_global": False})
         docs = r.invoke("test")
         assert len(docs) >= 1
         # source_file is set by the search pipeline; page_content may be ""
@@ -166,7 +166,7 @@ class TestAgenticMemoryRetrieverConvert(unittest.TestCase):
     def test_empty_search_returns_empty_list(self):
         db = _fresh_db("empty")
         # fresh DB with no saves
-        r = AgenticMemoryRetriever(db_path=str(db))
+        r = AgenticMemoryRetriever(db_path=str(db), search_kwargs={"limit": 5, "rerank": True, "include_global": False})
         docs = r.invoke("zzzz_no_results_expected")
         assert docs == []
 

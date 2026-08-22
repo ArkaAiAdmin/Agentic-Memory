@@ -333,8 +333,8 @@ class TestMissingConfigFile:
         setattr(_config_mod, "_instance", None)
         try:
             cfg = _config_mod.get_config()
-            # db_path is anchored at package root (H20 fix) — verify it ends with the default
-            assert cfg.db_path.endswith("memory/memory.db")
+            # db_path default ends with memory.db (under MEMORY_HOME/data or legacy memory/)
+            assert cfg.db_path.endswith("memory.db")
             # H10 fix: _resolve defaults now match the MemoryConfig dataclass
             # (previously 12 fields had stale False defaults that silently
             # diverged when TOML was absent; all now default to True).
@@ -413,7 +413,7 @@ class TestLoadFromToml:
             # Overridden
             assert cfg.temporal_half_life == 30.0
             # Still default
-            assert cfg.db_path.endswith("memory/memory.db")
+            assert cfg.db_path.endswith("memory.db")
             assert cfg.knowledge_graph is True
             # H10 fix: _resolve default is True (matches dataclass)
             assert cfg.multi_agent is True

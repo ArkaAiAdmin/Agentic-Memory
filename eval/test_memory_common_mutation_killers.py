@@ -1214,7 +1214,7 @@ class TestConstantsMutationKillers(unittest.TestCase):
         self.assertIsInstance(GLOBAL_MEM_DIR, Path)
 
     def test_global_mem_dir_ends_with_memory(self):
-        self.assertEqual(GLOBAL_MEM_DIR.name, "memory")
+        self.assertIn(GLOBAL_MEM_DIR.name, ("memory", "data"))
 
 
 if __name__ == "__main__":
