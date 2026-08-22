@@ -263,8 +263,11 @@ def consolidate(dry_run: bool = True):
     if dry_run:
         print("DRY-RUN: no changes made. Re-run with --apply to merge/prune.")
     else:
+        # `pruned` counts actual soft-deletes (fuzzy losers + stale
+        # sessions) — NOT the raw pair count, which double-counts and
+        # once misreported 17k "pruned" for a ~5.4k-note corpus.
         print(f"APPLIED: superseded {merged} exact duplicates, "
-              f"pruned {pruned} notes (fuzzy + stale).")
+              f"pruned {pruned} notes (fuzzy losers + stale sessions).")
 
     # Clean up orphaned FTS5 entries (soft-deleted notes still indexed)
     orphans_removed = cleanup_fts5_orphans(db)

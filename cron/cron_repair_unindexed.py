@@ -16,6 +16,7 @@ pending.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -74,7 +75,7 @@ def cleanup_permanently_failed_tasks(conn, days: int = 7) -> int:
             "DELETE FROM task_queue "
             "WHERE status = 'failed' "
             "AND attempts >= max_attempts "
-            "AND updated_at < datetime('now', ?)",
+            "AND created_at < datetime('now', ?)",
             (f"-{days} days",),
         )
         conn.commit()
@@ -136,12 +137,13 @@ def main():
 
     try:
         from infra._lazy_imports import open_db
-        from infra.config import get_db_path
-    except ImportError:
-        logger.error("Cannot import required modules")
+        from infra.infrastructure import resolve_active_memory_dir
+    except ImportError as exc:
+        logger.error("Cannot import required modules: %s", exc)
         sys.exit(1)
 
-    db_path = get_db_path()
+    env_db = os.environ.get("MEMORY_DB_PATH")
+    db_path = Path(env_db) if env_db else resolve_active_memory_dir() / "memory.db"
     with open_db(db_path) as conn:
         result = repair_unindexed(conn)
 

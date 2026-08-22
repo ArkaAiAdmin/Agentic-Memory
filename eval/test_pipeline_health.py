@@ -102,22 +102,59 @@ class TestPipelineHealth:
         task_id = _enqueue_sentinel(conn)
         assert isinstance(task_id, int)
 
-    def test_poll_sentinel_completed(self, conn):
-        task_id = enqueue_task(conn, "cron_pipeline_sentinel", payload={})
+    def test_previous_sentinel_completed(self, conn):
+        from cron.cron_pipeline_health import (
+            _previous_sentinel_outcome,
+            SENTINEL_TYPE,
+        )
+
+        task_id = enqueue_task(conn, SENTINEL_TYPE, payload={})
         conn.execute(
-            "UPDATE task_queue SET status = 'completed' WHERE id = ?",
+            "UPDATE task_queue SET status = 'completed', "
+            "completed_at = datetime('now', '-60 seconds') "
+            "WHERE id = ?",
+            (task_id,),
+        )
+        # Backdate creation so latency is well-defined (~60s).
+        conn.execute(
+            "UPDATE task_queue SET created_at = datetime('now', '-120 seconds') "
+            "WHERE id = ?",
             (task_id,),
         )
         conn.commit()
-        from cron.cron_pipeline_health import _poll_sentinel
-        result = _poll_sentinel(conn, task_id, timeout_s=5)
-        assert result > 0
+        out = _previous_sentinel_outcome(conn)
+        assert out["state"] == "completed"
+        assert out["latency_s"] is not None and 30 < out["latency_s"] < 120
+        assert out["task_id"] == task_id
 
-    def test_poll_sentinel_timeout(self, conn):
+    def test_previous_sentinel_none_on_empty_queue(self, conn):
+        from cron.cron_pipeline_health import _previous_sentinel_outcome
+
+        out = _previous_sentinel_outcome(conn)
+        assert out["state"] == "none"
+
+    def test_previous_sentinel_pending_with_age(self, conn):
+        from cron.cron_pipeline_health import _previous_sentinel_outcome
+
+        task_id = enqueue_task(conn, SENTINEL_TYPE if False else "cron_pipeline_sentinel", payload={})
+        conn.execute(
+            "UPDATE task_queue SET created_at = datetime('now', '-10 minutes') "
+            "WHERE id = ?",
+            (task_id,),
+        )
+        conn.commit()
+        out = _previous_sentinel_outcome(conn)
+        assert out["state"] == "pending"
+        assert out["age_s"] is not None and 500 < out["age_s"] < 700
+
+    def test_previous_sentinel_failed(self, conn):
+        from cron.cron_pipeline_health import _previous_sentinel_outcome
+
         task_id = enqueue_task(conn, "cron_pipeline_sentinel", payload={})
-        from cron.cron_pipeline_health import _poll_sentinel
-        with pytest.raises(TimeoutError):
-            _poll_sentinel(conn, task_id, timeout_s=1)
+        conn.execute("UPDATE task_queue SET status='failed' WHERE id = ?", (task_id,))
+        conn.commit()
+        out = _previous_sentinel_outcome(conn)
+        assert out["state"] == "failed"
 
     def test_resolve_db_path_from_env(self, monkeypatch, tmp_path):
         d = tmp_path / "test.db"
@@ -196,18 +233,19 @@ class TestJournalBacklogProbe:
 
         monkeypatch.setenv("MEMORY_DB_PATH", str(db))
         monkeypatch.setenv("MEMORY_DB_FLOCK", "0")
-        # Force the sentinel poll to fail immediately (no worker draining),
-        # so main() returns 1 but still prints the journal_pending line.
-        def _boom(*_a, **_k):
-            raise TimeoutError("no worker")
+        # Seed a FAILED previous sentinel: main() must still print the
+        # journal_pending depth line before reporting the failure.
+        _t = enqueue_task(_c2 := _plain_conn(db), "cron_pipeline_sentinel", payload={})
+        _c2.execute("UPDATE task_queue SET status='failed' WHERE id = ?", (_t,))
+        _c2.commit()
+        _c2.close()
 
         import cron.cron_pipeline_health as _cph
 
-        monkeypatch.setattr(_cph, "_poll_sentinel", _boom)
         monkeypatch.setattr(_cph, "acquire_lock_or_exit", lambda *_a, **_kw: None)
 
         rc = main()
-        assert rc != 0  # sentinel never completed (no worker)
+        assert rc != 0  # previous sentinel failed → pipeline unhealthy
         captured = capsys.readouterr()
         assert "journal_pending: 2" in captured.out
 
@@ -218,54 +256,15 @@ class TestWorkerRecovery:
     Recovery is best-effort and must NOT mask a real failure.
     """
 
-    def test_recover_via_launchctl(self, monkeypatch, tmp_path):
+    def test_recover_spawns_once_drain(self, monkeypatch, tmp_path):
         import cron.cron_pipeline_health as cph
-
-        plist = tmp_path / "Library" / "LaunchAgents" / "com.x.plist"
-        plist.parent.mkdir(parents=True, exist_ok=True)
-        plist.write_text("<plist/>")
-        monkeypatch.setattr(cph, "PLIST_NAME", plist.name)
-        monkeypatch.setenv("HOME", str(tmp_path))
-
-        calls = {}
-
-        def _fake_which(cmd):
-            return "/usr/bin/launchctl" if cmd == "launchctl" else None
-
-        def _fake_run(args, **kw):
-            calls["args"] = list(args)
-
-            class _R:
-                returncode = 0
-                stdout = ""
-                stderr = ""
-
-            return _R()
-
-        monkeypatch.setattr("shutil.which", _fake_which)
-        monkeypatch.setattr("subprocess.run", _fake_run)
-
-        ok = cph._try_start_worker()
-        assert ok is True
-        assert calls["args"] == ["launchctl", "load", str(plist)]
-
-    def test_recover_launchctl_missing_falls_back_to_spawn(self, monkeypatch, tmp_path):
-        import cron.cron_pipeline_health as cph
-
-        # No plist + no launchctl -> spawn fallback.
-        monkeypatch.setattr(cph, "PLIST_NAME", "no-such.plist")
-        monkeypatch.setenv("HOME", str(tmp_path))
 
         spawned = {}
-
-        def _fake_which(cmd):
-            return None  # no launchctl
 
         class _FakePopen:
             def __init__(self, args, **kw):
                 spawned["args"] = list(args)
 
-        monkeypatch.setattr("shutil.which", _fake_which)
         monkeypatch.setattr("subprocess.Popen", _FakePopen)
 
         ok = cph._try_start_worker()
@@ -275,34 +274,30 @@ class TestWorkerRecovery:
     def test_recover_returns_false_when_all_fail(self, monkeypatch, tmp_path):
         import cron.cron_pipeline_health as cph
 
-        monkeypatch.setattr(cph, "PLIST_NAME", "no-such.plist")
-        monkeypatch.setenv("HOME", str(tmp_path))
-
-        def _fake_which(cmd):
-            return None
-
         def _fake_Popen(*a, **k):
             raise OSError("boom")
 
-        monkeypatch.setattr("shutil.which", _fake_which)
         monkeypatch.setattr("subprocess.Popen", _fake_Popen)
 
         assert cph._try_start_worker() is False
 
-    def test_main_attempts_recovery_on_sentinel_timeout(self, monkeypatch, tmp_path, capsys):
+    def test_main_attempts_recovery_on_stale_sentinel(self, monkeypatch, tmp_path, capsys):
         import cron.cron_pipeline_health as cph
 
         db = tmp_path / "memory.db"
         _c = _plain_conn(db)
         init_task_queue(_c)
+        # Seed a STALE pending sentinel (older than STALE_PENDING_S).
+        t = enqueue_task(_c, "cron_pipeline_sentinel", payload={})
+        _c.execute(
+            "UPDATE task_queue SET created_at = datetime('now', '-1 hour') "
+            "WHERE id = ?",
+            (t,),
+        )
+        _c.commit()
         _c.close()
         monkeypatch.setenv("MEMORY_DB_PATH", str(db))
         monkeypatch.setenv("MEMORY_DB_FLOCK", "0")
-
-        # Sentinel poll fails (no worker); make recovery succeed so the
-        # "recover:" line is emitted, but main() still returns 1.
-        def _boom(*_a, **_k):
-            raise TimeoutError("no worker")
 
         recovered = {}
 
@@ -314,14 +309,15 @@ class TestWorkerRecovery:
             print("recover: test-stub recovery invoked", file=_sys.stderr)
             return True
 
-        import cron.cron_pipeline_health as _cph
+        def _worker_down():
+            return False
 
-        monkeypatch.setattr(_cph, "_poll_sentinel", _boom)
-        monkeypatch.setattr(_cph, "_try_start_worker", _fake_recover)
-        monkeypatch.setattr(_cph, "acquire_lock_or_exit", lambda *_a, **_kw: None)
+        monkeypatch.setattr(cph, "_try_start_worker", _fake_recover)
+        monkeypatch.setattr(cph, "_worker_alive", _worker_down)
+        monkeypatch.setattr(cph, "acquire_lock_or_exit", lambda *_a, **_kw: None)
 
         rc = cph.main()
-        assert rc != 0
+        assert rc != 0  # stale sentinel → pipeline unhealthy
         assert recovered.get("called") is True
         captured = capsys.readouterr()
         assert "recover:" in captured.err

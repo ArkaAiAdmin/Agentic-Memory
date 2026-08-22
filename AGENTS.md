@@ -25,11 +25,11 @@ using the system: [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memor
 | 4 | After test/index/cron op | `agentic-memory_memory_advanced(operation="auto_save_status")` — only when cron is down or immediate results are needed (Rule 21) |
 | 5 | Before ending session | `agentic-memory_memory_save(category="sessions")`, then `memory_session_end(summary=...)`. **No session handle needed** — end falls back to the state file, then to the most recent active session for this agent; with nothing active it returns a structured no-op instead of erroring. |
 
-Minimum every session: #1 + #5. Save a **context-rich** `projects` note (importance=4) at every significant milestone — enough context to be useful weeks later, not a timestamped log line.
+Minimum every session: #1 + #5. Save context-rich `projects` notes (importance=4) at milestones — useful weeks later, not log lines.
 
-Session persistence requires `[session_memory] enabled = true` (on since 2026-08-22). Skill extraction vetoes eval/test residue memory ids (`skill_extractor.is_junk_memory_id`) and strips YAML frontmatter before topic/description generation — junk skills must not return; sweep with `scripts/purge_junk_skills.py` if they ever do.
+Session persistence requires `[session_memory] enabled = true` (on since 2026-08-22). Skill extraction vetoes eval/test residue ids (`skill_extractor.is_junk_memory_id`) and strips YAML frontmatter; sweep with `scripts/purge_junk_skills.py` if junk ever returns.
 
-**Save-time rule (row 3):** if a new lesson **contradicts an existing note**, call `memory_note(note_id, action="supersede", rationale="...")` instead of a fresh `memory_save` — it writes to `memory_revision_log` and retires the stale note rather than leaving two conflicting memories. Search first (`memory_search`) to find the note to supersede.
+**Save-time rule (row 3):** if a new lesson **contradicts an existing note**, call `memory_note(note_id, action="supersede", rationale="...")` instead of a fresh `memory_save` — it retires the stale note via `memory_revision_log` rather than leaving two conflicting memories. Search first (`memory_search`).
 
 ## Agent Self-Editing
 
@@ -189,7 +189,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 
 ### Pointers
 
-- **Tool registry:** `tool_registry.py` (`CORE_TOOLS` / `ADMIN_TOOLS` / `DEPRECATED`) is the single source of truth — `memory_mcp.py` imports it and strips ADMIN names from the agent MCP surface. Any ADMIN name must be reachable only via `memory_advanced` (agent-facing escape hatch) or the `memory_maintenance` router (CLI-only). Full tool surface + counts: `docs/MCP_SURFACE.md` (machine-enforced).
+- **Tool registry:** `tool_registry.py` (`CORE_TOOLS` / `ADMIN_TOOLS` / `DEPRECATED`) is the single source of truth — `memory_mcp.py` imports it and strips ADMIN names from the agent MCP surface. Any ADMIN name must be reachable only via `memory_advanced` (agent-facing escape hatch) or the `memory_maintenance` router (CLI-only). Full tool surface + counts: `docs/MCP_SURFACE.md` (machine-enforced). Maintenance runbook: `docs/runbooks/maintenance-operations.md`.
 - **Hook wiring:** `opencode.jsonc` registers the TS plugin → Python subprocess pipeline. Don't call `hooks/*.py` directly. Full event→script map: `docs/MCP_SURFACE.md`. (`plugin/index.ts` + `plugin/agentic-memory-hooks.ts`)
 - **Feature flags:** See `memory.toml` for all feature flags (52+ boolean toggles). Key ones: `MEMORY_WRITE_JOURNAL_ENABLED` (ON — CQRS write journal; requires `background_worker` daemon to drain `journal.db`), `MEMORY_TEMPORAL_KG` (ON), `MEMORY_TOML_HOT_RELOAD` (OFF).
 - **Entry point:** Always start via `memory_mcp.py` or `cli.py`. `mcp_tools.py` auto-discovery is not the server entry point.

@@ -1,11 +1,22 @@
-"""Pipeline end-to-end health check.
+"""Pipeline end-to-end health check (non-blocking, two-phase).
 
-Enqueues a sentinel task and waits for the background worker to pick
-it up and complete it (short poll, ~30s max).  Reports:
+Each run:
+  1. Enqueues a fresh sentinel task (HIGH priority).
+  2. Evaluates the PREVIOUS run's sentinel instead of blocking on this
+     one — the queue drain cadence is minutes (~5 min via launchd
+     interval), so any in-process poll window shorter than that reports
+     "worker appears down" for a healthy pipeline 100% of the time.
+     The previous sentinel's outcome is the true end-to-end signal:
 
-  - elapsed (s) for sentinel completion
-  - total failed tasks in the last 24h
-  - pending queue depth
+       completed within HEALTHY_MAX_LATENCY_S  -> healthy (0)
+       completed but slow                      -> healthy + warn
+       failed                                  -> unhealthy (1)
+       still pending past STALE_PENDING_S      -> unhealthy (1)
+       in-flight (young)                       -> healthy (0)
+
+Also reports: failures in last 24h, pending queue depth, CQRS journal
+backlog. Self-heals by attempting to restart the background worker when
+the queue looks stalled.
 
 Returns 0 if healthy, 1 if not.
 """
@@ -29,6 +40,12 @@ def _log_structured(level: str | int, event: str, **fields: Any) -> None:
     getattr(logger, level)(_json.dumps(log_entry))
 
 SENTINEL_TYPE = "cron_pipeline_sentinel"
+
+# Observed queue drain latency is ~4-5 min (launchd StartInterval).
+# A sentinel completing within 15 min is healthy; one still pending
+# after 30 min means the worker is genuinely not draining.
+HEALTHY_MAX_LATENCY_S = 900.0
+STALE_PENDING_S = 1800.0
 
 _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(_repo_root)
@@ -92,50 +109,37 @@ def _open_db(db_path: Path):
     return c
 
 
-def _poll_sentinel(conn, task_id: int, timeout_s: float = 30.0) -> float:
-    """Wait for the sentinel to complete.
+def _previous_sentinel_outcome(conn) -> dict:
+    """Outcome of the most recent sentinel enqueued BEFORE this run.
 
-    The deadline is self-extending up to a bounded cap: if the worker is
-    still alive but busy draining a heavy backlog (e.g. a 30s
-    cron_health_check task), we keep waiting past the nominal window rather
-    than declaring failure. We only give up when either the sentinel
-    completes or the worker is confirmed dead — in which case the sentinel
-    will never be picked up.
+    Two-phase probe: this run only inspects history, it never blocks.
+    Latency/age are computed in SQL via julianday so timezone handling
+    stays in SQLite's UTC frame.
 
-    The extension is bounded so callers that expect a hard short timeout
-    (notably the unit tests passing timeout_s=1) still time out promptly:
-    a live worker extends the soft window by at most ``timeout_s`` once,
-    and the absolute ceiling is ``2 * timeout_s``.
+    Returns a dict: {state: completed|failed|pending|none,
+                     latency_s: float|None, age_s: float|None,
+                     task_id: int|None}
     """
-    soft_deadline = time.time() + timeout_s
-    hard_deadline = time.time() + 2.0 * timeout_s
-    while time.time() < hard_deadline:
-        row = conn.execute(
-            "SELECT status, completed_at FROM task_queue WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        if row is None:
-            raise RuntimeError(f"sentinel task {task_id} not found")
-        status = row[0]
-        if status == "completed":
-            return time.time()
-        if status == "failed":
-            raise RuntimeError(f"sentinel task {task_id} failed")
-        # Worker alive → extend the wait modestly; it WILL get to the
-        # sentinel (enqueued at high priority). Cap at 2x the requested
-        # timeout so a short timeout still fails promptly when the worker
-        # is down.
-        if _worker_alive():
-            soft_deadline = max(soft_deadline, time.time() + timeout_s)
-            if soft_deadline > hard_deadline:
-                soft_deadline = hard_deadline
-        elif time.time() > soft_deadline:
-            # Worker dead and past the soft window → genuine failure.
-            raise TimeoutError(
-                f"sentinel task {task_id} not completed: worker appears down"
-            )
-        time.sleep(1)
-    raise TimeoutError(f"sentinel task {task_id} not completed within {hard_deadline}s")
+    row = conn.execute(
+        """SELECT id, status,
+                  CASE WHEN completed_at IS NOT NULL AND created_at IS NOT NULL
+                       THEN (julianday(completed_at) - julianday(created_at)) * 86400.0
+                       ELSE NULL END,
+                  (julianday('now') - julianday(created_at)) * 86400.0
+           FROM task_queue
+           WHERE task_type = ?
+           ORDER BY id DESC LIMIT 1""",
+        (SENTINEL_TYPE,),
+    ).fetchone()
+    if row is None:
+        return {"state": "none", "latency_s": None, "age_s": None, "task_id": None}
+    task_id, status, latency_s, age_s = row
+    return {
+        "state": status if status in ("completed", "failed") else "pending",
+        "latency_s": float(latency_s) if latency_s is not None else None,
+        "age_s": float(age_s) if age_s is not None else None,
+        "task_id": int(task_id),
+    }
 
 
 def _count_failures(conn, hours: int = 24) -> int:
@@ -194,43 +198,22 @@ def _journal_pending_depth(db_path: Path) -> int | None:
 
 
 # Recovery: when the sentinel can't complete because no worker is draining
-# the queue, attempt to (re)start the background_worker daemon. launchd is
-# the preferred supervisor (auto-restart + boot), with a direct subprocess
-# spawn as a last-resort fallback. Best-effort: never masks the failure.
-PLIST_NAME = "com.agentic-memory.background-worker.plist"
+# the queue, attempt a one-shot background_worker drain via direct spawn.
+# (launchd supervision retired 2026-08-23 — its label sat dead while cron
+# did all draining.) Best-effort: never masks the failure.
 
 
 def _worker_alive() -> bool:
-    """Best-effort liveness check for the background_worker daemon.
+    """Best-effort liveness check for a background_worker process.
 
-    True if launchd reports it loaded (PID column non-zero) or a
-    ``background_worker.py`` process is running. Used to decide whether a
-    sentinel timeout means "worker is down" (real failure) or merely
-    "worker is alive but busy draining a heavy backlog" (keep waiting).
+    True if a ``background_worker.py`` process with an active drain flag
+    is running (pgrep). Used to decide whether recovery is needed before
+    declaring the pipeline unhealthy on a stale sentinel.
     """
-    import shutil
     import subprocess
 
-    # launchctl: third column is the PID; a dash means not running.
-    if shutil.which("launchctl"):
-        try:
-            r = subprocess.run(
-                ["launchctl", "list"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            for line in (r.stdout + r.stderr).splitlines():
-                if PLIST_NAME in line:
-                    pid_field = line.split()[0]
-                    if pid_field not in ("-", "0"):
-                        return True
-        except Exception:
-            pass
-
-    # Process scan fallback (covers non-launchd / manual invocations).
-    # Tightened match: only match actual worker invocations (--drain, --once,
-    # --interval), not editors or import-only processes.
+    # Tightened match: only match actual worker invocations (--drain,
+    # --once, --interval), not editors or import-only processes.
     try:
         r = subprocess.run(
             ["pgrep", "-f", "background_worker.py.*(--drain|--interval|--once)"],
@@ -246,32 +229,16 @@ def _worker_alive() -> bool:
 
 
 def _try_start_worker() -> bool:
-    """Attempt to start the background_worker daemon. Returns True if a
-    launchd load OR a spawn succeeded. Failure is non-fatal."""
-    import shutil
+    """Attempt to start a one-shot background_worker drain. Returns True
+    if the spawn succeeded. Failure is non-fatal.
+
+    The cron scheduler owns worker scheduling (5m --drain); launchd
+    supervision was retired 2026-08-23 after its label sat dead
+    (exit 1, no PID) while cron did all draining. We spawn ``--once``
+    directly: it drains up to 50 tasks and exits, no supervisor needed.
+    """
     import subprocess
 
-    plist = Path.home() / "Library" / "LaunchAgents" / PLIST_NAME
-    if plist.exists() and shutil.which("launchctl"):
-        try:
-            # load is idempotent enough; on "already loaded" it's fine.
-            r = subprocess.run(
-                ["launchctl", "load", str(plist)],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if r.returncode == 0:
-                _log_structured(logging.INFO, "worker_recovered", method="launchctl")
-                return True
-            # Already loaded → treat as started.
-            if "already loaded" in (r.stderr + r.stdout).lower():
-                return True
-        except Exception as e:  # pragma: no cover
-            _log_structured(logging.WARNING, "worker_recovery_failed", method="launchctl", error=str(e))
-
-    # Fallback: spawn the worker directly (--once to drain, then exit).
-    # This unblocks the current backlog even without launchd.
     try:
         repo_root = Path(__file__).resolve().parent.parent
         venv_py = repo_root / "venv" / "bin" / "python"
@@ -285,6 +252,8 @@ def _try_start_worker() -> bool:
             )
             _log_structured(logging.INFO, "worker_recovered", method="spawn")
             return True
+        _log_structured(logging.WARNING, "worker_recovery_failed", method="spawn",
+                        error="venv python or worker script missing")
     except Exception as e:  # pragma: no cover
         _log_structured(logging.WARNING, "worker_recovery_failed", method="spawn", error=str(e))
     return False
@@ -298,32 +267,47 @@ def main() -> int:
         return 1
 
     conn = _open_db(db_path)
+    failures = pending = 0
     try:
-        t0 = time.time()
+        # Phase 1 — evaluate the PREVIOUS sentinel (never blocks).
+        prev = _previous_sentinel_outcome(conn)
 
+        # Phase 2 — enqueue a fresh sentinel for the NEXT run to judge.
         task_id = _enqueue_sentinel(conn)
-        _log_structured(logging.INFO, "sentinel_enqueued", task_id=task_id)
+        _log_structured(logging.INFO, "sentinel_enqueued", task_id=task_id,
+                        previous_state=prev["state"],
+                        previous_latency_s=prev["latency_s"],
+                        previous_age_s=prev["age_s"])
 
         failures = _count_failures(conn, hours=24)
         pending = _pending_depth(conn)
         journal_pending = _journal_pending_depth(db_path)
 
-        # Report depth probes BEFORE the sentinel poll so they are always
-        # emitted even when the worker is down (poll would raise/timeout).
-        # The journal_pending line is the CQRS-backlog signal: a growing
-        # count means the background_worker daemon isn't draining journal.db.
-        # Keep the human-readable stdout line (consumed by tests/operators)
-        # alongside the structured event.
         print(f"journal_pending: {journal_pending}", flush=True)
-        _log_structured(logging.INFO, "pipeline_status", failed_last_24h=failures, pending_queue_depth=pending, journal_pending=journal_pending)
+        print(
+            f"previous_sentinel: state={prev['state']} "
+            f"latency_s={prev['latency_s']} age_s={prev['age_s']}",
+            flush=True,
+        )
+        _log_structured(
+            logging.INFO,
+            "pipeline_status",
+            failed_last_24h=failures,
+            pending_queue_depth=pending,
+            journal_pending=journal_pending,
+            previous_sentinel=prev["state"],
+            previous_sentinel_latency_s=prev["latency_s"],
+        )
 
         if journal_pending is not None and journal_pending > JOURNAL_PENDING_WARN:
             _log_structured(logging.WARNING, "journal_backlog", journal_pending=journal_pending, threshold=JOURNAL_PENDING_WARN)
 
-        # Self-heal: if the queue already shows a backlog, try to start the
-        # worker before the (likely-failing) sentinel poll, so recovery runs
-        # even if the poll times out below.
-        if pending > 0 or not _worker_alive():
+        # Self-heal: attempt worker restart on any stall signal.
+        stalled = (
+            prev["state"] == "pending"
+            and (prev["age_s"] or 0.0) > STALE_PENDING_S
+        ) or (prev["state"] == "failed")
+        if stalled and not _worker_alive():
             if _try_start_worker():
                 from infra.alert import alert
 
@@ -332,33 +316,29 @@ def main() -> int:
                     "Background worker restarted",
                     "Pipeline health check initiated worker restart",
                 )
-                # Give the spawned worker time to start and pick up the sentinel
-                time.sleep(3)
 
-        try:
-            _poll_sentinel(conn, task_id, timeout_s=30.0)
-        except Exception:
-            # Sentinel didn't complete — worker likely down. Make one
-            # final recovery attempt, then report the failure (don't mask it).
-            if _try_start_worker():
-                from infra.alert import alert
-
-                alert(
-                    "warning",
-                    "Background worker restarted",
-                    "Pipeline health check initiated worker restart",
+        # Verdict from the PREVIOUS sentinel.
+        if prev["state"] in ("none",):
+            # First run after install/cleanup: nothing to judge yet.
+            return 0
+        if prev["state"] == "completed":
+            latency = prev["latency_s"] or 0.0
+            if latency > HEALTHY_MAX_LATENCY_S:
+                _log_structured(
+                    logging.WARNING,
+                    "sentinel_slow",
+                    latency_s=round(latency, 1),
+                    threshold_s=HEALTHY_MAX_LATENCY_S,
                 )
-            raise
-
-        elapsed = time.time() - t0
-        _log_structured(logging.INFO, "sentinel_completed", elapsed_s=round(elapsed, 2), elapsed_ms=round(elapsed * 1000.0, 2))
-
-        # A slow-but-successful sentinel (worker was draining a heavy
-        # backlog) is HEALTHY, not a failure — don't fail on latency.
-        # Only warn so pipeline-coverage can surface the backlog signal.
-        if elapsed > 60.0:
-            _log_structured(logging.WARNING, "sentinel_slow", elapsed_s=round(elapsed, 1))
-
+            return 0
+        if prev["state"] == "failed":
+            raise RuntimeError(f"previous sentinel task {prev['task_id']} failed")
+        # Pending: healthy while young, unhealthy once stale.
+        if (prev["age_s"] or 0.0) > STALE_PENDING_S:
+            raise TimeoutError(
+                f"sentinel task {prev['task_id']} still pending after "
+                f"{int(prev['age_s'])}s (stale threshold {int(STALE_PENDING_S)}s)"
+            )
         return 0
     except Exception as exc:
         _log_structured(logging.ERROR, "pipeline_health_failed", error=str(exc), failed_tasks=failures, pending=pending)

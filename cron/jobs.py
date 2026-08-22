@@ -47,7 +47,10 @@ JOBS: dict[str, dict] = {
         "freq": "5m",
         "script": "background_worker.py",
         "args": ["--drain", "--max-tasks=50"],
-        "timeout": 60,
+        # Drains under load can take ~4-5 min (measured via pipeline
+        # sentinels); 60s killed mid-drain and caused lock contention
+        # with the next run ("unable to open database file").
+        "timeout": 300,
     },
     # Journal reconciler: drains the CQRS write-journal in a separate
     # process (was previously an inline thread in the MCP server process,
