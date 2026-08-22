@@ -648,11 +648,11 @@ def memory_recall(
             derives from the calling agent's namespace (default
             namespace -> global included); when True/False, overrides
             the derived default.
-        mode: Search mode: "hybrid" (default when an explicit query is
-            given), "semantic", "fts". Recent-activity browsing (no
-            query) defaults to "fts" so the bridge recall returns in
-            well under a second instead of running the full hybrid
-            pipeline (semantic expansion + cross-encoder rerank).
+        mode: Search mode: "fts" (default for both browse and explicit
+            query), "hybrid", "semantic". Hybrid/semantic are opt-in —
+            they cost seconds (semantic query-parse + possible
+            cross-encoder rerank), so pass them explicitly only when FTS
+            results are insufficient.
     """
     auth_err = _check_authorization("search", "memory")
     if auth_err:
@@ -669,7 +669,11 @@ def memory_recall(
         except (ImportError, Exception):
             _default_global = True
         _include_global = _default_global if include_global is None else include_global
-        _mode = mode or ("fts" if not query else "hybrid")
+        # Default fts for BOTH browse and query paths: hybrid's semantic
+        # parse (~8s) + auto deep-rerank escalation made every explicit-
+        # query recall a multi-second stall. Pass mode="hybrid" explicitly
+        # when semantic recall is genuinely needed.
+        _mode = mode or "fts"
         result = search_memories(
             db_path=db_path,
             query=q,

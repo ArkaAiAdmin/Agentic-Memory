@@ -116,7 +116,10 @@ class MemoryClient:
         synthesize: bool = False,
         max_synthesis_sentences: int = 5,
         tags: list[str] | None = None,
-        mode: str = "hybrid",
+        # Default fts: sub-100ms. Hybrid costs ~8s semantic query-parse
+        # and auto-escalates to cross-encoder rerank on reasoning-shaped
+        # queries — opt in explicitly when needed.
+        mode: str = "fts",
         light: bool = False,
     ) -> SearchResults:
         """Search memories by semantic and keyword relevance.

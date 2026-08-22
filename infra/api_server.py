@@ -697,7 +697,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             light = light_param.lower() == "true" if light_param else (not rerank)
             tags_str = query_params.get("tags", [None])[0]
             tags = tags_str.split(",") if tags_str else None
-            mode = query_params.get("mode", ["hybrid"])[0]
+            # Default fts: sub-100ms BM25. Hybrid costs ~8s query-parse
+            # (semantic expansion) + fusion, and auto-escalates to the
+            # deep cross-encoder on reasoning-shaped queries (measured
+            # 14-23s). Callers opt in explicitly with ?mode=hybrid.
+            mode = query_params.get("mode", ["fts"])[0]
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
                 results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
@@ -734,7 +738,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             rerank = req.get("rerank", False)
             light = req.get("light", not rerank)
             tags = req.get("tags", None)
-            mode = req.get("mode", "hybrid")
+            # Default fts — see GET handler note above.
+            mode = req.get("mode", "fts")
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
                 results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
