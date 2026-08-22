@@ -65,6 +65,8 @@ except ModuleNotFoundError:
 _CONFIG_DIR = Path(__file__).resolve().parent.parent
 
 
+from infra.memory_config import get_memory_home, get_global_memory_dir
+
 # Module-level install-root paths (P3-33). These point at the canonical
 # install locations used by mcp_maintenance / mcp_common / cli. Override
 # at runtime by setting MEMORY_INSTALL_ROOT if a non-default layout is
@@ -90,6 +92,9 @@ def _resolve_toml_path() -> Path:
             # read a stale memory.toml from the home dir or /tmp.
             p = (_CONFIG_DIR / p).resolve()
         return p
+    home_toml = get_memory_home() / "config" / "memory.toml"
+    if home_toml.exists():
+        return home_toml
     return _CONFIG_DIR / "memory.toml"
 
 
@@ -105,7 +110,7 @@ _TOML_PATH = _resolve_toml_path()
 
 
 def _abs_db_path(raw: str) -> str:
-    """Anchor a relative db_path at the package root, not cwd.
+    """Anchor a relative db_path at MEMORY_HOME/data or the package root.
 
     H20 fix: modules that take a db_path argument (memory_sharing.py,
     consolidate_facts.py) used to compute `Path(db_path).parent` without
@@ -118,6 +123,10 @@ def _abs_db_path(raw: str) -> str:
     p = Path(raw)
     if p.is_absolute():
         return str(p)
+    global_dir = get_global_memory_dir()
+    if raw in ("memory/memory.db", "memory.db"):
+        if (global_dir / "memory.db").exists() or os.environ.get("MEMORY_HOME"):
+            return str((global_dir / "memory.db").resolve())
     return str((_CONFIG_DIR / p).resolve())
 
 
@@ -547,7 +556,7 @@ class FeatureFlagsConfig:
     graph_communities: bool = True
     graph_evolution_tracking: bool = True
     ner_spacy_enabled: bool = False
-    session_memory: bool = False
+    session_memory: bool = True
     session_decision_llm: bool = False
     session_cross_entity_boost: bool = True
 
@@ -1138,7 +1147,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_NER_SPACY", "features.ner_spacy_enabled", False, bool, toml_data
         ),
         session_memory=_b(
-            "MEMORY_SESSION_MEMORY", "session_memory.enabled", False, bool, toml_data
+            "MEMORY_SESSION_MEMORY", "session_memory.enabled", True, bool, toml_data
         ),
         session_decision_llm=_b(
             "MEMORY_SESSION_DECISION_LLM", "session_memory.decision_llm", False, bool, toml_data
@@ -1765,13 +1774,13 @@ def get_feature_flags() -> dict:
         "session_memory": _flag(
             _f.session_memory,
             "MEMORY_SESSION_MEMORY",
-            "features.session_memory",
-            False,
+            "session_memory.enabled",
+            True,
         ),
         "session_decision_llm": _flag(
             _f.session_decision_llm,
             "MEMORY_SESSION_DECISION_LLM",
-            "features.session_decision_llm",
+            "session_memory.decision_llm",
             False,
         ),
         "fts5_cache": _flag(

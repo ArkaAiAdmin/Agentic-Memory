@@ -21,6 +21,7 @@ import datetime
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Tuple
 
@@ -36,12 +37,56 @@ PROJECT_ROOT_MARKERS = (
     "pyproject.toml",
 )
 
-GLOBAL_MEM_DIR = Path(
-    os.environ.get(
-        "GLOBAL_MEM_DIR",
-        Path.home() / ".config" / "agentic-memory" / "memory",
-    )
-)
+
+def get_memory_home() -> Path:
+    """Resolve the base application data directory for mutable memory state.
+
+    Resolution order:
+    1. ``MEMORY_HOME`` environment variable if set.
+    2. macOS: ``~/Library/Application Support/AgenticMemory``
+    3. Windows: ``%APPDATA%/AgenticMemory`` (or ``~/AppData/Roaming/AgenticMemory``)
+    4. Linux/Other: ``$XDG_DATA_HOME/AgenticMemory`` (or ``~/.local/share/AgenticMemory``)
+    """
+    env_home = os.environ.get("MEMORY_HOME")
+    if env_home:
+        return Path(env_home).expanduser()
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "AgenticMemory"
+    elif sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+        return base / "AgenticMemory"
+    else:
+        xdg_data = os.environ.get("XDG_DATA_HOME")
+        base = Path(xdg_data) if xdg_data else Path.home() / ".local" / "share"
+        return base / "AgenticMemory"
+
+
+def get_global_memory_dir() -> Path:
+    """Resolve the global memory data directory.
+
+    Resolution order:
+    1. ``GLOBAL_MEM_DIR`` environment variable if set.
+    2. ``<MEMORY_HOME>/data`` if it exists or if ``MEMORY_HOME`` is explicitly set.
+    3. Legacy ``~/.config/agentic-memory/memory`` if it contains data or exists.
+    4. Fallback to ``<MEMORY_HOME>/data``.
+    """
+    env_global = os.environ.get("GLOBAL_MEM_DIR")
+    if env_global:
+        return Path(env_global).expanduser()
+
+    home_data = get_memory_home() / "data"
+    if os.environ.get("MEMORY_HOME") or (home_data / "memory.db").exists():
+        return home_data
+
+    legacy_dir = Path.home() / ".config" / "agentic-memory" / "memory"
+    if (legacy_dir / "memory.db").exists():
+        return legacy_dir
+
+    return home_data
+
+
+GLOBAL_MEM_DIR = get_global_memory_dir()
 
 
 def install_root() -> Path:
@@ -78,6 +123,8 @@ _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 __all__ = [
     "GLOBAL_MEM_DIR",
+    "get_memory_home",
+    "get_global_memory_dir",
     "get_memory_paths",
     "find_project_root",
     "configure_logging",
@@ -122,12 +169,13 @@ def get_memory_paths() -> "Tuple[Path, Path, Path]":
     3. If project_root/memory.db exists directly → local_mem = project_root
     4. Otherwise → local_mem = project_root/memory (may not exist yet)
     """
+    global_dir = get_global_memory_dir()
     env_db = os.environ.get("MEMORY_DB_PATH")
     if env_db:
         db_path = Path(env_db)
         local_mem = db_path.parent
         project_root = find_project_root(local_mem) or local_mem
-        return (project_root, local_mem, GLOBAL_MEM_DIR)
+        return (project_root, local_mem, global_dir)
 
     cwd = Path(os.getcwd())
     project_root = find_project_root(cwd)
@@ -139,12 +187,12 @@ def get_memory_paths() -> "Tuple[Path, Path, Path]":
         local_mem = mem_subdir
     elif (project_root / "memory.db").exists():
         local_mem = project_root
-    elif (GLOBAL_MEM_DIR / "memory.db").exists():
+    elif (global_dir / "memory.db").exists():
         # Fallback: use global memory dir if local doesn't have a DB
-        local_mem = GLOBAL_MEM_DIR
+        local_mem = global_dir
     else:
         local_mem = mem_subdir
-    return (project_root, local_mem, GLOBAL_MEM_DIR)
+    return (project_root, local_mem, global_dir)
 
 
 def configure_logging() -> None:

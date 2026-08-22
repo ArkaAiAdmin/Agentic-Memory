@@ -31,7 +31,7 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 | `MEMORY_SELF_EDITING` | `True` | TOML: `features.self_editing=True` |
 | `MEMORY_SESSION_CROSS_ENTITY_BOOST` | `True` | TOML: `session_memory.cross_entity_boost=True` |
 | `MEMORY_SESSION_DECISION_LLM` | `False` | TOML: `session_memory.decision_llm=False` |
-| `MEMORY_SESSION_MEMORY` | `False` | TOML: `session_memory.enabled=True` |
+| `MEMORY_SESSION_MEMORY` | `True` | TOML: `session_memory.enabled=True` |
 | `MEMORY_SUMMARIZATION` | `True` |  |
 | `MEMORY_TEMPORAL_KG_LLM_TIER` | `light` | TOML: `features.temporal_kg_llm_tier=light` |
 | `MEMORY_TEMPORAL_SSM_ENABLED` | `False` | TOML: `features.temporal_ssm_enabled=True` |

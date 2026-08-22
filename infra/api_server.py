@@ -22,8 +22,15 @@ from urllib.parse import urlparse, parse_qs
 from agentic_memory.client import MemoryClient
 
 from infra.api_token import validate_api_token
+from infra.db_migrations import SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
+
+try:
+    from importlib.metadata import version as _get_version
+    PACKAGE_VERSION = _get_version("agentic-memory")
+except Exception:
+    PACKAGE_VERSION = "1.1.0"
 
 # Config variables (from env with fallback to empty/defaults)
 API_AUTH_TOKEN = os.environ.get("MEMORY_API_TOKEN", "")
@@ -647,8 +654,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     # Handlers
     def _handle_health(self) -> None:
-        # SEC: liveness only — no agent_id/version metadata for unauth
-        # callers (LOW-2). note_count is a tenant-scoped aggregate.
         note_count = 0
         try:
             client = MemoryClient(db_path=self.server.db_path)
@@ -658,7 +663,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             pass
         self._write_json({
             "status": "healthy",
-            "note_count": note_count
+            "package_version": PACKAGE_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "note_count": note_count,
         })
 
     def _handle_list_memories(self, query_params: dict) -> None:
@@ -2663,6 +2670,58 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(f"Restore failed: {e}", 500)
 
 
+def _write_kernel_discovery(port: int, token: str, pid: int) -> Optional[Path]:
+    try:
+        from infra.memory_config import get_memory_home
+        home = get_memory_home()
+        runtime_dir = home / "runtime"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        discovery_file = runtime_dir / "kernel.json"
+
+        payload = {
+            "port": port,
+            "token": token,
+            "pid": pid,
+            "package_version": PACKAGE_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "started_at": int(time.time()),
+        }
+
+        tmp_file = runtime_dir / f".kernel_{pid}_{int(time.time())}.tmp"
+        tmp_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        try:
+            tmp_file.chmod(0o600)
+        except Exception:
+            pass
+        tmp_file.replace(discovery_file)
+        try:
+            discovery_file.chmod(0o600)
+        except Exception:
+            pass
+        return discovery_file
+    except Exception as e:
+        logger.warning("Failed to write kernel discovery file: %s", e)
+        return None
+
+
+def _remove_kernel_discovery(pid: Optional[int] = None) -> None:
+    try:
+        from infra.memory_config import get_memory_home
+        home = get_memory_home()
+        discovery_file = home / "runtime" / "kernel.json"
+        if discovery_file.exists():
+            if pid is not None:
+                try:
+                    data = json.loads(discovery_file.read_text(encoding="utf-8"))
+                    if data.get("pid") != pid:
+                        return
+                except Exception:
+                    pass
+            discovery_file.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 class APIServer(ThreadingHTTPServer):
     """REST and WebSocket server wrapper."""
 
@@ -2681,6 +2740,7 @@ class APIServer(ThreadingHTTPServer):
         self.port = port
         self.token = token
         self.insecure_loopback = insecure_loopback
+        self._discovery_file: Optional[Path] = None
 
         if self.token and not validate_api_token(self.token):
             logger.warning(
@@ -2733,6 +2793,8 @@ class APIServer(ThreadingHTTPServer):
 
         self.allow_reuse_address = True
         super().__init__((host, port), APIRequestHandler)
+        # Update self.port with actual assigned port (in case port was 0 / ephemeral)
+        self.port = self.server_address[1]
 
     def register_ws_client(self, client_id: str, sock: socket.socket) -> None:
         with self._ws_lock:
@@ -2779,6 +2841,9 @@ class APIServer(ThreadingHTTPServer):
         """Launch server in background thread."""
         self._stop_event.clear()
         
+        # Write runtime discovery file for dynamic port allocation
+        self._discovery_file = _write_kernel_discovery(self.port, self.token, os.getpid())
+
         # Start SQLite Outbox Broadcaster
         self._outbox_thread = threading.Thread(target=self._outbox_loop, daemon=True)
         self._outbox_thread.start()
@@ -2793,6 +2858,9 @@ class APIServer(ThreadingHTTPServer):
         self.shutdown()
         self.server_close()
         
+        # Clean up discovery file
+        _remove_kernel_discovery(pid=os.getpid())
+
         # Close all WebSocket client sockets
         with self._ws_lock:
             for sock in self._ws_clients.values():

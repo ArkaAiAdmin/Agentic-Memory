@@ -18,7 +18,10 @@ Usage:
     venv/bin/python cron_backup.py --cron-status
 """
 
-from _flock import acquire_lock_or_exit
+try:
+    from _flock import acquire_lock_or_exit
+except ModuleNotFoundError:
+    from cron._flock import acquire_lock_or_exit
 import os
 import sys
 import sqlite3
@@ -37,9 +40,64 @@ from infra.log import setup_logging
 logger = setup_logging(__name__)
 
 BACKUP_DIR_NAME = "backups"
-MAX_BACKUPS = 3  # Keep 3 daily backups (compressed, ~50MB each)
+RETENTION_COUNT = 5  # Keep last 5 successful backups
+RETENTION_MAX_AGE_DAYS = 14  # Or age <= 14 days, whichever retains more
+MAX_BACKUP_DIR_SIZE_BYTES = 15 * 1024 * 1024 * 1024  # 15 GB emergency size cap
 CRON_MARKER = "# agentic-memory-backup"
 CRON_SCHEDULE = "0 2 * * *"  # Daily at 2am
+
+
+def enforce_backup_retention(backup_dir: Path) -> dict:
+    """Enforce backup retention policy on backup_dir:
+    1. Keep last N=5 successful backups OR backups aged <= 14 days, whichever retains more.
+    2. Size guard: if total size of backup_dir exceeds 15GB, retain only the most recent 2.
+    Returns dict with removed files and total remaining.
+    """
+    all_files = [
+        f for f in backup_dir.glob("memory-*.db*")
+        if f.is_file() and not f.is_symlink() and not f.name.endswith(".log")
+    ]
+    # Sort by mtime descending (most recent first)
+    all_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+
+    now = time.time()
+    max_age_s = RETENTION_MAX_AGE_DAYS * 86400
+
+    # Calculate total size
+    total_size = sum(f.stat().st_size for f in all_files)
+
+    if total_size > MAX_BACKUP_DIR_SIZE_BYTES:
+        # Emergency size cap: retain only the 2 most recent backups
+        logger.warning(
+            "Backup dir exceeds 15GB limit (%d bytes); enforcing emergency retention of 2 backups",
+            total_size,
+        )
+        keep_set = set(all_files[:2])
+    else:
+        # Retain at least 5 most recent, or any with age <= 14 days
+        keep_by_count = set(all_files[:RETENTION_COUNT])
+        keep_by_age = {f for f in all_files if (now - f.stat().st_mtime) <= max_age_s}
+        keep_set = keep_by_count.union(keep_by_age)
+
+    removed = 0
+    removed_bytes = 0
+    for f in all_files:
+        if f not in keep_set:
+            try:
+                sz = f.stat().st_size
+                f.unlink()
+                removed += 1
+                removed_bytes += sz
+                logger.info("Pruned expired backup: %s (%d bytes)", f.name, sz)
+            except OSError as exc:
+                logger.debug("cron_backup: cannot unlink old backup %s: %s", f, exc)
+
+    remaining = [f for f in all_files if f in keep_set and f.exists()]
+    return {
+        "removed": removed,
+        "removed_bytes": removed_bytes,
+        "total_backups": len(remaining),
+    }
 
 
 def do_backup(backup_dir: Path | None = None) -> dict:
@@ -58,22 +116,10 @@ def do_backup(backup_dir: Path | None = None) -> dict:
     backup_path = backup_dir / f"memory-{date_str}.db"
 
     # Use SQLite backup API for crash-safe snapshot.
-    # Backup API is robust against concurrent writers and doesn't block
-    # their activity. We retry once on OperationalError("database is
-    # locked") because the live DB is opened by other workers (the
-    # background_worker.py every 5 min, the auto_save.py hook, and any
-    # in-flight open_db() callers) and busy_timeout=10000 isn't always
-    # enough on a contended day. This regressed two OpernationalErrors
-    # visible in backup.log: rotating "old backup locked" out of the
-    # way and retrying is the standard remediation pattern from the
-    # SQLite docs.
     src_conn = None
     dst_conn = None
     wal_sidecar_path = Path(str(backup_path) + "-wal")
     shm_sidecar_path = Path(str(backup_path) + "-shm")
-    # If a previous run crashed or was killed mid-backup, stale *.db-wal
-    # / *.db-shm sidecars on the *destination* path can confuse the new
-    # backup's WAL-mode bring-up. Clear them before connecting.
     for stale in (wal_sidecar_path, shm_sidecar_path):
         try:
             if stale.exists():
@@ -99,7 +145,6 @@ def do_backup(backup_dir: Path | None = None) -> dict:
             break
         except sqlite3.OperationalError as exc:
             last_err = exc
-            # Clean up any partial state from the failed attempt.
             for conn in (dst_conn, src_conn):
                 if conn is not None:
                     try:
@@ -108,9 +153,6 @@ def do_backup(backup_dir: Path | None = None) -> dict:
                         logger.warning("do_backup failed: %s", e)
             src_conn = None
             dst_conn = None
-            # Retry with exponential backoff: 0s, 5s, 15s. The middle
-            # attempt usually wins because competing writers unblock by
-            # themselves within a few seconds.
             if attempt < 2:
                 logger.warning(
                     "backup attempt %d/3 failed (%s); retrying in %ds",
@@ -120,9 +162,6 @@ def do_backup(backup_dir: Path | None = None) -> dict:
                 )
                 time.sleep([0, 5, 15][attempt])
     if last_err is not None:
-        # All retries failed. Surface the error so the operator can
-        # diagnose; do NOT continue silently thinking the backup
-        # succeeded.
         return {"error": f"backup failed after 3 attempts: {last_err}"}
 
     # Get backup size
@@ -139,23 +178,13 @@ def do_backup(backup_dir: Path | None = None) -> dict:
         logger.warning("do_backup failed: %s", e)
         gz_path = backup_path  # fall back to uncompressed
 
-    # Rotate: remove backups older than MAX_BACKUPS days
-    all_backups = sorted(
-        backup_dir.glob("memory-*.db*"), key=lambda f: f.stat().st_mtime
-    )
-    removed = 0
-    while len(all_backups) > MAX_BACKUPS:
-        old = all_backups.pop(0)
-        try:
-            old.unlink()
-            removed += 1
-        except OSError as exc:
-            logger.debug("cron_backup: cannot unlink old backup %s: %s", old, exc)
+    # Enforce retention policy
+    retention_stats = enforce_backup_retention(backup_dir)
 
     # Also create a symlink without date for "latest" reference
     latest_path = backup_dir / "memory-latest.db.gz"
     try:
-        if latest_path.exists():
+        if latest_path.exists() or latest_path.is_symlink():
             latest_path.unlink()
         latest_path.symlink_to(gz_path.name)
     except OSError as exc:
@@ -163,8 +192,8 @@ def do_backup(backup_dir: Path | None = None) -> dict:
     return {
         "backup_path": str(gz_path),
         "backup_size": backup_size,
-        "removed": removed,
-        "total_backups": len(all_backups),
+        "removed": retention_stats["removed"],
+        "total_backups": retention_stats["total_backups"],
     }
 
 
@@ -315,6 +344,15 @@ def main() -> int:
             logger.info("  Schedule: %s", result['schedule'])
         if "reason" in result:
             logger.info("  Reason: %s", result['reason'])
+        return 0
+
+    if "--prune-existing" in args:
+        env = os.environ.get("MEMORY_DB_PATH")
+        db_path = Path(env) if env else resolve_active_memory_dir() / "memory.db"
+        b_dir = db_path.parent / BACKUP_DIR_NAME if len(args) == 1 else Path(args[0])
+        stats = enforce_backup_retention(b_dir)
+        logger.info("Pruned %d expired backups (%s bytes freed), %d remaining",
+                    stats["removed"], f"{stats['removed_bytes']:,}", stats["total_backups"])
         return 0
 
     backup_dir = None
