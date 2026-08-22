@@ -27,17 +27,17 @@ class TestSkillExtractionGates(unittest.TestCase):
 
         junk = [
             "eval/fixtures/foo",
-            "test-something",
-            "tests/foo",
             "search-note-42",
             "stress-test-memory-7",
             "stress-test-memory-100",
             "test-memory-number-3",
-            "test-note-for-vec-key-detection",
             "marker-tok-unit-noglob-1784238747-xyzabc123",
             "category-lessons-title-slug-adv-1-2-1784236269-tags",
             "mcp-smoke-test-note-testing-save-delete-lifecycle",
-            "live-mcp-smoke-test-note-x",
+            "smoke-test-note-x",
+            "note-to-delete-in-live-test",
+            "memory-to-delete-then-patch",
+            "scope-test-memory-basic",
         ]
         for mid in junk:
             self.assertTrue(is_junk_memory_id(mid), f"should veto: {mid}")
@@ -51,6 +51,7 @@ class TestSkillExtractionGates(unittest.TestCase):
             "projects/protocol-hardening",
             "tdd-workflow",
             "testing-pyramid-guide",  # about testing, but not test residue
+            "test/skill",  # legitimate short id — must NOT be vetoed
         ]
         for mid in real:
             self.assertFalse(is_junk_memory_id(mid), f"should NOT veto: {mid}")

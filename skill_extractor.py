@@ -190,18 +190,28 @@ _JUNK_TOOL_ECHO_MARKERS = re.compile(
 # Veto by memory ID — eval/fixture residue that leaks into the prod DB
 # must never compile into user-facing skills. Anchored on the ID itself
 # (not content) so legitimate lessons *about* testing still pass.
+# Deliberately PRECISE: no broad `^test` prefixes — those collide with
+# legitimate ids like `test/skill`. Junk families are enumerated.
 _JUNK_MEMORY_ID_RE = re.compile(
     r"("
     r"^eval/"                       # eval fixture notes
-    r"|^tests?[-_/]"                # test-… / tests/…
     r"|^search-note-\d+$"
     r"|^stress-test-memory-\d+"
     r"|^test-memory-number-\d+"
-    r"|^test-note\b"
     r"|^marker-tok-"
     r"|^category-lessons-title-slug-"
     r"|^mcp-smoke-test"
-    r"|smoke-test-note"
+    r"|^smoke-test-note"
+    r"|^live-mcp-integration-test-note"
+    r"|^note-to-delete"
+    r"|^memory-to-delete"
+    r"|^scope-test-memory"
+    r"|^idempotent-guard-test-content$"
+    r"|^include-invalid-test-content$"
+    r"|^access-tracking-test-content"
+    r"|^deep-reranking-cross-encoder-test-content"
+    r"|^full-cycle-memory-\d+"
+    r"|^consolidated-session-traj-"
     r")",
     re.IGNORECASE,
 )
