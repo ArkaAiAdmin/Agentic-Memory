@@ -171,10 +171,10 @@ class TestFullChainSmoke(unittest.TestCase):
         self.assertGreater(len(search_result["results"]), 0)
 
         recall_result = _fetch("POST", f"{self._url_base}/api/v1/tools/call", {
-            "tool": "memory_recall",
+            "tool": "memory_recall_context",
             "args": {"query": "transport switch"},
         })
-        self.assertEqual(recall_result.get("tool"), "memory_recall")
+        self.assertEqual(recall_result.get("tool"), "memory_recall_context")
         self.assertIn("result", recall_result)
 
     # ── 3. Tool calls ───────────────────────────────────────────────────
@@ -201,13 +201,13 @@ class TestFullChainSmoke(unittest.TestCase):
         self.assertEqual(result.get("tool"), "memory_search")
         self.assertIn("result", result)
 
-    def test_tool_call_memory_recall(self) -> None:
-        """memory_recall tool works through the API server."""
+    def test_tool_call_memory_recall_context(self) -> None:
+        """memory_recall_context tool works through the API server."""
         result = _fetch("POST", f"{self._url_base}/api/v1/tools/call", {
-            "tool": "memory_recall",
+            "tool": "memory_recall_context",
             "args": {"query": "e2e"},
         })
-        self.assertEqual(result.get("tool"), "memory_recall")
+        self.assertEqual(result.get("tool"), "memory_recall_context")
         self.assertIn("result", result)
 
     def test_tool_call_session_start(self) -> None:

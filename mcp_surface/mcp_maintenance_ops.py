@@ -898,7 +898,10 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_surface.mcp_maintenance import memory_extract_skills
-            return cast(str, cast(Any, memory_extract_skills).__wrapped__(conn, memory_id=memory_id, dry_run=dry_run))
+            fn = memory_extract_skills
+            while hasattr(fn, "__wrapped__"):
+                fn = fn.__wrapped__
+            return cast(str, fn(conn, memory_id=memory_id, dry_run=dry_run))
     except Exception as e:
         logger.warning("Unhandled exception in _op_extract_skills: %s", e)
         return _err(classify_exception(e), str(e))
@@ -917,7 +920,10 @@ def _op_list_skills(limit: int = 50) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_surface.mcp_maintenance import memory_list_skills
-            return cast(str, cast(Any, memory_list_skills).__wrapped__(conn, limit=limit))
+            fn = memory_list_skills
+            while hasattr(fn, "__wrapped__"):
+                fn = fn.__wrapped__
+            return cast(str, fn(conn, limit=limit))
     except Exception as e:
         logger.warning("Unhandled exception in _op_list_skills: %s", e)
         return _err(classify_exception(e), str(e))

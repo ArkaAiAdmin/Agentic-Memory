@@ -589,72 +589,7 @@ def memory_curate_autosave(
         return _wrap_db_error("memory_curate_autosave", e)
 
 
-@mcp.tool()
-@with_audit("memory_delete")
-def memory_delete(
-    note_id: str,
-    hard: bool = False,
-    confirm: bool = False,
-) -> str:
-    """[DEPRECATED] Delete a memory note by ID. Forwarding to memory_note(action='delete').
 
-    Args:
-        note_id: The note ID (e.g. "lessons/my-note").
-        hard: If True, permanently delete immediately (default False).
-        confirm: Required to be True to allow a hard (permanent) delete.
-    """
-    logger.warning("deprecated: memory_delete → memory_note(action='delete')")
-    auth_err = _check_authorization("delete", "memory")
-    if auth_err:
-        return auth_err
-    try:
-        from mcp_surface.mcp_memory import memory_delete as _delete
-
-        if hard and not confirm:
-            logger.warning(
-                "Refused permanent (hard) delete of '%s' without explicit confirm=True. "
-                "To permanently remove this note, call again with confirm=True.",
-                note_id,
-            )
-            return _err(
-                ErrorCode.INVALID_PARAMS,
-                f"Refusing hard (permanent) delete of '{note_id}' without confirmation. "
-                f"This would permanently remove the note and cannot be recovered. "
-                f"Pass confirm=True to proceed with permanent deletion.",
-            )
-
-        return str(_delete(note_id=note_id, hard=hard))
-    except Exception as e:
-        logger.exception("in memory_delete verb")
-        return _wrap_db_error("memory_delete", e)
-
-
-@mcp.tool()
-@with_audit("memory_recall")
-def memory_recall(
-    query: str = "", session_id: str = "", tenant_id: str = "default",
-    include_global: Optional[bool] = None,
-    mode: Optional[str] = None,
-) -> str:
-    """[DEPRECATED] Recall context for current session. Forwarding to memory_recall_context.
-
-    Args:
-        query: What to recall (default: recent activity).
-        session_id: Specific session/thread to recall.
-        include_global: Include global-scope memories.
-        mode: Search mode: "fts", "hybrid", "semantic".
-    """
-    logger.warning("deprecated: memory_recall → memory_recall_context")
-    auth_err = _check_authorization("search", "memory")
-    if auth_err:
-        return auth_err
-    try:
-        from mcp_surface.mcp_search import memory_recall_context
-
-        return str(memory_recall_context(query=query, session_id=session_id))
-    except Exception as e:
-        logger.exception("in memory_recall verb")
-        return _wrap_db_error("memory_recall", e)
 
 
 @mcp.tool()
@@ -803,63 +738,7 @@ def memory_note(
         return _wrap_db_error("memory_note", e)
 
 
-@mcp.tool()
-@with_audit("memory_learn")
-def memory_learn(
-    content: str,
-    as_skill: bool = False,
-    skill_name: str = "",
-    category: str = "lessons",
-    tags: list[str] | None = None,
-) -> str:
-    """[DEPRECATED] Save a lesson or compile a skill from content. Forwarding to memory_save + memory_compile_skill.
 
-    Auto-categorizes and tags the memory. Optionally compiles a skill.
-
-    Args:
-        content: The lesson/skill content.
-        as_skill: If True, compile as a skill (default False).
-        skill_name: Skill directory name (required if as_skill=True).
-        category: Target category (default: lessons).
-        tags: Additional tags.
-    """
-    logger.warning("deprecated: memory_learn → memory_save + memory_compile_skill")
-    auth_err = _check_authorization("write", "memory")
-    if auth_err:
-        return auth_err
-    try:
-        from save_pipeline import save_memory_auto, SaveValidationError
-        from mcp_surface.mcp_maintenance import memory_compile_skill
-
-        # Auto-generate a slug from content when no skill_name is provided.
-        # The save pipeline rejects empty slugs with INVALID_SLUG.
-        import re as _re
-        _slug = skill_name.strip() if skill_name else ""
-        if not _slug:
-            _slug = _re.sub(r'[^a-z0-9]+', '-', content[:60].lower()).strip('-') or "learned"
-
-        # Save the memory
-        try:
-            result = save_memory_auto(
-                content=content,
-                category=category,
-                title_slug=_slug,
-                tags=tags or ["learned"],
-                importance=4,
-            )
-        except SaveValidationError as e:
-            return str(e)
-        if as_skill and skill_name:
-            skill_result = memory_compile_skill(
-                lesson_slug=skill_name,
-                skill_name=skill_name,
-                primary_triggers=["learned"],
-            )
-            return f"Saved + compiled skill: {skill_name}\n{skill_result}"
-        return str(result)
-    except Exception as e:
-        logger.exception("in memory_learn verb")
-        return _wrap_db_error("memory_learn", e)
 
 
 @mcp.tool()
@@ -1243,20 +1122,7 @@ def memory_advanced(operation: str, tenant_id: str | None = None, **kwargs: str)
         return _wrap_db_error("memory_advanced", e)
 
 
-@mcp.tool()
-@with_audit("memory_system_health")
-def memory_system_health(**kwargs: Any) -> str:
-    """[DEPRECATED] Comprehensive system health check. Forwarding to memory_health_check(format='traffic_light')."""
-    logger.warning("deprecated: memory_system_health → memory_health_check(format='traffic_light')")
-    auth_err = _check_authorization("admin", "health")
-    if auth_err:
-        return auth_err
-    try:
-        from mcp_surface.mcp_maintenance import memory_health_check
-        return str(memory_health_check(format="traffic_light", **kwargs))
-    except Exception as e:
-        logger.exception("in memory_system_health verb")
-        return _wrap_db_error("memory_system_health", e)
+
 
 
 @mcp.tool()
@@ -1307,43 +1173,3 @@ def memory_skills(
     )
 
 
-@mcp.tool()
-@with_audit("memory_list_skills")
-def memory_list_skills(limit: int = 50, **kwargs: Any) -> str:
-    """[DEPRECATED] List available compiled skills. Forwarding to memory_skills(action='list')."""
-    logger.warning("deprecated: memory_list_skills → memory_skills(action='list')")
-    return memory_skills(action="list", limit=limit, **kwargs)
-
-
-@mcp.tool()
-@with_audit("memory_extract_skills")
-def memory_extract_skills(
-    dry_run: bool = False,
-    since: str = "",
-    memory_id: str = "",
-    **kwargs: Any,
-) -> str:
-    """[DEPRECATED] Extract reusable skills. Forwarding to memory_skills(action='extract')."""
-    logger.warning("deprecated: memory_extract_skills → memory_skills(action='extract')")
-    return memory_skills(action="extract", dry_run=dry_run, since=since, memory_id=memory_id, **kwargs)
-
-
-@mcp.tool()
-@with_audit("memory_compile_skill")
-def memory_compile_skill(
-    lesson_slug: str,
-    skill_name: str,
-    primary_triggers: list[str] | None = None,
-    secondary_triggers: list[str] | None = None,
-    **kwargs: Any,
-) -> str:
-    """[DEPRECATED] Compile a lesson into an agent skill. Forwarding to memory_skills(action='compile')."""
-    logger.warning("deprecated: memory_compile_skill → memory_skills(action='compile')")
-    return memory_skills(
-        action="compile",
-        lesson_slug=lesson_slug,
-        skill_name=skill_name,
-        primary_triggers=primary_triggers or [],
-        secondary_triggers=secondary_triggers,
-        **kwargs,
-    )

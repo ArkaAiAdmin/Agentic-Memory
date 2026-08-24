@@ -613,7 +613,6 @@ def memory_arc_reset(conn) -> str:
         return _err(ErrorCode.DB_ERROR, "in memory_arc_reset")
 
 
-@mcp.tool()
 @with_audit("memory_extract_skills")
 @with_memory_connection
 def memory_extract_skills(
@@ -698,7 +697,6 @@ def memory_extract_skills(
         return _err(ErrorCode.DB_ERROR, "in memory_extract_skills")
 
 
-@mcp.tool()
 @with_audit("memory_list_skills")
 @with_memory_connection
 def memory_list_skills(conn, limit: int = 50) -> str:
@@ -778,7 +776,6 @@ def memory_pinned_decay_check(dry_run: bool = True) -> str:
         return _err(ErrorCode.TIMEOUT, "pinned_decay.py timed out after 10s.")
 
 
-@mcp.tool()
 @with_audit("memory_compile_skill")
 def memory_compile_skill(
     lesson_slug: str,

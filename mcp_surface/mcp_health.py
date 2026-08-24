@@ -304,7 +304,6 @@ def _check_disk() -> dict[str, Any]:
 
 
 @with_audit("memory_system_health")
-@mcp.tool()
 def memory_system_health() -> str:
     """Comprehensive system health: green/yellow/red with actionable next steps.
 

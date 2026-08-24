@@ -92,9 +92,9 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - `memory_advanced(operation="...", **kwargs)`: agent-facing escape hatch for all ADMIN/diagnostic tools (passes through to the `memory_maintenance` router).
 - `memory_maintenance`: admin router — CLI-only, not on the agent MCP surface.
 
-> **Important:** 92 ADMIN + 10 DEPRECATED tools are not removed — agents reach them via `memory_advanced`,
-> which routes to the `memory_maintenance` router. The 10 DEPRECATED tools
-> are routed via their replacement verbs/shims and also tracked for audit.
+> **Important:** 92 ADMIN + 3 DEPRECATED tools are not removed — agents reach them via `memory_advanced`,
+> which routes to the `memory_maintenance` router. The 3 DEPRECATED tools
+> are routed via their replacement operations and also tracked for audit.
 >
 > **Self-editing is wired-and-visible.** The consolidated skill tool `memory_skills` (actions: `list`, `extract`, `compile`)
 > is CORE. Auto skill extraction also runs on every `memory_save` with procedural content; verify with `memory_skills(action="list")`.

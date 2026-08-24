@@ -228,14 +228,14 @@ class TestAPIServerContract(unittest.TestCase):
         })
         self.assertIn("result", result)
 
-    # ── POST /api/v1/tools/call with memory_recall ─────────────────────────
-
-    def test_call_tool_recall(self) -> None:
+    # ── POST /api/v1/tools/call with memory_recall_context ─────────────────
+ 
+    def test_call_tool_recall_context(self) -> None:
         result = _fetch("POST", f"{self._url_base}/api/v1/tools/call", {
-            "tool": "memory_recall",
+            "tool": "memory_recall_context",
             "args": {"query": "test"},
         })
-        self.assertEqual(result.get("tool"), "memory_recall")
+        self.assertEqual(result.get("tool"), "memory_recall_context")
         self.assertIn("result", result)
 
 

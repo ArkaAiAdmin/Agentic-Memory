@@ -33,9 +33,9 @@ def test_admin_count():
 
 
 def test_deprecated_count():
-    """DEPRECATED has 10 entries."""
-    assert len(tool_registry.DEPRECATED) == 10, (
-        f"Expected 10 DEPRECATED tools, got {len(tool_registry.DEPRECATED)}"
+    """DEPRECATED has 3 entries."""
+    assert len(tool_registry.DEPRECATED) == 3, (
+        f"Expected 3 DEPRECATED tools, got {len(tool_registry.DEPRECATED)}"
     )
 
 
@@ -75,8 +75,8 @@ def test_total_visible():
 def test_total_tool_count():
     """Total registered tool names across tiers."""
     total = len(tool_registry.CORE_TOOLS) + len(tool_registry.ADMIN_TOOLS) + len(tool_registry.DEPRECATED)
-    assert total == 121, (
-        f"Expected 121 total tools (19 CORE + 92 ADMIN + 10 DEPRECATED), got {total}"
+    assert total == 114, (
+        f"Expected 114 total tools (19 CORE + 92 ADMIN + 3 DEPRECATED), got {total}"
     )
 
 

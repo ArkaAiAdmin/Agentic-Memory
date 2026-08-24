@@ -124,52 +124,6 @@ class TestMemoryLearnSlugGeneration:
         slug = re.sub(r'[^a-z0-9]+', '-', test_content[:60].lower()).strip('-') or "learned"
         assert slug == "learned"
 
-    def test_memory_learn_passes_slug_to_save_fn(self):
-        """Integration: memory_learn passes auto-generated slug to save pipeline."""
-        with mock.patch("mcp_surface.mcp_verbs._check_authorization") as auth_mock, \
-             mock.patch("save_pipeline.save_memory") as save_mock, \
-             mock.patch("save_pipeline.save_memory_journal") as journal_mock:
-            auth_mock.return_value = None
-            save_mock.return_value = "Saved: memory/lessons/test.md"
-            journal_mock.return_value = "Saved: memory/lessons/test.md"
-
-            from mcp_surface.mcp_verbs import memory_learn
-            result = memory_learn(
-                content="Understanding async patterns in Python for better concurrency",
-                category="lessons",
-                skill_name="",  # empty — triggers auto-generation
-            )
-
-            # Verify save was called with a non-empty slug
-            if save_mock.called:
-                call_kwargs = save_mock.call_args[1]
-            else:
-                call_kwargs = journal_mock.call_args[1]
-            assert call_kwargs["title_slug"] != ""
-            assert "understanding-async-patterns" in call_kwargs["title_slug"]
-
-    def test_memory_learn_preserves_explicit_skill_name(self):
-        """When skill_name is provided, it is used as-is."""
-        with mock.patch("mcp_surface.mcp_verbs._check_authorization") as auth_mock, \
-             mock.patch("save_pipeline.save_memory") as save_mock, \
-             mock.patch("save_pipeline.save_memory_journal") as journal_mock:
-            auth_mock.return_value = None
-            save_mock.return_value = "Saved: memory/lessons/my-skill.md"
-            journal_mock.return_value = "Saved: memory/lessons/my-skill.md"
-
-            from mcp_surface.mcp_verbs import memory_learn
-            result = memory_learn(
-                content="Some lesson",
-                category="lessons",
-                skill_name="my-explicit-slug",
-            )
-
-            if save_mock.called:
-                call_kwargs = save_mock.call_args[1]
-            else:
-                call_kwargs = journal_mock.call_args[1]
-            assert call_kwargs["title_slug"] == "my-explicit-slug"
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. _worker_alive() tightened pgrep pattern

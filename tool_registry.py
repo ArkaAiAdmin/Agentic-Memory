@@ -133,12 +133,4 @@ DEPRECATED = [
     "memory_incremental_update",
     "memory_check_embedding_model",
     "memory_run_tier_migration",
-    # Phase 2b consolidated / shimmed verbs:
-    "memory_delete",         # shimmed -> memory_note(action='delete')
-    "memory_recall",         # shimmed -> memory_recall_context
-    "memory_system_health",  # shimmed -> memory_health_check(format='traffic_light')
-    "memory_learn",          # shimmed -> memory_save + memory_compile_skill
-    "memory_list_skills",    # shimmed -> memory_skills(action='list')
-    "memory_extract_skills", # shimmed -> memory_skills(action='extract')
-    "memory_compile_skill",  # shimmed -> memory_skills(action='compile')
 ]

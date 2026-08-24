@@ -91,7 +91,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 <!--AUTO-GEN:END key="hard_rule_4"-->. Never `ALTER TABLE` in Python.
 5. **Default search: `include_global=True`** 🔍 with blended RRF. Don't override "for safety." (`eval/test_rule_enforcement.py` asserts the `search_memories` default.)
 6. **<!--AUTO-GEN:START key="hard_rule_6"-->
-**19 CORE tools are user-facing**; 92 ADMIN + 10 DEPRECATED are operations behind the `memory_maintenance` router (agent-facing entry: `memory_advanced`). Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+**19 CORE tools are user-facing**; 92 ADMIN + 3 DEPRECATED are operations behind the `memory_maintenance` router (agent-facing entry: `memory_advanced`). Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
 <!--AUTO-GEN:END key="hard_rule_6"-->
 7. **Use `venv/bin/python backfill_all.py`** (incremental default) or `backfill_all.py --full` (full rebuild). 🔧 Bare args are **rejected** (exit 2, no DB created) by the guard in `backfill/orchestrator.py::main` — past bare runs created 22 MB garbage DBs at repo root. Always pass `--incremental`, `--full`, `--health`, `--auto`, or a `--db <path>`.
 8. **Tests touching prod DB must use `_ProdDBGuarded`.** See `eval/test_safety_wiring.py:60-109`.

@@ -48,7 +48,7 @@ export type DeprecatedToolName = typeof DEPRECATED_TOOL_NAMES[number];
 
 
 def verify_ide_contract() -> None:
-    # 12 backend operations called by desktop memoryTools.ts
+    # Backend tool operations called by desktop memoryTools.ts and memory-bridge client.ts
     ide_tool_ops = {
         "memory_search",
         "memory_save",
@@ -56,12 +56,14 @@ def verify_ide_contract() -> None:
         "memory_share",
         "memory_agent_list",
         "memory_agent_init",
-        "memory_recall",
+        "memory_recall_context",
         "memory_note",
         "memory_audit",
-        "memory_learn",
-        "memory_list_skills",
-        "memory_extract_skills",
+        "memory_skills",
+        "memory_session_start",
+        "memory_session_end",
+        "memory_graph",
+        "memory_review_beliefs",
     }
     all_known = (
         set(tool_registry.CORE_TOOLS)

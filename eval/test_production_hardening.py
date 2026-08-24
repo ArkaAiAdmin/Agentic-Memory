@@ -42,18 +42,18 @@ class TestProductionHardening(unittest.TestCase):
     """Test production hardening fixes."""
 
     # ------------------------------------------------------------------ #
-    # 1. memory_system_health is registered as MCP tool
+    # 1. memory_health_check is registered as MCP tool
     # ------------------------------------------------------------------ #
-    def test_memory_system_health_is_mcp_tool(self):
+    def test_memory_health_check_is_mcp_tool(self):
         code = """
-from mcp_surface.mcp_health import memory_system_health
+from mcp_surface.mcp_maintenance import memory_health_check
 # FastMCP registers @mcp.tool() decorated functions in the tool manager
 from mcp_surface.mcp_instance import mcp
 tools = mcp._tool_manager._tools
-assert "memory_system_health" in tools, (
-    f"memory_system_health not in MCP tools; available: {list(tools.keys())[:20]}"
+assert "memory_health_check" in tools, (
+    f"memory_health_check not in MCP tools; available: {list(tools.keys())[:20]}"
 )
-print("OK: memory_system_health is registered as MCP tool")
+print("OK: memory_health_check is registered as MCP tool")
 """
         result = _run(code)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
