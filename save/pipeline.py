@@ -1250,12 +1250,13 @@ def _resolve_save_paths(
             )
     try:
         target_base_resolved = target_base.resolve()
+        global_mem_resolved = GLOBAL_MEM_DIR.resolve()
         effective_category = category
         redirected = False
         if category == "lessons" and title_slug.startswith("audit-"):
             effective_category = "audits"
             redirected = True
-        category_dir = (target_base_resolved / effective_category).resolve()
+        category_dir = (target_base / effective_category).resolve()
         if redirected:
             logger.warning(
                 "Audit redirect: category=lessons + title_slug='%s' routed to dir 'audits' (effective_category=%s). "
@@ -1269,12 +1270,14 @@ def _resolve_save_paths(
         # Note: is_relative_to returns True for self, so the second clause
         # below is the one that catches an empty/identity category. Split the
         # two conditions into distinct error messages for debuggability.
-        if not category_dir.is_relative_to(target_base_resolved):
+        # Category must be contained in either target_base or GLOBAL_MEM_DIR (for symlinked category dirs).
+        is_contained = category_dir.is_relative_to(target_base_resolved) or category_dir.is_relative_to(global_mem_resolved)
+        if not is_contained:
             raise SaveValidationError(
                 ErrorCode.TRAVERSAL,
                 f"Category path '{category}' escapes the target base directory.",
             )
-        if category_dir == target_base_resolved:
+        if category_dir == target_base_resolved or category_dir == global_mem_resolved:
             raise SaveValidationError(
                 ErrorCode.TRAVERSAL,
                 "Category resolves to the target base itself; an empty or "
@@ -2052,17 +2055,19 @@ def _materialize_journal_once(
     )
     note_id = entry.get("note_id", "")
 
-    from infra.memory_common import get_memory_paths
+    from infra.memory_common import get_memory_paths, GLOBAL_MEM_DIR
     _, _, global_mem = get_memory_paths()
     target_mem = global_mem if req.is_global else target_base
     target_mem_resolved = target_mem.resolve()
-    category_dir = (target_mem_resolved / req.category).resolve()
-    if not category_dir.is_relative_to(target_mem_resolved):
+    global_mem_resolved = GLOBAL_MEM_DIR.resolve()
+    category_dir = (target_mem / req.category).resolve()
+    is_contained = category_dir.is_relative_to(target_mem_resolved) or category_dir.is_relative_to(global_mem_resolved)
+    if not is_contained:
         raise SaveValidationError(
             ErrorCode.TRAVERSAL,
             f"Category path '{req.category}' escapes the target base directory.",
         )
-    if category_dir == target_mem_resolved:
+    if category_dir == target_mem_resolved or category_dir == global_mem_resolved:
         raise SaveValidationError(
             ErrorCode.TRAVERSAL,
             "Category resolves to the target base itself; an empty or "

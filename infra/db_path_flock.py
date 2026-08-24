@@ -214,7 +214,7 @@ def release_db_path_flock(db_path: Path) -> None:
     """
     if not is_db_path_flock_enabled():
         return
-    key = str(db_path)
+    key = str(Path(db_path).resolve())
     with _PATH_LOCKS_LOCK:
         lock = _PATH_LOCK_FDS.get(key)
     if lock is None:

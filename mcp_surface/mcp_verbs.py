@@ -157,7 +157,8 @@ def _auto_slug(content: str) -> str:
 def _wrap_db_error(verb_name: str, e: Exception) -> str:
     """Classify a DB exception and return a structured error envelope."""
     code = classify_exception(e)
-    return _err(code, f"{verb_name}: {e}")
+    msg = str(e).strip() or type(e).__name__
+    return _err(code, f"{verb_name}: {msg}")
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +390,7 @@ def memory_review_beliefs(
         from belief.belief_lifecycle import get_active_beliefs
 
         db_path = _resolve_db_path()
-        with open_db(db_path, timeout=10.0) as db:
+        with open_db(db_path, timeout=10.0, write=False) as db:
             # Try reading from the review queue first; fall back to filtering
             try:
                 rows = db.execute(
@@ -486,7 +487,7 @@ def memory_curate_autosave(
 
         if action == "list":
 
-            with open_db(db_path, timeout=30.0) as db:
+            with open_db(db_path, timeout=30.0, write=False) as db:
                 clauses = ["m.source_file LIKE 'auto_saves/%' AND m.deleted_at IS NULL"]
                 params: list = []
                 if start_date:
@@ -516,7 +517,7 @@ def memory_curate_autosave(
 
             # Read existing notes from DB before mutating, so the
             # data is available after the connection block closes.
-            with open_db(db_path, timeout=30.0) as db:
+            with open_db(db_path, timeout=30.0, write=False) as db:
                 to_promote: list[tuple[str, tuple]] = []
                 for nid in note_ids:
                     row = db.execute(
@@ -1183,7 +1184,7 @@ def memory_list_revisions(
         since_ts = _time.time() - (7 * 86400)
         where.append("created_at >= ?")
         params.append(since_ts)
-        with open_db(db_path, timeout=5.0) as conn:
+        with open_db(db_path, timeout=5.0, write=False) as conn:
             rows = conn.execute(
                 f"SELECT id, memory_id, revision_type, old_content, new_content, "
                 f"rationale, agent_id, created_at FROM memory_revision_log "
@@ -1252,9 +1253,22 @@ def memory_advanced(operation: str, tenant_id: str | None = None, **kwargs: str)
     try:
         from mcp_surface.mcp_maintenance import memory_maintenance
 
+        target_kwargs = dict(kwargs)
+        if "kwargs" in target_kwargs:
+            raw_kwargs = target_kwargs.pop("kwargs")
+            if isinstance(raw_kwargs, str) and raw_kwargs.strip():
+                try:
+                    parsed = json.loads(raw_kwargs)
+                    if isinstance(parsed, dict):
+                        target_kwargs.update(parsed)
+                except Exception:
+                    pass
+            elif isinstance(raw_kwargs, dict):
+                target_kwargs.update(raw_kwargs)
+
         if tenant_id is not None:
-            kwargs["tenant_id"] = tenant_id
-        return str(memory_maintenance(operation=operation, **kwargs))
+            target_kwargs["tenant_id"] = tenant_id
+        return str(memory_maintenance(operation=operation, **target_kwargs))
     except Exception as e:
         logger.exception("in memory_advanced verb")
         return _wrap_db_error("memory_advanced", e)

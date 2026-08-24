@@ -10,20 +10,11 @@ from agentic_memory.client import MemoryClient
 
 @pytest.fixture
 def memory_db_path(tmp_path):
-    db_p = Path(__file__).resolve().parent.parent / "memory" / "memory.db"
-    if db_p.exists():
-        return db_p
-    from infra.memory_common import get_memory_paths
-    _, _, global_mem = get_memory_paths()
-    prod_db = global_mem / "memory.db"
-    if prod_db.exists():
-        return prod_db
-    # Bootstrap seeded DB
     seeded_db = tmp_path / "memory.db"
     from eval._fixtures import bootstrap_temp_db_clean
     bootstrap_temp_db_clean(seeded_db)
-    from save.pipeline import save_memory
-    save_memory("lessons/agentic-memory-ide", "Agentic Memory IDE search and tools", db_path=seeded_db)
+    from save.pipeline import save_memory, SaveRequest
+    save_memory(SaveRequest(category="lessons", title_slug="agentic-memory-ide", content="Agentic Memory IDE search and tools", db_path=seeded_db))
     return seeded_db
 
 

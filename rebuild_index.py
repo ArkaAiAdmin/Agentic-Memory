@@ -335,7 +335,11 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
                         continue
                     try:
                         source_resolved = source.resolve()
-                        resolved.relative_to(source_resolved)
+                        try:
+                            resolved.relative_to(source_resolved)
+                        except ValueError:
+                            from infra.memory_common import GLOBAL_MEM_DIR
+                            resolved.relative_to(GLOBAL_MEM_DIR.resolve())
                     except ValueError as e:
                         logger.warning(
                             "Skipping %s (symlink target outside source: %s)",

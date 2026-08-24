@@ -327,6 +327,7 @@ def mcp_authorize(
     """
     open_mode = _auth_mode() == "open"
     action = _normalize_action(action)
+    resource = _normalize_resource(resource)
     if principal_id is None:
         if open_mode:
             return True

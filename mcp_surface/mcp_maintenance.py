@@ -1140,18 +1140,33 @@ def memory_maintenance(
     operation extracts only the kwargs it needs. Unknown kwargs are
     silently ignored.
     """
-    # Unwrap nested kwargs dict produced by Pydantic schema generation.
+    # Unwrap nested kwargs dict or JSON string produced by Pydantic schema generation.
     # When the MCP client sends **kwargs, Pydantic may wrap them in a
-    # literal "kwargs" key: {"kwargs": {"agent_id": ...}} instead of
-    # {"agent_id": ...}.  Flatten so handler(**kwargs) works correctly.
-    if "kwargs" in kwargs and isinstance(kwargs["kwargs"], dict):
+    # literal "kwargs" key: {"kwargs": "..."} or {"kwargs": {...}}.
+    # Flatten so handler(**kwargs) works correctly.
+    if "kwargs" in kwargs:
         nested = kwargs.pop("kwargs")
-        kwargs.update(nested)
+        if isinstance(nested, dict):
+            kwargs.update(nested)
+        elif isinstance(nested, str) and nested.strip():
+            try:
+                parsed = json.loads(nested)
+                if isinstance(parsed, dict):
+                    kwargs.update(parsed)
+            except Exception:
+                pass
 
     unknown = {
         k: f"<{type(v).__name__}>" for k, v in kwargs.items() if not k.startswith("_")
     }
     op = operation.lower().replace("-", "_")
+    if op in ("help", "list_ops", "operations", "ops"):
+        ops_list = sorted(MaintenanceOp.all_values())
+        return (
+            f"## Memory Maintenance Operations Reference ({len(ops_list)} operations)\n\n"
+            f"Available operations:\n- " + "\n- ".join(ops_list) + "\n\n"
+            "Call memory_maintenance(operation='<name>', **kwargs) or memory_advanced(operation='<name>', **kwargs)."
+        )
     try:
         op_enum = MaintenanceOp(op)
     except ValueError:

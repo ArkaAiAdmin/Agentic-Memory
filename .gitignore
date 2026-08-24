@@ -94,3 +94,5 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 .env
 .env.local
+artifacts/
+*.html

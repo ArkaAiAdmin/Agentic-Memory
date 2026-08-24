@@ -34,8 +34,7 @@ def memory_audit() -> str:
         )
     try:
         from infra.db import open_db
-        with open_db(db_path, timeout=30.0, pooled=True, row_factory=sqlite3.Row, write=True) as db:
-            run_db_migrations(db)
+        with open_db(db_path, timeout=30.0, pooled=True, row_factory=sqlite3.Row, write=False) as db:
             rows = db.execute(
                 "SELECT id, content, created_at, updated_at, access_count, pinned FROM memories"
             ).fetchall()
@@ -193,7 +192,7 @@ def memory_audit_query(
     try:
         from infra._lazy_imports import open_db
 
-        with open_db(db_path, timeout=5.0, row_factory=sqlite3.Row) as db:
+        with open_db(db_path, timeout=5.0, row_factory=sqlite3.Row, write=False) as db:
             total = db.execute(
                 f"SELECT COUNT(*) FROM memory_audit_log {where_sql}", params
             ).fetchone()[0]
@@ -305,7 +304,7 @@ def memory_circuit_breaker_status(
         where_sql = "WHERE " + " AND ".join(where_parts)
         from infra._lazy_imports import open_db
 
-        with open_db(db_path, timeout=5.0, row_factory=sqlite3.Row) as db:
+        with open_db(db_path, timeout=5.0, row_factory=sqlite3.Row, write=False) as db:
             total = db.execute(
                 f"SELECT COUNT(*) FROM memory_audit_log {where_sql}", params
             ).fetchone()[0]
