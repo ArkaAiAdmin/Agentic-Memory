@@ -255,8 +255,23 @@ class TestOpSkillsWrappedBypass:
         monkeypatch.setenv("MEMORY_DB_PATH", str(db))
         from mcp_surface.mcp_maintenance_ops import _op_extract_skills
 
-        result = _op_extract_skills(memory_id="", dry_run=True)
+        result = _op_extract_skills(memory_id="", dry_run=True, since="2026-01-01T00:00:00Z")
         assert isinstance(result, str)
+
+    def test_memory_skills_verb_extract_dispatches_with_since(self, monkeypatch, tmp_path):
+        """memory_skills verb with action='extract' successfully dispatches with since argument."""
+        import sqlite3
+        db = tmp_path / "memory.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY)")
+        conn.close()
+
+        monkeypatch.setenv("MEMORY_DB_PATH", str(db))
+        from mcp_surface.mcp_verbs import memory_skills
+
+        result = memory_skills(action="extract", dry_run=True, since="2026-01-01T00:00:00Z")
+        assert isinstance(result, str)
+        assert "[DRY RUN]" in result or "complete" in result or "No" in result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

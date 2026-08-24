@@ -885,23 +885,22 @@ def _op_list_active_threads(
         return _err(classify_exception(e), str(e))
 
 
-def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
+def _op_extract_skills(
+    memory_id: str = "",
+    dry_run: bool = False,
+    since: str = "",
+    **kwargs: Any,
+) -> str:
     """Wrapper for memory_extract_skills (needs conn injection)."""
     try:
         from infra.db import open_db
-        from pathlib import Path
-        target_base = Path(os.environ.get("MEMORY_DB_PATH", ""))
-        if not target_base.exists():
-            from infra.memory_common import get_memory_paths
-            _, local_mem, _ = get_memory_paths()
-            target_base = local_mem
-        db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
+        db_path = _resolve_db_path()
         with open_db(db_path, write=False) as conn:
             from mcp_surface.mcp_maintenance import memory_extract_skills
             fn = memory_extract_skills
             while hasattr(fn, "__wrapped__"):
                 fn = fn.__wrapped__
-            return cast(str, fn(conn, memory_id=memory_id, dry_run=dry_run))
+            return cast(str, fn(conn, memory_id=memory_id, dry_run=dry_run, since=since, **kwargs))
     except Exception as e:
         logger.warning("Unhandled exception in _op_extract_skills: %s", e)
         return _err(classify_exception(e), str(e))
@@ -911,13 +910,7 @@ def _op_list_skills(limit: int = 50) -> str:
     """Wrapper for memory_list_skills (needs conn injection)."""
     try:
         from infra.db import open_db
-        from pathlib import Path
-        target_base = Path(os.environ.get("MEMORY_DB_PATH", ""))
-        if not target_base.exists():
-            from infra.memory_common import get_memory_paths
-            _, local_mem, _ = get_memory_paths()
-            target_base = local_mem
-        db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
+        db_path = _resolve_db_path()
         with open_db(db_path, write=False) as conn:
             from mcp_surface.mcp_maintenance import memory_list_skills
             fn = memory_list_skills

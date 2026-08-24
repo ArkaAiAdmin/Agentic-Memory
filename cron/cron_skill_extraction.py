@@ -23,7 +23,10 @@ Usage:
     venv/bin/python cron_skill_extraction.py --since 24h   # only recent memories
 """
 
-from _flock import acquire_lock_or_exit
+try:
+    from _flock import acquire_lock_or_exit
+except ImportError:
+    from cron._flock import acquire_lock_or_exit
 import argparse
 import os
 import sqlite3

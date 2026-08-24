@@ -1062,6 +1062,7 @@ def api_server_main() -> None:
     db_path = parsed.db
     if not db_path:
         db_path = get_config().db_path
+    os.environ.setdefault("MEMORY_DB_PATH", str(db_path))
 
     db_path_obj = Path(db_path)
     if not db_path_obj.exists():

@@ -619,6 +619,8 @@ def memory_extract_skills(
     conn,
     memory_id: str = "",
     dry_run: bool = False,
+    since: str = "",
+    **kwargs: Any,
 ) -> str:
     """Manually trigger skill extraction.
 
@@ -633,6 +635,8 @@ def memory_extract_skills(
             (same as cron_skill_extraction.py).
         dry_run: when True, count what would be extracted without
             writing to the DB.
+        since: when non-empty, ISO timestamp to only extract memories updated
+            after this time.
     """
     try:
         if memory_id:
@@ -685,7 +689,7 @@ def memory_extract_skills(
             from cron_skill_extraction import run_extraction as _run
         else:
             _run = cron_skill_extraction.run_extraction
-        result = _run(conn, dry_run=dry_run)
+        result = _run(conn, since_iso=since, dry_run=dry_run)
         prefix = "[DRY RUN] " if dry_run else ""
         return (
             f"{prefix}Skill extraction complete: scanned={result['scanned']} "
