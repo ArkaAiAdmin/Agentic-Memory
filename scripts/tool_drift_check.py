@@ -47,9 +47,9 @@ def extract_mcp_tools_from_files() -> set[str]:
 def main() -> int:
     # Parse tool_registry.py
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from tool_registry import CORE_TOOLS, ADMIN_TOOLS
+    from tool_registry import CORE_TOOLS, ADMIN_TOOLS, DEPRECATED
 
-    registered = set(CORE_TOOLS + ADMIN_TOOLS) - ADMIN_ROUTED_TOOLS
+    registered = set(CORE_TOOLS + ADMIN_TOOLS + DEPRECATED) - ADMIN_ROUTED_TOOLS
 
     # Extract tools from source files
     defined = extract_mcp_tools_from_files()

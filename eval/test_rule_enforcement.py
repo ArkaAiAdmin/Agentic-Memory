@@ -468,26 +468,26 @@ def test_rule4_no_raw_alter_table_in_python():
 
 
 # ---------------------------------------------------------------------------
-# Rule 6 — Tool surface contract (25 CORE, 92 ADMIN, 3 DEPRECATED)
+# Rule 6 — Tool surface contract (19 CORE, 92 ADMIN, 10 DEPRECATED)
 # ---------------------------------------------------------------------------
 
 
 def test_rule6_mcp_tool_surface_contract():
-    """Rule 6: Surface must have exactly 25 CORE verbs and 92 ADMIN behind router."""
+    """Rule 6: Surface must have exactly 19 CORE verbs and 92 ADMIN behind router."""
     import tool_registry
 
     core = tool_registry.CORE_TOOLS
     admin = tool_registry.ADMIN_TOOLS
     deprecated = getattr(tool_registry, "DEPRECATED", getattr(tool_registry, "DEPRECATED_TOOLS", []))
 
-    assert len(core) == 25, (
-        f"Expected 25 CORE tools, got {len(core)}: {core}"
+    assert len(core) == 19, (
+        f"Expected 19 CORE tools, got {len(core)}: {core}"
     )
     assert len(admin) == 92, (
         f"Expected 92 ADMIN tools, got {len(admin)}"
     )
-    assert len(deprecated) == 3, (
-        f"Expected 3 DEPRECATED tools, got {len(deprecated)}"
+    assert len(deprecated) == 10, (
+        f"Expected 10 DEPRECATED tools, got {len(deprecated)}"
     )
     overlap = set(core) & set(admin)
     assert not overlap, f"Rule 6: Tool overlap between CORE and ADMIN: {overlap}"

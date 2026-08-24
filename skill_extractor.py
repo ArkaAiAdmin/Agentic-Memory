@@ -182,7 +182,7 @@ _AUTO_SAVE_HEADER_RE = re.compile(
 # 758 junk dirs vs 74 junk DB rows because write_skill_md leaked).
 _JUNK_TOOL_ECHO_MARKERS = re.compile(
     r"(About to execute[:\s]|Tool result:|Sub-agent (spawned|completed):"
-    r"|\[Discovery by Agent subtask|\[Tool Failure Lesson\]"
+    r"|\[Discovery by Agent subtask|\[Discovery by Agent|\[Tool Failure Lesson\]"
     r"|Applied change-set:|Modified file:|Actual output of (the|above))",
     re.MULTILINE | re.IGNORECASE,
 )
@@ -212,6 +212,12 @@ _JUNK_MEMORY_ID_RE = re.compile(
     r"|^deep-reranking-cross-encoder-test-content"
     r"|^full-cycle-memory-\d+"
     r"|^consolidated-session-traj-"
+    r"|^the-deploy-service-configuration-"
+    r"|^this-is-a-test-memory-"
+    r"|^session-summary-auto-"
+    r"|^summary-overview$"
+    r"|^recent-commit-report$"
+    r"|^comprehensive-git-commit-"
     r")",
     re.IGNORECASE,
 )
@@ -371,6 +377,8 @@ def is_skill_worthy(content: str, category: str = "") -> bool:
         weak += 1
     elif cat in ("decisions",):
         # Decisions are observations about past calls, not skills.
+        return False
+    elif cat in ("sessions", "auto_save") or cat.startswith("session"):
         return False
     if strong >= 1:
         # One strong signal is enough.
@@ -633,11 +641,19 @@ def write_skill_md(
         return None
 
 
+def _jaccard_triggers(set_a: set, set_b: set) -> float:
+    if not set_a or not set_b:
+        return 0.0
+    return len(set_a & set_b) / len(set_a | set_b)
+
+
 def save_skill(conn: AnyConnection, skill: dict) -> int:
     """Insert or update a skill in the memory_skills table. Returns the skill id.
 
     If a skill with the same name exists, updates it (idempotent re-extraction).
     Validates the skill contract before saving — rejects junk skills.
+    Applies semantic deduplication (Jaccard > 0.85 on triggers) and handles
+    name collisions by appending a counter.
     """
     import json
 
@@ -648,34 +664,96 @@ def save_skill(conn: AnyConnection, skill: dict) -> int:
         return -1
 
     now = time.time()
+    skill_content_hash = skill.get("content_hash", "")
+
+    # 1. Exact name match (update existing skill for same memory/name)
     existing = conn.execute(
-        "SELECT id, content_hash FROM memory_skills WHERE name = ?", (skill["name"],)
+        "SELECT id, content_hash, source_memory_id FROM memory_skills WHERE name = ?", (skill["name"],)
     ).fetchone()
 
     if existing:
-        skill_id, prev_hash = existing
+        skill_id, prev_hash, prev_source = existing
         # If content didn't change, no-op
-        if prev_hash == skill.get("content_hash"):
+        if prev_hash == skill_content_hash:
             return int(skill_id)
-        conn.execute(
-            """UPDATE memory_skills
-               SET source_memory_id = ?, topic = ?, description = ?,
-                   triggers = ?, steps = ?, content_hash = ?,
-                   updated_at = ?
-               WHERE id = ?""",
-            (
-                skill.get("source_memory_id"),
-                skill.get("topic"),
-                skill.get("description"),
-                json.dumps(skill.get("triggers", [])),
-                json.dumps(skill.get("steps", [])),
-                skill.get("content_hash"),
-                now,
-                skill_id,
-            ),
+        # If it's an update to the same memory / skill definition:
+        if not prev_source or not skill.get("source_memory_id") or prev_source == skill.get("source_memory_id"):
+            conn.execute(
+                """UPDATE memory_skills
+                   SET source_memory_id = ?, topic = ?, description = ?,
+                       triggers = ?, steps = ?, content_hash = ?,
+                       updated_at = ?
+                   WHERE id = ?""",
+                (
+                    skill.get("source_memory_id"),
+                    skill.get("topic"),
+                    skill.get("description"),
+                    json.dumps(skill.get("triggers", [])),
+                    json.dumps(skill.get("steps", [])),
+                    skill.get("content_hash"),
+                    now,
+                    skill_id,
+                ),
+            )
+            conn.commit()
+            return int(skill_id)
+
+    # 2. Exact hash check across any existing skill
+    if skill_content_hash:
+        existing_hash = conn.execute(
+            "SELECT id, content_hash FROM memory_skills WHERE content_hash = ?",
+            (skill_content_hash,),
+        ).fetchone()
+        if existing_hash:
+            skill_id = existing_hash[0]
+            conn.execute(
+                "UPDATE memory_skills SET hit_count = hit_count + 1, updated_at = ? WHERE id = ?",
+                (now, skill_id),
+            )
+            conn.commit()
+            return int(skill_id)
+
+    # 3. Semantic deduplication on triggers and topic prefix (against other skills)
+    new_triggers = set(skill.get("triggers", []))
+    new_topic = (skill.get("topic") or "").lower().strip()
+    new_topic_prefix = new_topic.split()[0] if new_topic else ""
+
+    existing_rows = conn.execute(
+        "SELECT id, name, topic, description, triggers, content_hash, hit_count, source_memory_id FROM memory_skills"
+    ).fetchall()
+
+    for row in existing_rows:
+        r_id, r_name, r_topic, r_desc, r_trig_json, r_hash, r_hit, r_src = (
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7]
         )
-        conn.commit()
-        return int(skill_id)
+        if r_src and skill.get("source_memory_id") and r_src == skill.get("source_memory_id"):
+            continue
+        try:
+            r_trig = set(json.loads(r_trig_json or "[]"))
+        except Exception:
+            r_trig = set()
+        jaccard = _jaccard_triggers(new_triggers, r_trig)
+        r_topic_str = (r_topic or "").lower().strip()
+        r_topic_prefix = r_topic_str.split()[0] if r_topic_str else ""
+        same_prefix = bool(new_topic_prefix and r_topic_prefix and new_topic_prefix == r_topic_prefix)
+        if (jaccard > 0.85 and (same_prefix or not r_topic_str)) or jaccard > 0.95:
+            # Treat as semantic duplicate: increment hit_count
+            conn.execute(
+                "UPDATE memory_skills SET hit_count = hit_count + 1, updated_at = ? WHERE id = ?",
+                (now, r_id),
+            )
+            conn.commit()
+            return int(r_id)
+
+    # 4. If name collides with a different skill, append suffix counter
+    if existing:
+        base_name = skill["name"]
+        counter = 2
+        cand_name = f"{base_name}-{counter}"
+        while conn.execute("SELECT id FROM memory_skills WHERE name = ?", (cand_name,)).fetchone():
+            counter += 1
+            cand_name = f"{base_name}-{counter}"
+        skill["name"] = cand_name
 
     cur = conn.execute(
         """INSERT INTO memory_skills

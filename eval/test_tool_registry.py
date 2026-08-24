@@ -19,9 +19,9 @@ import tool_registry  # noqa: E402
 
 
 def test_core_count():
-    """CORE_TOOLS has 25 entries (matches AGENTS.md and pyproject.toml)."""
-    assert len(tool_registry.CORE_TOOLS) == 25, (
-        f"Expected 25 CORE tools, got {len(tool_registry.CORE_TOOLS)}"
+    """CORE_TOOLS has 19 entries (matches AGENTS.md and pyproject.toml)."""
+    assert len(tool_registry.CORE_TOOLS) == 19, (
+        f"Expected 19 CORE tools, got {len(tool_registry.CORE_TOOLS)}"
     )
 
 
@@ -33,42 +33,18 @@ def test_admin_count():
 
 
 def test_deprecated_count():
-    """DEPRECATED has 3 entries."""
-    assert len(tool_registry.DEPRECATED) == 3, (
-        f"Expected 3 DEPRECATED tools, got {len(tool_registry.DEPRECATED)}"
+    """DEPRECATED has 10 entries."""
+    assert len(tool_registry.DEPRECATED) == 10, (
+        f"Expected 10 DEPRECATED tools, got {len(tool_registry.DEPRECATED)}"
     )
 
 
 def test_no_duplicates_across_tiers():
-    """No tool name appears in more than one tier."""
-    all_names = []
-    for tier_name, tier_list in [
-        ("CORE", tool_registry.CORE_TOOLS),
-        ("ADMIN", tool_registry.ADMIN_TOOLS),
-        ("DEPRECATED", tool_registry.DEPRECATED),
-    ]:
-        for name in tier_list:
-            all_names.append((tier_name, name))
-
-    seen = {}
-    for tier, name in all_names:
-        if name in seen:
-            # DEPRECATED ⊂ ADMIN is allowed
-            if {tier, seen[name]} == {"DEPRECATED", "ADMIN"}:
-                continue
-            raise AssertionError(
-                f"Duplicate tool '{name}' in {seen[name]} and {tier}"
-            )
-        seen[name] = tier
-
-
-def test_deprecated_subset_of_admin():
-    """All DEPRECATED tools are also in ADMIN_TOOLS."""
+    """No tool name appears in both CORE and ADMIN."""
+    core_set = set(tool_registry.CORE_TOOLS)
     admin_set = set(tool_registry.ADMIN_TOOLS)
-    for name in tool_registry.DEPRECATED:
-        assert name in admin_set, (
-            f"DEPRECATED tool '{name}' not found in ADMIN_TOOLS"
-        )
+    overlap = core_set & admin_set
+    assert not overlap, f"Overlap between CORE and ADMIN: {overlap}"
 
 
 def test_core_names_valid():
@@ -92,20 +68,15 @@ def test_admin_names_valid():
 
 
 def test_total_visible():
-    """Total visible tools (CORE only) is 25 after promoting the 3 self-editing
-    skill tools (memory_list_skills, memory_extract_skills, memory_compile_skill)
-    from ADMIN to CORE, adding memory_recall_context, and registering
-    memory_session_end (live on the surface via mcp_surface/mcp_session.py).
-    """
-    assert len(tool_registry.CORE_TOOLS) == 25
+    """Total visible tools (CORE only) is 19 after Phase 2b consolidation."""
+    assert len(tool_registry.CORE_TOOLS) == 19
 
 
 def test_total_tool_count():
-    """Total unique tools across CORE + ADMIN (DEPRECATED ⊂ ADMIN, not counted separately)."""
-    unique = set(tool_registry.CORE_TOOLS) | set(tool_registry.ADMIN_TOOLS)
-    # DEPRECATED ⊂ ADMIN, so unique = CORE ∪ ADMIN
-    assert len(unique) == 117, (
-        f"Expected 117 unique tools (25 CORE + 92 ADMIN), got {len(unique)}"
+    """Total registered tool names across tiers."""
+    total = len(tool_registry.CORE_TOOLS) + len(tool_registry.ADMIN_TOOLS) + len(tool_registry.DEPRECATED)
+    assert total == 121, (
+        f"Expected 121 total tools (19 CORE + 92 ADMIN + 10 DEPRECATED), got {total}"
     )
 
 

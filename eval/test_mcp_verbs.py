@@ -107,11 +107,11 @@ class TestVerbCoreToolsMatch:
         from tool_registry import CORE_TOOLS
 
         for verb in [
-            "memory_search", "memory_save", "memory_delete",
-            "memory_recall", "memory_note", "memory_learn",
+            "memory_search", "memory_save",
+            "memory_note",
             "memory_audit", "memory_organize", "memory_share",
             "memory_graph", "memory_profile", "memory_session_start",
-            "memory_advanced",
+            "memory_session_end", "memory_advanced", "memory_skills",
         ]:
             assert verb in CORE_TOOLS, f"{verb} missing from CORE_TOOLS"
 
@@ -173,8 +173,8 @@ class TestVerbRecallBehavior:
     """memory_recall: returns session/thread context."""
 
     def test_recall_returns_context(self):
-        with mock.patch("search.orchestrator.search_memories") as ms:
-            ms.return_value = {"results_blob": "recall results"}
+        with mock.patch("recall.recall.recall_context") as rc:
+            rc.return_value = {"formatted": "recall results"}
             result = memory_recall(query="what happened")
             assert "recall results" in result
 

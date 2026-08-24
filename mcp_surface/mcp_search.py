@@ -274,6 +274,7 @@ def memory_semantic_search(query: str, limit: int = 5) -> str:
 @with_audit("memory_recall_context")
 def memory_recall_context(
     query: str = "",
+    session_id: str = "",
     limit: int = 15,
     include_pinned: bool = True,
     include_recent_digests: bool = True,

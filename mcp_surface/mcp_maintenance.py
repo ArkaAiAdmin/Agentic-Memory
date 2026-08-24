@@ -77,13 +77,23 @@ def memory_heartbeat(conn, dry_run: bool = False, tenant_id: str = "") -> str:
 @mcp.tool()
 @with_audit("memory_health_check")
 @with_memory_connection
-def memory_health_check(conn) -> str:
+def memory_health_check(conn, format: str = "json") -> str:
     """Unified health-check: returns a JSON dict summarising subsystem state.
 
     Checks DB availability, row counts, vec-index drift, FTS sync status,
     connection-pool depth, background-worker liveness, disk space, and
     CQRS write-journal health.
+
+    Args:
+        format: Output format ('json' for full JSON status, 'traffic_light' for green/yellow/red summary).
     """
+    if format == "traffic_light":
+        try:
+            from mcp_surface.mcp_health import memory_system_health
+            return str(memory_system_health())
+        except Exception as e:
+            logger.warning("traffic_light format failed in memory_health_check: %s", e)
+
     import shutil
     from pathlib import Path
 
@@ -807,7 +817,32 @@ def memory_compile_skill(
                         ErrorCode.INVALID_PARAMS,
                         f"Python syntax error in lesson code blocks: {se}",
                     )
+        import hashlib
         import yaml
+        from skill_extractor import verify_skill_contract, save_skill, ensure_skill_schema
+
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+        triggers_list = primary_triggers + (secondary_triggers or [])
+        steps_list = [s.strip() for s in body.strip().splitlines() if s.strip() and not s.strip().startswith("#")][:20]
+        if not steps_list:
+            steps_list = [body.strip()[:200]]
+
+        db_row = {
+            "name": skill_name,
+            "source_memory_id": lesson_slug,
+            "topic": metadata.get("title", lesson_slug),
+            "description": metadata.get("description", f"Compiled from lesson: {lesson_slug}"),
+            "triggers": triggers_list,
+            "steps": steps_list,
+            "content_hash": content_hash,
+        }
+
+        passed, reason = verify_skill_contract(db_row)
+        if not passed:
+            return _err(
+                ErrorCode.INVALID_PARAMS,
+                f"Skill contract validation failed: {reason}",
+            )
 
         skill_metadata = {
             "name": skill_name,
@@ -831,6 +866,7 @@ def memory_compile_skill(
 # Skill: {skill_name.replace("-", " ").title()}
 
 {body.strip()}
+<!-- content_hash: {content_hash} -->
 """
         skills_dir = Path.home() / ".agents" / "skills" / skill_name
         skills_dir.mkdir(parents=True, exist_ok=True)
@@ -838,17 +874,7 @@ def memory_compile_skill(
         atomic_write(skill_file_path, skill_content, encoding="utf-8")
         try:
             from infra.db import open_db
-            from skill_extractor import save_skill, ensure_skill_schema
 
-            db_row = {
-                "name": skill_name,
-                "source_memory_id": lesson_slug,
-                "topic": metadata.get("title", lesson_slug),
-                "description": metadata.get("description", f"Compiled from lesson: {lesson_slug}"),
-                "triggers": primary_triggers + (secondary_triggers or []),
-                "steps": [body.strip()[:200]],
-                "content_hash": "",
-            }
             _skill_db = (
                 Path(os.environ["MEMORY_DB_PATH"])
                 if os.environ.get("MEMORY_DB_PATH")
@@ -1001,6 +1027,31 @@ class MaintenanceOp(str, Enum):
     @classmethod
     def all_values(cls) -> list[str]:
         return [m.value for m in cls]
+
+
+OP_CATEGORY: dict[MaintenanceOp, str] = {
+    MaintenanceOp.DASHBOARD: "incubating",
+    MaintenanceOp.METRICS_SERVER: "incubating",
+    MaintenanceOp.LOGIN_URL: "incubating",
+    MaintenanceOp.CALLBACK: "incubating",
+    MaintenanceOp.WHOAMI: "incubating",
+    MaintenanceOp.ROTATE_KEY: "incubating",
+    MaintenanceOp.SSO_SYNC_METADATA: "incubating",
+    MaintenanceOp.SSO_IDP_LIST: "incubating",
+    MaintenanceOp.SSO_IDP_ADD: "incubating",
+}
+
+OP_GROUP: dict[MaintenanceOp, str] = {
+    MaintenanceOp.DASHBOARD: "observability",
+    MaintenanceOp.METRICS_SERVER: "observability",
+    MaintenanceOp.LOGIN_URL: "sso",
+    MaintenanceOp.CALLBACK: "sso",
+    MaintenanceOp.WHOAMI: "sso",
+    MaintenanceOp.ROTATE_KEY: "security",
+    MaintenanceOp.SSO_SYNC_METADATA: "sso",
+    MaintenanceOp.SSO_IDP_LIST: "sso",
+    MaintenanceOp.SSO_IDP_ADD: "sso",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -1161,9 +1212,22 @@ def memory_maintenance(
     }
     op = operation.lower().replace("-", "_")
     if op in ("help", "list_ops", "operations", "ops"):
-        ops_list = sorted(MaintenanceOp.all_values())
+        default_cat = "all" if os.environ.get("MEMORY_ENABLE_INCUBATING") == "1" else "stable"
+        cat = kwargs.get("category", default_cat).lower().strip()
+        if cat == "all":
+            ops_list = sorted(MaintenanceOp.all_values())
+        elif cat == "incubating":
+            ops_list = sorted(
+                v for v in MaintenanceOp.all_values()
+                if OP_CATEGORY.get(MaintenanceOp(v), "stable") == "incubating"
+            )
+        else:  # "stable" (default)
+            ops_list = sorted(
+                v for v in MaintenanceOp.all_values()
+                if OP_CATEGORY.get(MaintenanceOp(v), "stable") == "stable"
+            )
         return (
-            f"## Memory Maintenance Operations Reference ({len(ops_list)} operations)\n\n"
+            f"## Memory Maintenance Operations Reference ({len(ops_list)} operations, category='{cat}')\n\n"
             f"Available operations:\n- " + "\n- ".join(ops_list) + "\n\n"
             "Call memory_maintenance(operation='<name>', **kwargs) or memory_advanced(operation='<name>', **kwargs)."
         )

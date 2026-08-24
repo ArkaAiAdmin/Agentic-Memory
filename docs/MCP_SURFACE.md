@@ -86,19 +86,18 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - **Contradiction merge:** LIVE — `memory_resolve_contradiction(strategy="merge")` delegates to resolver (G3).
 - **Belief review:** LIVE — `cron_review_beliefs` queues stale beliefs; `memory_review_beliefs` reads queue (G4).
 
-**Surface: 25 CORE tools + `memory_advanced` escape hatch**
+**Surface: 19 CORE tools + `memory_advanced` escape hatch**
 
 - CORE tools: visible directly — call them by name.
 - `memory_advanced(operation="...", **kwargs)`: agent-facing escape hatch for all ADMIN/diagnostic tools (passes through to the `memory_maintenance` router).
 - `memory_maintenance`: admin router — CLI-only, not on the agent MCP surface.
 
-> **Important:** 92 ADMIN + 3 DEPRECATED tools are not removed — agents reach them via `memory_advanced`,
-> which routes to the `memory_maintenance` router. The 3 DEPRECATED tools
-> are routed via their replacement verbs and also tracked for audit.
+> **Important:** 92 ADMIN + 10 DEPRECATED tools are not removed — agents reach them via `memory_advanced`,
+> which routes to the `memory_maintenance` router. The 10 DEPRECATED tools
+> are routed via their replacement verbs/shims and also tracked for audit.
 >
-> **Self-editing is wired-and-visible.** The three skill tools — `memory_list_skills`, `memory_extract_skills`,
-> and `memory_compile_skill` — are CORE (promoted from ADMIN). Auto skill extraction also runs on every
-> `memory_save` with procedural content; verify with `memory_list_skills`.
+> **Self-editing is wired-and-visible.** The consolidated skill tool `memory_skills` (actions: `list`, `extract`, `compile`)
+> is CORE. Auto skill extraction also runs on every `memory_save` with procedural content; verify with `memory_skills(action="list")`.
 
 > **There is exactly one `memory_save` MCP tool.** It is registered as a CORE verb in
 > `mcp_verbs.py` and exported through `memory_mcp.py`. Do not call `save_pipeline.save_memory`

@@ -2,22 +2,19 @@
 
 Phase A (2026-07-01): 17 CORE tools + escape hatch (memory_advanced).
 Phase B (2026-07-15): +1 CORE tool (memory_record_ctr_feedback) for CTR feedback.
+Phase C (2026-08-24): CORE consolidation: 25 -> 19 tools, with shims for deprecated verbs.
 
-CORE_TOOLS:    25 tools total — all visible directly on the MCP surface.
+CORE_TOOLS:    19 tools total — all visible directly on the MCP surface.
                 Everything else is accessible via memory_maintenance(operation="...")
                 or memory_advanced(operation="...").
 ADMIN_TOOLS:    Legacy tools callable via memory_maintenance / memory_advanced.
-DEPRECATED:     Tools superseded by verbs (also present in ADMIN_TOOLS;
-                listed here for audit/logging only).
+DEPRECATED:     Tools superseded by verbs or consolidated (callable via shims).
 """
 
 CORE_TOOLS = [
     "memory_search",
     "memory_save",
-    "memory_delete",
-    "memory_recall",
     "memory_note",
-    "memory_learn",
     "memory_audit",
     "memory_organize",
     "memory_share",
@@ -30,17 +27,10 @@ CORE_TOOLS = [
     "memory_review_beliefs",
     "memory_curate_autosave",
     "memory_health_check",
-    "memory_system_health",
     "memory_recall_context",
     "memory_record_ctr_feedback",
-    # Agent-facing self-editing surface (promoted from ADMIN — see AGENTS.md
-    # "Self-editing" section). Auto skill extraction already runs on every
-    # save; these let agents trigger/inspect skill compile + extraction
-    # directly instead of going through the memory_maintenance router.
-    "memory_list_skills",
-    "memory_extract_skills",
-    "memory_compile_skill",
     "memory_coordinate",
+    "memory_skills",
 ]
 
 ADMIN_TOOLS = [
@@ -143,4 +133,12 @@ DEPRECATED = [
     "memory_incremental_update",
     "memory_check_embedding_model",
     "memory_run_tier_migration",
+    # Phase 2b consolidated / shimmed verbs:
+    "memory_delete",         # shimmed -> memory_note(action='delete')
+    "memory_recall",         # shimmed -> memory_recall_context
+    "memory_system_health",  # shimmed -> memory_health_check(format='traffic_light')
+    "memory_learn",          # shimmed -> memory_save + memory_compile_skill
+    "memory_list_skills",    # shimmed -> memory_skills(action='list')
+    "memory_extract_skills", # shimmed -> memory_skills(action='extract')
+    "memory_compile_skill",  # shimmed -> memory_skills(action='compile')
 ]

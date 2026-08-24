@@ -64,10 +64,18 @@ NAME_GLOBS = [
     "a-short-test-note*",
     "memory-to-delete*",
     "test-for-importance*",
+    "the-deploy-service-*",
+    "this-is-a-test-*",
+    "session-summary-*",
+    "summary-overview*",
+    "recent-commit-report*",
+    "git-commit-report*",
+    "comprehensive-git-commit-*",
+    "test-skill*",
 ]
 
 # Hand-named but real skills — never delete even if they look testy.
-PROTECT = {"test-skill", "test-skill-final", "TestMcpSaveSkill", "lesson"}
+PROTECT = {"lesson"}
 
 DESC_JUNK_RE = re.compile(
     r"^(Tool result:|Sub-agent (spawned|completed):|\[Discovery by Agent|"

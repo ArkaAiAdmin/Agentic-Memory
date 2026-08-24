@@ -747,9 +747,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             tags = req.get("tags", None)
             # Default fts — see GET handler note above.
             mode = req.get("mode", "fts")
+            include_global = req.get("include_global", True)
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
-                results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
+                results = client.search(
+                    query,
+                    limit=limit,
+                    rerank=rerank,
+                    tags=tags,
+                    mode=mode,
+                    light=light,
+                    include_global=include_global,
+                )
             
             # Serialize SearchResults object
             results_list = [

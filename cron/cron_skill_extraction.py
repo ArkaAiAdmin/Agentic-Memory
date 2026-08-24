@@ -113,6 +113,11 @@ def _has_category_column(conn: AnyConnection) -> bool:
     return False
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def run_extraction(
     conn: AnyConnection, since_iso: str = "", dry_run: bool = False
 ) -> dict:
@@ -128,6 +133,17 @@ def run_extraction(
     the lower-threshold detector can apply the per-category bias.
     """
     ensure_skill_schema(conn)  # safety net; migration is canonical
+    try:
+        db_cnt_row = conn.execute("SELECT COUNT(*) FROM memory_skills").fetchone()
+        db_cnt = db_cnt_row[0] if db_cnt_row else 0
+        skills_path = Path.home() / ".agents" / "skills"
+        if skills_path.exists():
+            fs_cnt = len([d for d in skills_path.iterdir() if d.is_dir()])
+            if abs(db_cnt - fs_cnt) > 20:
+                logger.warning("skill drift db=%s fs=%s", db_cnt, fs_cnt)
+    except Exception as _drift_err:
+        logger.debug("skill drift check failed: %s", _drift_err)
+
     existing = _existing_skill_hashes(conn)
     rows = _memory_updated_since(conn, since_iso)
     if not rows:
