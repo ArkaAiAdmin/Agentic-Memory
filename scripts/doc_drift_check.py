@@ -205,9 +205,11 @@ def regenerate_mcp_surface_md() -> list[str]:
     migrations = _count_migrations()
     text = surface_md.read_text(encoding="utf-8")
 
+    from datetime import date
+    today_str = date.today().isoformat()
     header_span = (
         f"<!--AUTO-GEN:START key=\"mcp_surface_schema_header\"-->\n"
-        f"> Last updated: 2026-07-27. Schema v{schema_version}. Multi-tenant isolation enforced.\n"
+        f"> Last updated: {today_str}. Schema v{schema_version}. Multi-tenant isolation enforced.\n"
         f"<!--AUTO-GEN:END key=\"mcp_surface_schema_header\"-->"
     )
     version_span = (
