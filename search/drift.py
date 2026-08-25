@@ -131,12 +131,20 @@ def _record_drift_event(
             "SELECT memory_id, embedding FROM memory_embeddings"
         ).fetchall()
         scored = []
+        diff_dim = len(diff)
         for mem_id, blob in top_memory_rows:
             if not blob:
                 continue
             try:
                 vec = _np.frombuffer(blob, dtype=_np.float32).copy()
             except (ValueError, BufferError):
+                continue
+            # Mixed-dimension guard: legacy/model-migration corpora can
+            # hold embeddings of more than one dimensionality. A vector
+            # whose dim differs from the centroid space cannot be scored
+            # against its dimensions — indexing it raised IndexError and
+            # took down the whole drift check (2026-08-25 incident).
+            if len(vec) != diff_dim:
                 continue
             contrib = float(
                 sum(abs(float(vec[i])) * abs(float(diff[i])) for i in top_idxs)
