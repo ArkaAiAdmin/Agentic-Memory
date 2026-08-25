@@ -35,6 +35,17 @@ sys.path.insert(0, str(INSTALL_DIR))
 from infra.write_journal import enqueue_write  # noqa: E402
 from save.pipeline import SaveRequest  # noqa: E402
 
+# The journal write lock is contested near-continuously on a live system
+# (scheduler jobs fire every minute; the auto-save daemon flushes in
+# bursts). A 10s busy window loses that race for hours. Queue politely
+# instead: give the replay connection a long busy timeout so SQLite's own
+# locking waits out the bursts (bounded per row by SQLite's retry, not by
+# a re-race loop).
+import infra.write_journal as _wj  # noqa: E402
+
+_orig_get_journal_conn = _wj._get_journal_conn
+_wj._get_journal_conn = lambda path, timeout=10.0: _orig_get_journal_conn(path, timeout=90.0)
+
 
 def _candidate_memory_dbs(journal_path: Path) -> list[Path]:
     """DBs that may already contain materialized copies of a failed entry.
@@ -163,16 +174,19 @@ def main() -> int:
                 last_exc: Exception | None = None
                 for attempt in range(3):
                     try:
+                        print(f"[{note_id[:44]}] attempt {attempt} enqueue...", flush=True)
                         enqueue_write(journal_path, _row_to_request(row), agent_id=row["agent_id"])
                         last_exc = None
                         break
                     except sqlite3.OperationalError as exc:
                         last_exc = exc
+                        print(f"[{note_id[:44]}] attempt {attempt} failed: {exc}", flush=True)
                         if "locked" not in str(exc).lower():
                             raise
                         time.sleep(10 * (attempt + 1))
                 if last_exc is not None:
                     raise last_exc
+                print(f"[{note_id[:44]}] deleting failed-row", flush=True)
                 del_conn.execute("DELETE FROM journal_failed WHERE id = ?", (row["id"],))
                 del_conn.commit()
                 stats["replay"] += 1
