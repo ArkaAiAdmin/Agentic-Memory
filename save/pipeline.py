@@ -1191,6 +1191,38 @@ def _acquire_db_connection(
     raise SaveValidationError(ErrorCode.DB_ERROR, "saving memory: unreachable — no error captured")
 
 
+def _category_allowed_bases(target_mem: Path, category: str, global_mem_dir: Path) -> set[Path]:
+    """Sanctioned roots a resolved category directory may live under.
+
+    Besides the literal target base and ``GLOBAL_MEM_DIR``, a paired
+    storage root is accepted when ``journal.db`` inside the base is a
+    symlink into another data directory — the 2026-08-22 App Support
+    migration left category dirs as symlinks across two roots, and the
+    journal drainer resolves its markdown targets through them.
+
+    The extra root is only added for PLAIN single-segment categories
+    (``auto_save``, ``skill``, ...). Anything with separators, dot
+    segments, or an absolute form keeps the strict literal containment,
+    so the traversal guard stays adversarial-proof.
+    """
+    allowed: set[Path] = {target_mem.resolve(), Path(global_mem_dir).resolve()}
+    is_plain_single_segment = (
+        bool(category)
+        and not os.path.isabs(category)
+        and "/" not in category
+        and "\\" not in category
+        and category not in (".", "..")
+    )
+    if is_plain_single_segment:
+        try:
+            journal_link = target_mem / "journal.db"
+            if journal_link.is_symlink():
+                allowed.add(journal_link.resolve().parent)
+        except OSError:
+            pass
+    return allowed
+
+
 def _resolve_save_paths(
     category: str,
     title_slug: str,
@@ -1270,8 +1302,11 @@ def _resolve_save_paths(
         # Note: is_relative_to returns True for self, so the second clause
         # below is the one that catches an empty/identity category. Split the
         # two conditions into distinct error messages for debuggability.
-        # Category must be contained in either target_base or GLOBAL_MEM_DIR (for symlinked category dirs).
-        is_contained = category_dir.is_relative_to(target_base_resolved) or category_dir.is_relative_to(global_mem_resolved)
+        # Category must be contained in target_base, GLOBAL_MEM_DIR (for
+        # symlinked category dirs), or the paired storage root discovered
+        # via the journal.db symlink shim.
+        allowed_bases = _category_allowed_bases(target_base, effective_category, GLOBAL_MEM_DIR)
+        is_contained = any(category_dir.is_relative_to(base) for base in allowed_bases)
         if not is_contained:
             raise SaveValidationError(
                 ErrorCode.TRAVERSAL,
@@ -2061,7 +2096,8 @@ def _materialize_journal_once(
     target_mem_resolved = target_mem.resolve()
     global_mem_resolved = GLOBAL_MEM_DIR.resolve()
     category_dir = (target_mem / req.category).resolve()
-    is_contained = category_dir.is_relative_to(target_mem_resolved) or category_dir.is_relative_to(global_mem_resolved)
+    allowed_bases = _category_allowed_bases(target_mem, req.category, GLOBAL_MEM_DIR)
+    is_contained = any(category_dir.is_relative_to(base) for base in allowed_bases)
     if not is_contained:
         raise SaveValidationError(
             ErrorCode.TRAVERSAL,

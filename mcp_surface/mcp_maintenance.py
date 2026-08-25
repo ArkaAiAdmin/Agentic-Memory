@@ -74,6 +74,39 @@ def memory_heartbeat(conn, dry_run: bool = False, tenant_id: str = "") -> str:
         return _err(ErrorCode.DB_ERROR, "in memory_heartbeat")
 
 
+def _compute_overall_status(
+    status: dict,
+    *,
+    drift_threshold: int,
+    disk_threshold: float,
+    journal_failed_threshold: int = 10,
+    journal_pending_stale_threshold: int = 100,
+) -> tuple[str, list[str]]:
+    """Derive ``overall`` from collected subsystem state. Returns (status, reasons).
+
+    The CQRS journal is part of the write path: a dead-letter backlog or an
+    unattended pending queue means writes are being lost or stalled even when
+    reads look perfect (2026-08-25 incident: 1,318 dead letters reported as
+    ``healthy`` for three days because this predicate ignored the journal).
+    """
+    reasons: list[str] = []
+    if status.get("db", {}).get("accessible") is False:
+        reasons.append("db_inaccessible")
+    if int(status.get("vec_index", {}).get("drift", 0)) > drift_threshold:
+        reasons.append(f"vec_drift>{drift_threshold}")
+    if float(status.get("disk", {}).get("pct_used", 0)) > disk_threshold:
+        reasons.append(f"disk_pct_used>{disk_threshold}")
+    journal = status.get("journal", {})
+    failed = int(journal.get("failed", 0))
+    pending = int(journal.get("pending", 0))
+    worker_alive = bool(status.get("worker", {}).get("alive", False))
+    if failed >= journal_failed_threshold:
+        reasons.append(f"journal_failed>={journal_failed_threshold} ({failed})")
+    if pending > journal_pending_stale_threshold and not worker_alive:
+        reasons.append(f"journal_pending={pending} unattended (worker stale)")
+    return ("degraded" if reasons else "healthy"), reasons
+
+
 @mcp.tool()
 @with_audit("memory_health_check")
 @with_memory_connection
@@ -253,14 +286,14 @@ def memory_health_check(conn, format: str = "json") -> str:
     from infra.config import get_config as _get_hc_cfg
 
     _hc_cfg = _get_hc_cfg()
-    _degraded_drift = getattr(_hc_cfg, "vec_index_drift_threshold", 50)
-    _degraded_disk = getattr(_hc_cfg, "disk_pct_used_threshold", 95)
-    degraded = bool(
-        status["db"].get("accessible") is False
-        or int(status["vec_index"].get("drift", 0)) > _degraded_drift
-        or int(status.get("disk", {}).get("pct_used", 0)) > _degraded_disk
+    overall, degraded_reasons = _compute_overall_status(
+        status,
+        drift_threshold=int(getattr(_hc_cfg, "vec_index_drift_threshold", 50)),
+        disk_threshold=float(getattr(_hc_cfg, "disk_pct_used_threshold", 95)),
     )
-    status["overall"] = "degraded" if degraded else "healthy"
+    if degraded_reasons:
+        status["degraded_reasons"] = degraded_reasons
+    status["overall"] = overall
     return json.dumps(status)
 
 
