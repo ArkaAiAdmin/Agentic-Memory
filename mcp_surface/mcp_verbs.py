@@ -322,6 +322,8 @@ def memory_save(
     importance: int = 3,
     is_global: bool = False,
     safety_wiring: bool = True,
+    idempotency_key: str | None = None,
+    **kwargs: Any,
 ) -> str:
     """Save a memory note with sensible defaults.
 
@@ -336,11 +338,18 @@ def memory_save(
         safety_wiring: If False, skip prompt-injection scanning (default True).
             Set to False for legitimate structured content with section headers
             and requirement keywords that may trigger false positives.
+        idempotency_key: Optional UUIDv4 client key for request deduplication.
     """
     auth_err = _check_authorization("write", "memory")
     if auth_err:
         return auth_err
     try:
+        from infra.idempotency import get_idempotent_result, set_idempotent_result
+        if idempotency_key:
+            cached = get_idempotent_result(idempotency_key)
+            if cached:
+                return json.dumps(cached)
+
         from save_pipeline import save_memory_auto, SaveValidationError
         slug = title_slug or _auto_slug(content)
         try:
@@ -355,7 +364,10 @@ def memory_save(
                 safety_wiring=safety_wiring,
                 defer_expensive=True,
             )
-            return json.dumps({"note_id": result, "status": "success"})
+            resp = {"note_id": result, "status": "success"}
+            if idempotency_key:
+                set_idempotent_result(idempotency_key, resp)
+            return json.dumps(resp)
         except SaveValidationError as e:
             return json.dumps({"note_id": "", "status": "error", "message": str(e)})
     except Exception as e:

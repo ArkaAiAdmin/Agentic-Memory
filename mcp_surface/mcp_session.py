@@ -205,8 +205,6 @@ def memory_session_end(session_id: str = "", summary: str = "") -> str:
         return _err(ErrorCode.DB_ERROR, str(e))
 
 @mcp.tool()
-@with_audit("memory_session_end")
-@mcp.tool()
 @with_audit("memory_resolve_thread")
 def memory_resolve_thread(
     thread_id: str,

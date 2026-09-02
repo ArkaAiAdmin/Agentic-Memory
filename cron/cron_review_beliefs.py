@@ -18,9 +18,10 @@ import argparse
 import os
 import sys
 import time
+from infra.memory_config import get_global_memory_dir
 
 
-_DEFAULT_DB = os.environ.get("MEMORY_DB_PATH", "memory/memory.db")
+_DEFAULT_DB = os.environ.get("MEMORY_DB_PATH") or str(get_global_memory_dir() / "memory.db")
 _DEFAULT_LIMIT = 50
 
 

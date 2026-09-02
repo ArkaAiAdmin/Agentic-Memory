@@ -427,7 +427,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if self._rate_limited(key=getattr(self, "_principal_id", None)):
                 self._error("Rate limit exceeded", 429)
                 return
-            self._handle_search_memories(parse_qs(parsed.query))
+        elif path == "/api/v1/memories/categories":
+            if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
+            self._handle_categories()
         elif path.startswith("/api/v1/memories/"):
             if not self._require_auth():
                 return
@@ -436,13 +442,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
             note_id = path[len("/api/v1/memories/"):]
             self._handle_get_memory(note_id)
-        elif path == "/api/v1/memories/categories":
-            if not self._require_auth():
-                return
-            if self._rate_limited(key=getattr(self, "_principal_id", None)):
-                self._error("Rate limit exceeded", 429)
-                return
-            self._handle_categories()
         elif path == "/api/v1/kg/nodes":
             if not self._require_auth():
                 return
@@ -966,20 +965,34 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             importance = req.get("importance", 3)
             title_slug = req.get("title_slug", "")
 
+            # CHANGE 5: tenant write-path validation. The authenticated
+            # principal's tenant is authoritative; it is threaded through to
+            # the save pipeline so the row is scoped to the principal's tenant
+            # (the pipeline refuses to re-derive a different tenant).
+            _principal_tenant = "default"
+            try:
+                if getattr(self, "_principal", None) is not None:
+                    _principal_tenant = getattr(
+                        self._principal, "tenant_id", "default"
+                    ) or "default"
+            except Exception:
+                pass
+
+            # Idempotency support: check X-Idempotency-Key header or body field
+            idempotency_key = (
+                self.headers.get("X-Idempotency-Key", "").strip()
+                or str(req.get("idempotency_key", "")).strip()
+                or None
+            )
+            from infra.idempotency import get_idempotent_result, set_idempotent_result
+            if idempotency_key:
+                cached = get_idempotent_result(idempotency_key, tenant_id=_principal_tenant)
+                if cached:
+                    self._write_json(cached, 201)
+                    return
+
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
-                # CHANGE 5: tenant write-path validation. The authenticated
-                # principal's tenant is authoritative; it is threaded through to
-                # the save pipeline so the row is scoped to the principal's tenant
-                # (the pipeline refuses to re-derive a different tenant).
-                _principal_tenant = "default"
-                try:
-                    if getattr(self, "_principal", None) is not None:
-                        _principal_tenant = getattr(
-                            self._principal, "tenant_id", "default"
-                        ) or "default"
-                except Exception:
-                    pass
                 note_id = client.save(
                     content=content,
                     tags=tags,
@@ -1009,7 +1022,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 )
             except Exception:
                 pass
-            self._write_json({"id": note_id, "status": "success"}, 201)
+            resp_payload = {"id": note_id, "status": "success"}
+            if idempotency_key:
+                set_idempotent_result(idempotency_key, resp_payload, tenant_id=_principal_tenant)
+            self._write_json(resp_payload, 201)
         except (ValueError, TypeError) as e:
             self._error(f"Validation error: {e}", 400)
         except PermissionError as e:
@@ -1025,36 +1041,27 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(str(e), 400)
             return
         try:
-            # `tier` is a simple metadata column — update via the saga-backed
-            # ``update_tier`` (same write path, no embeddings/KG re-extraction).
-            tier = req.get("tier")
-            if tier is not None:
-                if tier not in ("hot", "warm", "cold", "untrusted", "archive"):
-                    self._error("invalid tier value", 400)
-                    return
-                from save.pipeline import update_tier
-                found = update_tier(
-                    note_id=note_id, tier=tier,
-                    db_path=str(self.server.db_path),
+            content = req.get("content")
+            tags = req.get("tags")
+            pinned = req.get("pinned")
+            importance = req.get("importance")
+
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                client = MemoryClient(db_path=self.server.db_path)
+                client.update(
+                    note_id,
+                    content=content,
+                    tags=tags,
+                    pinned=pinned,
+                    importance=importance,
                 )
-                if not found:
-                    self._error(f"Memory not found: {note_id}", 404)
-                    return
-            other = {k: v for k, v in req.items()
-                     if k in _MEMORY_UPDATE_FIELDS and k != "tier"}
-            if other:
-                from save.pipeline import save_memory
-                other["note_id"] = note_id
-                if "tags" not in other:
-                    other["tags"] = []
-                save_memory(db_path=str(self.server.db_path), **other)
             # Audit: tag as dashboard REST call
             try:
                 from infra.audit import enqueue_audit
                 enqueue_audit(
                     db_path=str(self.server.db_path),
                     tool="dashboard_update",
-                    args={"note_id": note_id, "fields": list(req.keys())},
+                    args={"note_id": note_id, "tags": tags, "pinned": pinned},
                     results_count=1,
                     principal_id=getattr(self, "_principal_id", None),
                 )
@@ -1079,17 +1086,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             tenant_id = (
                 getattr(self, "_tenant_id", None)
                 or (getattr(getattr(self, "_principal", None), "tenant_id", None))
-                or os.environ.get("MEMORY_AGENT_ID", "")
-                or "ami"
+                or "default"
             )
-            peer = self.client_address[0]
-            is_loopback = getattr(self.server, "insecure_loopback", False) and _is_loopback(peer)
-            if not is_loopback and not mcp_authorize(principal_id, "delete", "memory", str(self.server.db_path), tenant_id=tenant_id):
+            if not mcp_authorize(principal_id, "delete", "memory", str(self.server.db_path), tenant_id=tenant_id):
                 self._error("Access denied: missing authorization to delete memory", 403)
                 return
             with temporary_agent_context(principal_id):
                 client = MemoryClient(db_path=self.server.db_path)
-                success = client.delete(note_id)
+                success = client.delete(note_id, tenant_id=tenant_id)
             if success:
                 # Audit: tag as dashboard REST call
                 try:

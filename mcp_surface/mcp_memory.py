@@ -54,12 +54,14 @@ from save_pipeline import SaveValidationError
 @with_audit("memory_save")
 def memory_save(
     content: str,
-    category: str,
-    title_slug: str,
+    category: str = "lessons",
+    title_slug: str = "",
     tags: Optional[list] = None,
     pinned: bool = False,
     is_global: bool = False,
     importance: int = 3,
+    idempotency_key: Optional[str] = None,
+    **kwargs: Any,
 ) -> str:
     """Save a memory note to persistent offline storage and update the search index.
 

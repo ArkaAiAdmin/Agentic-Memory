@@ -374,37 +374,37 @@ def soft_delete_note(
                 except Exception:
                     effective_tenant = "default"
             # Check existence + current state in one round trip.
-            row_tenant = effective_tenant
-            if effective_tenant is not None:
-                row = conn.execute(
-                    "SELECT deleted_at, tenant_id FROM memories WHERE id = ? AND (tenant_id = ? OR tenant_id = 'default')",
-                    (note_id, effective_tenant),
-                ).fetchone()
-                if row is not None:
-                    row_tenant = row[1]
-            else:
+            # Strict tenant isolation: verify tenant_id strictly matches effective_tenant.
+            # Cross-tenant admin can delete notes across tenants when effective_tenant is None.
+            is_cross_tenant_admin = False
+            try:
+                from infra.authorizer import _is_cross_tenant_admin
+                is_cross_tenant_admin = principal_id in ("system", "admin") or _is_cross_tenant_admin(conn, principal_id)
+            except Exception:
+                pass
+
+            if is_cross_tenant_admin and effective_tenant is None:
                 row = conn.execute(
                     "SELECT deleted_at, tenant_id FROM memories WHERE id = ?",
                     (note_id,),
                 ).fetchone()
-                if row is not None:
-                    row_tenant = row[1]
+            else:
+                row = conn.execute(
+                    "SELECT deleted_at, tenant_id FROM memories WHERE id = ? AND tenant_id = ?",
+                    (note_id, effective_tenant or "default"),
+                ).fetchone()
+
             if row is None:
                 return False
             if row[0] is not None:
                 # Already soft-deleted — idempotent no-op.
                 return False
             now = _now_iso()
-            if row_tenant is not None:
-                conn.execute(
-                    "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ? AND tenant_id = ?",
-                    (now, deleted_by, note_id, row_tenant),
-                )
-            else:
-                conn.execute(
-                    "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ?",
-                    (now, deleted_by, note_id),
-                )
+            target_tenant = row[1]
+            conn.execute(
+                "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ? AND tenant_id = ?",
+                (now, deleted_by, note_id, target_tenant),
+            )
             # ── Invalidate edges for entities tied to this note ──
             _invalidate_edges_for_note(conn, note_id)
             conn.commit()
