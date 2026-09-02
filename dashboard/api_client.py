@@ -534,7 +534,11 @@ def _get_db():
             "(auth + RBAC + audit). Set DASHBOARD_ALLOW_LOCAL_FALLBACK=1 to opt in "
             "for standalone/test runs."
         )
-    return sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=10)
+    db_path = os.environ.get("MEMORY_DB_PATH") or DB
+    if not db_path:
+        from infra.memory_common import get_db_path
+        db_path = str(get_db_path())
+    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10)
 
 
 def _local_fallback_allowed() -> bool:

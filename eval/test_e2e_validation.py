@@ -31,7 +31,9 @@ if not VENV.exists():
     VENV = INSTALL / ".venv" / "bin" / "python"
 if not VENV.exists():
     VENV = Path(sys.executable)
-PROD_DB_PATH = INSTALL / "memory" / "memory.db"
+PROD_DB_PATH = Path(os.environ.get("MEMORY_PROD_DB") or (Path.home() / "Library" / "Application Support" / "AgenticMemory" / "data" / "memory.db"))
+if not PROD_DB_PATH.exists():
+    PROD_DB_PATH = INSTALL / "memory" / "memory.db"
 
 
 def run(cmd, cwd=None, timeout=60, check_returncode=True, env=None, test_root=None):
@@ -525,21 +527,20 @@ print(f"avg_search_ms={{(t1-t0)/20*1000:.1f}}")
                 c = sqlite3.connect(str(PROD_DB_PATH))
                 try:
                     n = c.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                    if n == PROD_BASELINE_ROWS:
+                        val.record(
+                            "F1 prod DB untouched", "PASS", f"{n} rows (matches baseline)"
+                        )
+                    else:
+                        val.record(
+                            "F1 prod DB untouched",
+                            "WARN",
+                            f"{n} rows (expected {PROD_BASELINE_ROWS})",
+                        )
                 except sqlite3.OperationalError as table_err:
                     val.record("F1 prod DB untouched", "SKIP", f"uninitialized prod DB: {table_err}")
+                finally:
                     c.close()
-                    return
-                if n == PROD_BASELINE_ROWS:
-                    val.record(
-                        "F1 prod DB untouched", "PASS", f"{n} rows (matches baseline)"
-                    )
-                else:
-                    val.record(
-                        "F1 prod DB untouched",
-                        "WARN",
-                        f"{n} rows (expected {PROD_BASELINE_ROWS})",
-                    )
-                c.close()
         except Exception as e:
             val.record("F1 prod DB untouched", "FAIL", f"err: {e}")
 
