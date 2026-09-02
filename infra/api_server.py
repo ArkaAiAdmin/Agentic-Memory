@@ -236,8 +236,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if not token:
             self._error("Auth required: set MEMORY_API_TOKEN or request locally", 401)
             return False
-        if bearer != token:
-            self._error("Invalid token", 403)
+        import hmac
+        if not hmac.compare_digest(bearer, token):
+            self._error("Invalid token", 401)
             return False
         # Resolve principal for downstream handlers (config-first, DB fallback)
         try:
@@ -267,12 +268,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         aborts the handshake. Auth-in-URL (``?token=``) is deliberately
         not supported: it leaks credentials into access logs and proxies.
 
-        Empty-token access is NOT allowed by default. The token may be
-        unset only in a deliberate dev opt-in: when the server was started
-        with ``insecure_loopback``.
+        The loopback auth bypass is gated behind ``insecure_loopback``.
         """
         self._principal = None
         self._principal_id = None
+        peer = self.client_address[0]
+        if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
+            return True
 
         # Phase 2: try JWT first.
         auth = self.headers.get("Authorization", "")
@@ -311,7 +313,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         # Fallback: static token comparison.
         token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
         if not token:
-            if getattr(self.server, "insecure_loopback", False):
+            if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
                 return True
             self._error(
                 "Auth required: set MEMORY_API_TOKEN or start the server with "
@@ -320,7 +322,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             )
             return False
 
-        if auth.startswith("Bearer ") and auth[7:] == token:
+        import hmac
+
+        if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], token):
             self._resolve_ws_principal(auth[7:])
             return True
 
@@ -328,7 +332,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         ws_protocols = self.headers.get("Sec-WebSocket-Protocol", "")
         if ws_protocols:
             for candidate in (p.strip() for p in ws_protocols.split(",")):
-                if candidate == token:
+                if hmac.compare_digest(candidate, token):
                     self._resolve_ws_principal(candidate)
                     self._ws_subprotocol = candidate
                     return True
@@ -655,12 +659,25 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     # Handlers
     def _handle_health(self) -> None:
         note_count = 0
+        db_healthy = True
+        err_msg = None
         try:
             client = MemoryClient(db_path=self.server.db_path)
             note_count = client.stats().memories
         except Exception as _wp_exc:
-            logger.warning("_handle_health: broad except swallowed: %s", _wp_exc)
-            pass
+            logger.warning("_handle_health probe failed: %s", _wp_exc)
+            db_healthy = False
+            err_msg = str(_wp_exc)
+
+        if not db_healthy:
+            self._write_json({
+                "status": "unhealthy",
+                "package_version": PACKAGE_VERSION,
+                "schema_version": SCHEMA_VERSION,
+                "error": err_msg,
+            }, 503)
+            return
+
         self._write_json({
             "status": "healthy",
             "package_version": PACKAGE_VERSION,
@@ -975,8 +992,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             self._write_json({"id": note_id, "status": "success"}, 201)
+        except (ValueError, TypeError) as e:
+            self._error(f"Validation error: {e}", 400)
+        except PermissionError as e:
+            self._error(f"Access denied: {e}", 403)
         except Exception as e:
-            logger.warning("_handle_add_memory: broad except swallowed: %s", e)
+            logger.warning("_handle_add_memory error: %s", e)
             self._error(f"Failed to add memory: {e}", 500)
 
     def _handle_update_memory(self, note_id: str) -> None:
@@ -2572,6 +2593,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 parsed = {"result": str(result)}
 
             self._write_json({"tool": tool_name, "result": parsed})
+        except (TypeError, ValueError) as e:
+            self._error(f"Tool argument error: {e}", 400)
+        except PermissionError as e:
+            self._error(f"Access denied: {e}", 403)
         except Exception as e:
             logger.warning("_handle_tool_call: %s", e)
             self._error(f"Tool call failed: {e}", 500)

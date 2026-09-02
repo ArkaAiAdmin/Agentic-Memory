@@ -341,7 +341,12 @@ def memory_session_start(query: str = "") -> str:
             "Session already initialized. Use memory_search or memory_save to continue."
         )
 
-    # Protocol hardening: anchor a real DB-backed session here so that
+    target_base = _resolve_memory_dir()
+    db_path = target_base / "memory.db"
+    if not db_path.exists():
+        return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
+
+    # Anchor the session if no session is currently active, so that
     # memory_session_end has an authoritative handle later, even when the
     # harness session-start hook never ran. Mirrors the hook's state-file
     # schema (session_id + started_at) — see hooks/memory-session-start.py.
@@ -382,10 +387,6 @@ def memory_session_start(query: str = "") -> str:
     from recall.recall import recall_context
     from self_directed import SELF_DIRECTED_ENABLED
 
-    target_base = _resolve_memory_dir()
-    db_path = target_base / "memory.db"
-    if not db_path.exists():
-        return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
     try:
         embedding_status = ""
         if query:

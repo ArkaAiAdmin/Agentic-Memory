@@ -1079,25 +1079,25 @@ def api_server_main() -> None:
     api_token = getattr(cfg, "api_token", "") or os.environ.get("MEMORY_API_TOKEN", "")
     api_insecure_loopback = getattr(cfg, "api_insecure_loopback", False)
 
-    # A02-001: never run the API server without a token. If none is
-    # configured (and loopback bypass is disabled), generate a secure
-    # random token, persist it, and log it once.
+    token_path = None
+    new_token_to_write = None
     if not api_token and not api_insecure_loopback:
-        import secrets
-
-        api_token = secrets.token_hex(32)
         token_path = (
             Path(getattr(cfg, "db_path", "memory/memory.db")).resolve().parent
             / ".api_token"
         )
-        try:
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-            token_path.write_text(api_token)
-            os.chmod(token_path, 0o600)
-        except OSError as exc:
-            logger.warning(f"Failed to persist API token to {token_path}: {exc}")
-        print(f"API server token (auto-generated): {api_token}")
-        print(f"Token persisted at {token_path} (mode 0600)")
+        if token_path.exists():
+            try:
+                existing = token_path.read_text(encoding="utf-8").strip()
+                if existing:
+                    api_token = existing
+            except Exception:
+                pass
+
+        if not api_token:
+            import secrets
+            api_token = secrets.token_hex(32)
+            new_token_to_write = api_token
 
     agent_id = _crdt_agent_id()
 
@@ -1151,6 +1151,17 @@ def api_server_main() -> None:
         insecure_loopback=api_insecure_loopback,
     )
     server.start()
+
+    if new_token_to_write and token_path:
+        try:
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(new_token_to_write, encoding="utf-8")
+            os.chmod(token_path, 0o600)
+            print(f"API server token (auto-generated): {new_token_to_write}")
+            print(f"Token persisted at {token_path} (mode 0600)")
+        except OSError as exc:
+            logger.warning(f"Failed to persist API token to {token_path}: {exc}")
+
     print(f"API server running on http://{host}:{port}")
     threading.Thread(target=_heartbeat_loop, name="api-heartbeat", daemon=True).start()
     try:

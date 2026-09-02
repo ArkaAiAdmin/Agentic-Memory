@@ -35,11 +35,40 @@ def _resolve_paths() -> tuple[Path, Path]:
     """Return (target_base, journal_path)."""
     env_path = os.environ.get("MEMORY_DB_PATH", "").strip()
     if env_path:
-        target_base = Path(env_path).parent
+        target_base = Path(env_path).resolve().parent
     else:
-        from infra.infrastructure import resolve_active_memory_dir
-        target_base = resolve_active_memory_dir()
+        # Check kernel discovery file runtime/kernel.json first
+        from infra.memory_config import get_memory_home
+        try:
+            home = get_memory_home()
+            disc = home / "runtime" / "kernel.json"
+            if disc.exists():
+                import json
+                data = json.loads(disc.read_text(encoding="utf-8"))
+                db_p = data.get("db_path")
+                if db_p and Path(db_p).exists():
+                    target_base = Path(db_p).resolve().parent
+                elif (home / "data" / "memory.db").exists():
+                    target_base = (home / "data").resolve()
+                else:
+                    from infra.infrastructure import resolve_active_memory_dir
+                    target_base = resolve_active_memory_dir()
+            elif (home / "data" / "memory.db").exists():
+                target_base = (home / "data").resolve()
+            else:
+                from infra.infrastructure import resolve_active_memory_dir
+                target_base = resolve_active_memory_dir()
+        except Exception:
+            from infra.infrastructure import resolve_active_memory_dir
+            target_base = resolve_active_memory_dir()
+
+    target_db = target_base / "memory.db"
+    if not target_db.exists():
+        logger.error("journal_reconciler: resolved DB does not exist at %s", target_db)
+        raise FileNotFoundError(f"Resolved DB does not exist at {target_db}")
+
     journal_path = target_base / "journal.db"
+    logger.info("journal_reconciler: resolved target_base=%s, target_db=%s, journal=%s", target_base, target_db, journal_path)
     return target_base, journal_path
 
 
