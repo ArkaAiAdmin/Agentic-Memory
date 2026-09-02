@@ -91,20 +91,23 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _write_json(self, data: dict | list, status_code: int = 200) -> None:
         body = json.dumps(data).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        # Flush any queued auth cookies (set after send_response so the status
-        # line is emitted first and the response stays well-formed).
-        for _ck in getattr(self, "_pending_cookies", []) or []:
-            self.send_header("Set-Cookie", _ck)
-        self._pending_cookies: list[str] = []
-        # CORS
-        origin = self.headers.get("Origin", "")
-        for hdr, val in self._cors_headers(origin):
-            self.send_header(hdr, val)
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            # Flush any queued auth cookies (set after send_response so the status
+            # line is emitted first and the response stays well-formed).
+            for _ck in getattr(self, "_pending_cookies", []) or []:
+                self.send_header("Set-Cookie", _ck)
+            self._pending_cookies = []
+            # CORS
+            origin = self.headers.get("Origin", "")
+            for hdr, val in self._cors_headers(origin):
+                self.send_header(hdr, val)
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     # ── Auth cookie + rate-limit helpers (Phase 2) ──────────────────────────
 
