@@ -200,6 +200,8 @@ class TestAPIServer(unittest.TestCase):
         }, timeout=60.0)
         self.assertEqual(status, 200)
         self.assertGreater(len(post_data["results"]), 0)
+        self.assertEqual(post_data.get("count"), len(post_data["results"]))
+        self.assertEqual(post_data.get("query"), "borrow checker")
         self.assertIn("Rust memory safety", post_data["results"][0]["content"])
 
     def test_delete_memory(self):

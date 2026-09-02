@@ -809,7 +809,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not query:
                 self._error("Missing query field in request body", 400)
                 return
-            limit = req.get("limit", 10)
+            try:
+                limit = int(req.get("limit", 10))
+            except (ValueError, TypeError):
+                self._error("Invalid limit field in request body", 400)
+                return
             rerank = req.get("rerank", False)
             light = req.get("light", not rerank)
             tags = req.get("tags", None)
@@ -840,7 +844,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 }
                 for r in results.results
             ]
-            self._write_json({"results": results_list})
+            self._write_json({
+                "results": results_list,
+                "count": len(results_list),
+                "query": query,
+            })
         except Exception as e:
             logger.warning("_handle_search_memories_post: broad except swallowed: %s", e)
             self._error(f"Search failed: {e}", 500)
