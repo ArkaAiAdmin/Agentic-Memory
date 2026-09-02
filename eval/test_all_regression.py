@@ -147,9 +147,18 @@ class TestAllRegression(unittest.TestCase):
         reset()
         with open_db(Path(DB)) as c:
             c.execute("PRAGMA foreign_keys=ON")
-            nid = c.execute(
+            row = c.execute(
                 "SELECT id FROM memories WHERE deleted_at IS NULL LIMIT 1"
-            ).fetchone()[0]
+            ).fetchone()
+            if not row:
+                nid = "test-regression-note-" + uuid.uuid4().hex[:8]
+                c.execute(
+                    "INSERT INTO memories (id, content, source_file, created_at, updated_at, observed_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (nid, "regression test content", "test.md", "2026-01-01", "2026-01-01", "2026-01-01")
+                )
+                c.commit()
+            else:
+                nid = row[0]
             tag = f"e2e-h4-{uuid.uuid4().hex[:8]}"
             adaptive_retention.record_access(c, nid, source=tag)
             c.commit()

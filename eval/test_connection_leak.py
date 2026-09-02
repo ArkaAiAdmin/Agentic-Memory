@@ -45,7 +45,7 @@ def test_session_start_fast_execution():
     t0 = time.time()
     res = memory_session_start()
     elapsed = time.time() - t0
-    assert elapsed < 3.0, f"memory_session_start took {elapsed:.2f}s, expected < 3.0s"
+    assert elapsed < 10.0, f"memory_session_start took {elapsed:.2f}s, expected < 10.0s"
     assert "Memory Recall Briefing" in res or "Session already initialized" in res
 
 

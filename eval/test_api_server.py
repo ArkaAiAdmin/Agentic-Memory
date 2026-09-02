@@ -112,9 +112,22 @@ class TestAPIServer(unittest.TestCase):
     def test_health_check(self):
         status, data = self._http_request("/health")
         self.assertEqual(status, 200)
-        self.assertEqual(data["status"], "healthy")
+        self.assertIn(data["status"], ("healthy", "degraded"))
+        self.assertTrue(data.get("db_ok"))
+        self.assertIn("db_path", data)
+        self.assertIn("journal_pending", data)
+        self.assertIn("dead_letter", data)
         # SEC (LOW-2): unauth /health must not leak agent identity
         self.assertNotIn("agent_id", data)
+
+    def test_invalid_query_params_return_400(self):
+        status, data = self._http_request("/api/v1/memories/search?query=test&limit=invalid")
+        self.assertEqual(status, 400)
+        self.assertIn("Invalid limit", data.get("error", ""))
+
+        status, data = self._http_request("/api/v1/memories?limit=abc")
+        self.assertEqual(status, 400)
+        self.assertIn("Invalid limit", data.get("error", ""))
 
     def test_add_and_get_memory(self):
         # 1. Add memory
@@ -177,6 +190,7 @@ class TestAPIServer(unittest.TestCase):
         status, data = self._http_request("/api/v1/memories/search?query=borrow+checker", timeout=60.0)
         self.assertEqual(status, 200)
         self.assertGreater(len(data["results"]), 0)
+        self.assertEqual(data.get("count"), len(data["results"]))
         self.assertIn("Rust memory safety", data["results"][0]["content"])
 
         # Search via POST

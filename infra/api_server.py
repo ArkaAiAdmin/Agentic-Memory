@@ -670,36 +670,68 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     # Handlers
     def _handle_health(self) -> None:
         note_count = 0
-        db_healthy = True
+        db_ok = True
         err_msg = None
+        journal_pending = 0
+        dead_letter = 0
+        db_path_str = str(self.server.db_path)
         try:
             client = MemoryClient(db_path=self.server.db_path)
             note_count = client.stats().memories
         except Exception as _wp_exc:
             logger.warning("_handle_health probe failed: %s", _wp_exc)
-            db_healthy = False
+            db_ok = False
             err_msg = str(_wp_exc)
 
-        if not db_healthy:
+        # Inspect write_journal in journal.db if present
+        try:
+            from pathlib import Path
+            journal_db = Path(self.server.db_path).parent / "journal.db"
+            if journal_db.exists():
+                import sqlite3
+                with sqlite3.connect(str(journal_db), timeout=1.0) as jconn:
+                    p_row = jconn.execute("SELECT count(*) FROM write_journal WHERE status = 'pending'").fetchone()
+                    if p_row:
+                        journal_pending = p_row[0]
+                    f_row = jconn.execute("SELECT count(*) FROM write_journal WHERE status = 'failed'").fetchone()
+                    if f_row:
+                        dead_letter = f_row[0]
+        except Exception as _j_exc:
+            logger.debug("_handle_health journal inspect skipped: %s", _j_exc)
+
+        if not db_ok:
             self._write_json({
                 "status": "unhealthy",
                 "package_version": PACKAGE_VERSION,
                 "schema_version": SCHEMA_VERSION,
+                "db_ok": False,
+                "db_path": db_path_str,
+                "journal_pending": journal_pending,
+                "dead_letter": dead_letter,
                 "error": err_msg,
             }, 503)
             return
 
+        status = "degraded" if dead_letter > 0 else "healthy"
         self._write_json({
-            "status": "healthy",
+            "status": status,
             "package_version": PACKAGE_VERSION,
             "schema_version": SCHEMA_VERSION,
+            "db_ok": True,
+            "db_path": db_path_str,
+            "journal_pending": journal_pending,
+            "dead_letter": dead_letter,
             "note_count": note_count,
         })
 
     def _handle_list_memories(self, query_params: dict) -> None:
         try:
-            limit = int(query_params.get("limit", ["50"])[0])
-            offset = int(query_params.get("offset", ["0"])[0])
+            try:
+                limit = int(query_params.get("limit", ["50"])[0])
+                offset = int(query_params.get("offset", ["0"])[0])
+            except (ValueError, TypeError, IndexError):
+                self._error("Invalid limit or offset parameter", 400)
+                return
             client = MemoryClient(db_path=self.server.db_path)
             memories = client.list(limit=limit, offset=offset)
             # Serialize MemoryResult dataclasses
@@ -726,7 +758,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not query:
                 self._error("Missing required query parameter", 400)
                 return
-            limit = int(query_params.get("limit", ["10"])[0])
+            try:
+                limit = int(query_params.get("limit", ["10"])[0])
+            except (ValueError, TypeError, IndexError):
+                self._error("Invalid limit parameter", 400)
+                return
             rerank = query_params.get("rerank", ["false"])[0].lower() == "true"
             light_param = query_params.get("light", [None])[0]
             light = light_param.lower() == "true" if light_param else (not rerank)
@@ -753,7 +789,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 }
                 for r in results.results
             ]
-            self._write_json({"results": results_list})
+            self._write_json({
+                "results": results_list,
+                "count": len(results_list),
+                "query": query,
+            })
         except Exception as e:
             logger.warning("_handle_search_memories: broad except swallowed: %s", e)
             self._error(f"Search failed: {e}", 500)
@@ -2068,6 +2108,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
                 if opcode == 8:  # Close
                     logger.info(f"WebSocket closed by client: {client_id}")
+                    try:
+                        # Send close frame reply
+                        close_frame = bytearray([0x88, 0x00])
+                        sock.sendall(bytes(close_frame))
+                    except Exception:
+                        pass
                     break
 
                 if payload_len == 126:
@@ -2115,8 +2161,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         text = payload.decode("utf-8")
                         req = json.loads(text)
                         action = req.get("action")
+                        req_id = req.get("id")
                         if action == "ping":
-                            self.server.send_ws_message(sock, json.dumps({"event": "pong"}))
+                            resp: dict[str, Any] = {"event": "pong"}
+                            if req_id is not None:
+                                resp["id"] = req_id
+                            self.server.send_ws_message(sock, json.dumps(resp))
                         elif action == "search":
                             query = req.get("query", "")
                             limit = req.get("limit", 10)
@@ -2135,11 +2185,22 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                                 }
                                 for r in res.results
                             ]
-                            self.server.send_ws_message(sock, json.dumps({
+                            resp = {
                                 "event": "search_result",
                                 "query": query,
-                                "results": results_list
-                            }))
+                                "results": results_list,
+                            }
+                            if req_id is not None:
+                                resp["id"] = req_id
+                            self.server.send_ws_message(sock, json.dumps(resp))
+                        else:
+                            resp = {
+                                "event": "error",
+                                "error": f"Unknown action: {action}",
+                            }
+                            if req_id is not None:
+                                resp["id"] = req_id
+                            self.server.send_ws_message(sock, json.dumps(resp))
                     except Exception as e:
                         logger.warning(f"Error processing WS text message: {e}")
 
