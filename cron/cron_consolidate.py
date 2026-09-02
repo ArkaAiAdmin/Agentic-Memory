@@ -59,14 +59,45 @@ except Exception:  # pragma: no cover
 _KEEP_IMPORTANCE = 4
 _SESSION_STALE_DAYS = 30
 _FUZZY_SIM_THRESHOLD = 0.9  # only auto-merge near-identical content
+import re
+
+
+def extract_clean_body(content: str) -> str:
+    """Extract clean markdown body by stripping YAML frontmatter and title hex variations."""
+    text = content.strip()
+    lines = text.splitlines()
+    body_lines = []
+    in_frontmatter = False
+    for i, line in enumerate(lines):
+        line_s = line.strip()
+        if i == 0 and line_s == "---":
+            in_frontmatter = True
+            continue
+        if in_frontmatter:
+            if line_s == "---":
+                in_frontmatter = False
+                continue
+            if re.match(r"^[a-zA-Z0-9_-]+\s*:", line) or (line_s.startswith("- ") and not line_s.startswith("- [")):
+                continue
+            if line_s == "":
+                continue
+            in_frontmatter = False
+
+        if line_s.startswith("# "):
+            # Strip title line or normalize random hex suffix (e.g. "# Skill Title 5756" -> skipped)
+            continue
+        body_lines.append(line)
+    return "\n".join(body_lines).strip()
 
 
 def compute_content_hash(content: str) -> str:
-    return hashlib.sha256(content.strip().encode()).hexdigest()
+    norm = extract_clean_body(content)
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
 def similarity_hash(content: str) -> set:
-    words = content.lower().split()
+    norm = extract_clean_body(content)
+    words = norm.lower().split()
     return set(tuple(words[i : i + 3]) for i in range(len(words) - 2))
 
 
@@ -85,12 +116,11 @@ def _rows(db):
 
 
 def _find_exact_dups(rows):
-    """Group note ids by content SHA256. Returns list of (keep_id, [loser_ids])."""
-    hashes = {}
-    groups = []
+    """Group note ids by normalized body content SHA256. Returns list of (keep_id, [loser_ids])."""
     seen = {}
+    groups = []
     for mid, content, tags, category, importance, updated in rows:
-        h = compute_content_hash(content.strip())
+        h = compute_content_hash(content)
         if h in seen:
             # accumulate losers under the first-seen id
             groups_for_h = next((g for g in groups if g[0] == seen[h]), None)
@@ -100,6 +130,45 @@ def _find_exact_dups(rows):
             groups_for_h[1].append(mid)
         else:
             seen[h] = mid
+    return groups
+
+
+def _find_canonical_dups(rows, existing_loser_ids: set):
+    """Find additional duplicates that share canonical template prefixes across skill, projects, and lessons."""
+    canonical_map = {}
+    for mid, content, tags, category, importance, updated in rows:
+        if mid in existing_loser_ids:
+            continue
+        key = None
+        if category == "skill":
+            m = re.match(r"skill/(skill-[a-z-]+|builtin-[a-z-]+|auto-[a-z-]+)", mid)
+            if m:
+                base = re.sub(r"-[0-9a-f]{4,8}$", "", m.group(1))
+                key = ("skill", base)
+            else:
+                m_title = re.search(r"SKILL:\s*([^\n]+)", content)
+                if m_title:
+                    key = ("skill", m_title.group(1).strip().lower())
+        elif category == "projects" and mid.startswith("projects/sub-agent-completed-"):
+            m = re.match(r"projects/(sub-agent-completed-[a-z0-9-]+)", mid)
+            if m:
+                base = re.sub(r"-[0-9a-f]{4,8}$", "", m.group(1))
+                key = ("projects", base)
+        elif category == "lessons" and (mid.startswith("lessons/tool-failure-lesson-") or mid.startswith("lessons/live-audit-probe-")):
+            m_tool = re.search(r"Tool `([^`]+)` failed", content)
+            if m_tool:
+                key = ("lessons_tool_failure", m_tool.group(1))
+            else:
+                base = re.sub(r"-[0-9a-f]{4,8}$", "", mid)
+                key = ("lessons_probe", base)
+
+        if key:
+            canonical_map.setdefault(key, []).append(mid)
+
+    groups = []
+    for key, mids in canonical_map.items():
+        if len(mids) > 1:
+            groups.append((mids[0], mids[1:]))
     return groups
 
 
@@ -161,11 +230,16 @@ def _find_high_density(rows):
 
 
 def _keep_id(keep_candidate, losers, rows_by_id):
-    """Pick the survivor: highest importance, then most recent, then first seen."""
+    """Pick the survivor: clean canonical ID, then highest importance, then most recent."""
+    candidates = [keep_candidate] + list(losers)
+    # Check if any candidate is an un-suffixed canonical builtin ID
+    for cid in candidates:
+        if re.search(r"builtin-[a-z-]+$", cid):
+            return cid
+
     best = keep_candidate
     best_imp = rows_by_id.get(best, (None, None, None, None, 0, None))[4] or 0
     best_upd = rows_by_id.get(best, (None, None, None, None, 0, ""))[5] or ""
-    candidates = [keep_candidate] + list(losers)
     for cid in candidates:
         imp = rows_by_id.get(cid, (None, None, None, None, 0, None))[4] or 0
         upd = rows_by_id.get(cid, (None, None, None, None, 0, ""))[5] or ""
@@ -193,6 +267,8 @@ def consolidate(dry_run: bool = True):
     today = datetime.date.today()
 
     exact_groups = _find_exact_dups(rows)
+    exact_losers = {loser for _, losers in exact_groups for loser in losers}
+    canonical_groups = _find_canonical_dups(rows, exact_losers)
     fuzzy_pairs = _find_fuzzy_dups(rows)
     stale = _find_stale_sessions(rows, today)
     high_density = _find_high_density(rows)
@@ -203,8 +279,10 @@ def consolidate(dry_run: bool = True):
     pruned = 0
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    # --- Exact duplicates: supersede losers ---
-    for keep_candidate, losers in exact_groups:
+    all_dedup_groups = exact_groups + canonical_groups
+
+    # --- Exact & Canonical duplicates: supersede losers ---
+    for keep_candidate, losers in all_dedup_groups:
         keep = _keep_id(keep_candidate, losers, rows_by_id)
         losers_for_keep = [l for l in losers if l != keep]
         if not losers_for_keep:
@@ -220,6 +298,11 @@ def consolidate(dry_run: bool = True):
                     "UPDATE memories SET deleted_at=?, deleted_by=? WHERE id=?",
                     (now_iso, "consolidation", loser),
                 )
+                # Clean up dependent chunk and embedding rows
+                db.execute("DELETE FROM memory_chunks WHERE parent_id=?", (loser,))
+                db.execute("DELETE FROM memory_chunk_embeddings WHERE parent_id=?", (loser,))
+                db.execute("DELETE FROM memory_embeddings WHERE memory_id=?", (loser,))
+                db.execute("DELETE FROM memory_vec_keys WHERE memory_id=?", (loser,))
                 merged += 1
         if dry_run:
             merged += len(losers_for_keep)
@@ -239,6 +322,10 @@ def consolidate(dry_run: bool = True):
                 "UPDATE memories SET deleted_at=?, deleted_by=? WHERE id=?",
                 (now_iso, "consolidation", loser),
             )
+            db.execute("DELETE FROM memory_chunks WHERE parent_id=?", (loser,))
+            db.execute("DELETE FROM memory_chunk_embeddings WHERE parent_id=?", (loser,))
+            db.execute("DELETE FROM memory_embeddings WHERE memory_id=?", (loser,))
+            db.execute("DELETE FROM memory_vec_keys WHERE memory_id=?", (loser,))
             pruned += 1
     if not dry_run and fuzzy_pairs:
         db.commit()
@@ -250,12 +337,17 @@ def consolidate(dry_run: bool = True):
                 "UPDATE memories SET deleted_at=?, deleted_by=? WHERE id=?",
                 (now_iso, "consolidation-stale", sid),
             )
+            db.execute("DELETE FROM memory_chunks WHERE parent_id=?", (sid,))
+            db.execute("DELETE FROM memory_chunk_embeddings WHERE parent_id=?", (sid,))
+            db.execute("DELETE FROM memory_embeddings WHERE memory_id=?", (sid,))
+            db.execute("DELETE FROM memory_vec_keys WHERE memory_id=?", (sid,))
             pruned += 1
     if not dry_run and stale:
         db.commit()
 
     # --- Report ---
     print(f"  Exact duplicate groups: {len(exact_groups)}")
+    print(f"  Canonical entity duplicate groups: {len(canonical_groups)}")
     print(f"  Fuzzy near-duplicate pairs (non-session, >{_FUZZY_SIM_THRESHOLD}): {len(fuzzy_pairs)}")
     print(f"  Stale sessions (>30d): {len(stale)}")
     print(f"  High tag-density tags (review only): {len(high_density)}")
@@ -266,7 +358,7 @@ def consolidate(dry_run: bool = True):
         # `pruned` counts actual soft-deletes (fuzzy losers + stale
         # sessions) — NOT the raw pair count, which double-counts and
         # once misreported 17k "pruned" for a ~5.4k-note corpus.
-        print(f"APPLIED: superseded {merged} exact duplicates, "
+        print(f"APPLIED: superseded {merged} exact/canonical duplicates, "
               f"pruned {pruned} notes (fuzzy losers + stale sessions).")
 
     # Clean up orphaned FTS5 entries (soft-deleted notes still indexed)
