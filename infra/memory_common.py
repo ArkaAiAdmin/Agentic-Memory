@@ -623,14 +623,16 @@ def get_sessions_dir() -> Path:
         return Path.home() / ".config" / "agentic-memory" / "memory" / "sessions"
 
 
-_CURRENT_SESSION_FILE = get_sessions_dir() / ".current_session.json"
+def get_current_session_file() -> Path:
+    return get_sessions_dir() / ".current_session.json"
 
 
 def read_current_session() -> dict:
-    if not _CURRENT_SESSION_FILE.exists():
+    session_file = get_current_session_file()
+    if not session_file.exists():
         return {}
     try:
-        return cast(dict, json.loads(_CURRENT_SESSION_FILE.read_text()))
+        return cast(dict, json.loads(session_file.read_text()))
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("read_current_session: failed to parse session file: %s", e)
         return {}
@@ -668,7 +670,7 @@ def ensure_session_active(max_age_seconds: float = 3600.0) -> bool:
         "source": "ensure_session_active",
     }
     try:
-        _CURRENT_SESSION_FILE.write_text(json.dumps(data, indent=2))
+        get_current_session_file().write_text(json.dumps(data, indent=2))
     except OSError:
         pass
     return False

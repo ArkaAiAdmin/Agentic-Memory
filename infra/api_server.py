@@ -181,8 +181,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         """
         self._principal = None
         self._principal_id = None
+        self._tenant_id = None
         peer = self.client_address[0]
         if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
+            self._principal_id = getattr(self.server, "agent_id", "") or os.environ.get("MEMORY_AGENT_ID", "ami")
+            self._tenant_id = os.environ.get("MEMORY_AGENT_ID", "ami")
             return True
         auth = self.headers.get("Authorization", "")
         bearer = ""
@@ -218,7 +221,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     )
                     if pid:
                         self._principal_id = pid
-                        self._principal = type("_Principal", (), {"id": pid})()
+                        self._principal = type("_Principal", (), {"id": pid, "tenant_id": claims.get("tenant_id", "ami")})()
+                        self._tenant_id = claims.get("tenant_id", "ami")
                 return True
             except Exception:
                 pass
@@ -249,8 +253,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if principal:
                 self._principal_id = principal.id
                 self._principal = principal
+                self._tenant_id = getattr(principal, "tenant_id", None) or os.environ.get("MEMORY_AGENT_ID", "ami")
         except Exception:
             pass
+        if not self._principal_id:
+            self._principal_id = getattr(self.server, "agent_id", "") or os.environ.get("MEMORY_AGENT_ID", "ami")
+            self._tenant_id = os.environ.get("MEMORY_AGENT_ID", "ami")
         return True
 
     def _require_auth_ws(self) -> bool:
@@ -979,6 +987,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     title_slug=title_slug,
                     tenant_id=_principal_tenant,
                 )
+            if isinstance(note_id, str):
+                if note_id.startswith("Error [AUTHORIZATION_DENIED]"):
+                    self._error(note_id, 403)
+                    return
+                elif note_id.startswith("Error ["):
+                    self._error(note_id, 400)
+                    return
             # Audit: tag as dashboard REST call
             try:
                 from infra.audit import enqueue_audit
@@ -1050,13 +1065,28 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_delete_memory(self, note_id: str) -> None:
         try:
             from infra.authorizer import mcp_authorize
-            principal_id = getattr(self, "_principal_id", None) or os.environ.get("MEMORY_AGENT_ID", "") or getattr(self.server, "agent_id", "") or "default"
-            tenant_id = os.environ.get("MEMORY_AGENT_ID", "default")
-            if not mcp_authorize(principal_id, "delete", "memory", str(self.server.db_path), tenant_id=tenant_id):
+            from agent_context import temporary_agent_context
+
+            principal_id = (
+                getattr(self, "_principal_id", None)
+                or getattr(self.server, "agent_id", "")
+                or os.environ.get("MEMORY_AGENT_ID", "")
+                or "ami"
+            )
+            tenant_id = (
+                getattr(self, "_tenant_id", None)
+                or (getattr(getattr(self, "_principal", None), "tenant_id", None))
+                or os.environ.get("MEMORY_AGENT_ID", "")
+                or "ami"
+            )
+            peer = self.client_address[0]
+            is_loopback = getattr(self.server, "insecure_loopback", False) and _is_loopback(peer)
+            if not is_loopback and not mcp_authorize(principal_id, "delete", "memory", str(self.server.db_path), tenant_id=tenant_id):
                 self._error("Access denied: missing authorization to delete memory", 403)
                 return
-            client = MemoryClient(db_path=self.server.db_path)
-            success = client.delete(note_id)
+            with temporary_agent_context(principal_id):
+                client = MemoryClient(db_path=self.server.db_path)
+                success = client.delete(note_id)
             if success:
                 # Audit: tag as dashboard REST call
                 try:
@@ -1066,7 +1096,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         tool="dashboard_delete",
                         args={"note_id": note_id},
                         results_count=1,
-                        principal_id=getattr(self, "_principal_id", None),
+                        principal_id=principal_id,
                     )
                 except Exception:
                     pass
@@ -2587,6 +2617,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
 
             result = tool_fn(**args)
+            if isinstance(result, str):
+                if result.startswith("Error [AUTHORIZATION_DENIED]"):
+                    self._error(result, 403)
+                    return
+                elif result.startswith("Error ["):
+                    self._error(result, 400)
+                    return
             try:
                 parsed = json.loads(result) if isinstance(result, str) else result
             except (json.JSONDecodeError, TypeError):

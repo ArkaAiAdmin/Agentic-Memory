@@ -51,7 +51,7 @@ class AgentContext:
 
 
 @contextmanager
-def temporary_agent_context(agent_id: str):
+def temporary_agent_context(agent_id: str, principal_id: Optional[str] = None):
     """Temporarily bind the thread-local agent context to *agent_id*.
 
     Restores the previous context on exit.  Use this when an
@@ -68,6 +68,7 @@ def temporary_agent_context(agent_id: str):
             agent_id=agent_id,
             display_name=agent_id,
             namespace=agent_id,
+            principal_id=principal_id or agent_id,
         )
         _AGENT_CONTEXT.current = ctx
         yield ctx

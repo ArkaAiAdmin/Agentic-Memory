@@ -374,27 +374,31 @@ def soft_delete_note(
                 except Exception:
                     effective_tenant = "default"
             # Check existence + current state in one round trip.
-            # Tenant isolation: also check tenant_id matches.
+            row_tenant = effective_tenant
             if effective_tenant is not None:
                 row = conn.execute(
-                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
+                    "SELECT deleted_at, tenant_id FROM memories WHERE id = ? AND (tenant_id = ? OR tenant_id = 'default')",
                     (note_id, effective_tenant),
                 ).fetchone()
+                if row is not None:
+                    row_tenant = row[1]
             else:
                 row = conn.execute(
-                    "SELECT deleted_at FROM memories WHERE id = ?",
+                    "SELECT deleted_at, tenant_id FROM memories WHERE id = ?",
                     (note_id,),
                 ).fetchone()
+                if row is not None:
+                    row_tenant = row[1]
             if row is None:
                 return False
             if row[0] is not None:
                 # Already soft-deleted — idempotent no-op.
                 return False
             now = _now_iso()
-            if effective_tenant is not None:
+            if row_tenant is not None:
                 conn.execute(
                     "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ? AND tenant_id = ?",
-                    (now, deleted_by, note_id, effective_tenant),
+                    (now, deleted_by, note_id, row_tenant),
                 )
             else:
                 conn.execute(

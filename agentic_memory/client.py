@@ -188,7 +188,7 @@ class MemoryClient:
                 score=float(r.get("final_score", r.get("rank", 0))),
                 tags=r.get("tags", []),
                 category=r.get("category", ""),
-                created_at=r.get("created_at", ""),
+                created_at=r.get("created_at") or r.get("created") or "",
                 pinned=bool(r.get("pinned", False)),
                 importance=int(r.get("importance") or 3),
                 metadata={

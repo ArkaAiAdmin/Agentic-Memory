@@ -32,6 +32,7 @@ docs/docker_README.md
 # Runtime artifacts — never commit
 .cron_model_lock/
 .drift_cron_*.json
+.auto_save_daemon_manifest.json
 audit_search_pipeline.md
 
 .devfleet-worktrees/

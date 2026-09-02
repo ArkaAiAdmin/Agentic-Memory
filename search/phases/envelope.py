@@ -123,6 +123,7 @@ def _build_result_items(
                 "source_file": source_file,
                 "tags": tags,
                 "created": created,
+                "created_at": created,
                 "rank": rank,
                 "final_score": final_score,
                 "fitness_score": fitness_score,
