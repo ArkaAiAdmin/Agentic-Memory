@@ -283,6 +283,8 @@ def memory_recall_context(
     days_recent: int = 7,
     deep_rerank: bool = False,
     action: str | None = None,
+    include_global: bool = True,
+    **kwargs: Any,
 ) -> str:
     """Assemble a structured memory recall briefing for agent cold-start or session continuity.
 

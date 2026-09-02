@@ -2700,8 +2700,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if tool_fn is None:
                 self._error(f"Unknown tool: {tool_name}", 404)
                 return
+            import inspect
+            sig = inspect.signature(tool_fn)
+            has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+            if has_var_keyword:
+                valid_args = args
+            else:
+                valid_args = {k: v for k, v in args.items() if k in sig.parameters}
 
-            result = tool_fn(**args)
+            result = tool_fn(**valid_args)
             if isinstance(result, str):
                 if result.startswith("Error [AUTHORIZATION_DENIED]"):
                     self._error(result, 403)
