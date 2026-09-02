@@ -163,7 +163,9 @@ def _get_journal_conn(journal_path: Path, timeout: float = 10.0) -> sqlite3.Conn
             except Exception:
                 pass
             _local.conns.pop(key, None)
-        new_conn: sqlite3.Connection = sqlite3.connect(str(journal_path), timeout=timeout)
+        new_conn: sqlite3.Connection = sqlite3.connect(
+            str(journal_path), timeout=timeout, check_same_thread=False
+        )
         new_conn.execute("PRAGMA journal_mode=WAL")
         new_conn.execute("PRAGMA busy_timeout=30000")
         sync_mode = os.environ.get("MEMORY_JOURNAL_SYNCHRONOUS", "NORMAL").upper()

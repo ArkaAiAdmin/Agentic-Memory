@@ -541,7 +541,7 @@ class _ConnectionPool:
                     _setup_tenant_view(candidate, t_id)
                     return candidate
             self._evict_lru()
-            conn = sqlite3.connect(path, timeout=timeout)
+            conn = sqlite3.connect(path, timeout=timeout, check_same_thread=False)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
             conn.execute("PRAGMA foreign_keys=ON")
