@@ -57,9 +57,6 @@ class TestAPIServer(unittest.TestCase):
         os.environ["MEMORY_DB_PATH"] = str(cls.db_path)
         os.environ["MEMORY_RERANKER_DISABLED"] = "true"
 
-        cls.old_journal = os.environ.get("MEMORY_WRITE_JOURNAL_ENABLED")
-        os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = "0"
-
         # Initialize database schema including migration 031 outbox events
         connection_pool.clear()
         from eval._fixtures import bootstrap_temp_db_clean
@@ -90,10 +87,6 @@ class TestAPIServer(unittest.TestCase):
         else:
             os.environ.pop("MEMORY_DB_PATH", None)
         os.environ.pop("MEMORY_RERANKER_DISABLED", None)
-        if cls.old_journal is not None:
-            os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = cls.old_journal
-        else:
-            os.environ.pop("MEMORY_WRITE_JOURNAL_ENABLED", None)
         import shutil
         shutil.rmtree(cls.tmp_dir, ignore_errors=True)
 

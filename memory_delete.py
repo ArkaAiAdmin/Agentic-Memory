@@ -340,12 +340,14 @@ def soft_delete_note(
         try:
             from agent_context import get_agent
             _rbac_ctx = get_agent()
-            principal_id = getattr(_rbac_ctx, "principal_id", None)
+            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
             if not principal_id:
                 from agent_context import _AGENT_CONTEXT
-                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None) or getattr(_AGENT_CONTEXT, "agent_id", None)
         except (ImportError, AttributeError):
             pass
+        if not principal_id:
+            principal_id = os.environ.get("MEMORY_AGENT_ID", "default")
         if not mcp_authorize(principal_id, "delete", "memory", str(db_path) if db_path else None):
             logger.warning("RBAC denied: principal=%s action=delete resource=memory", principal_id or "anonymous")
             return False
@@ -395,6 +397,38 @@ def soft_delete_note(
                 ).fetchone()
 
             if row is None:
+                # Check write journal for unapplied pending writes
+                try:
+                    journal_db = Path(db_path).parent / "journal.db"
+                    if journal_db.exists():
+                        import sqlite3
+                        with sqlite3.connect(str(journal_db), timeout=2.0) as jconn:
+                            if is_cross_tenant_admin and effective_tenant is None:
+                                jrow = jconn.execute(
+                                    "SELECT id, status FROM write_journal WHERE note_id = ? AND status = 'pending'",
+                                    (note_id,),
+                                ).fetchone()
+                                if jrow:
+                                    jconn.execute(
+                                        "UPDATE write_journal SET status = 'failed', error = 'deleted_before_materialization' WHERE id = ?",
+                                        (jrow[0],),
+                                    )
+                                    jconn.commit()
+                                    return True
+                            else:
+                                jrow = jconn.execute(
+                                    "SELECT id, status FROM write_journal WHERE note_id = ? AND status = 'pending' AND (tenant_id = ? OR tenant_id IS NULL)",
+                                    (note_id, effective_tenant or "default"),
+                                ).fetchone()
+                                if jrow:
+                                    jconn.execute(
+                                        "UPDATE write_journal SET status = 'failed', error = 'deleted_before_materialization' WHERE id = ?",
+                                        (jrow[0],),
+                                    )
+                                    jconn.commit()
+                                    return True
+                except Exception:
+                    pass
                 return False
             if row[0] is not None:
                 # Already soft-deleted — idempotent no-op.

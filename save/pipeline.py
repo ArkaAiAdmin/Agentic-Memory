@@ -2333,14 +2333,16 @@ def _save_memory_core(
     defer_expensive = req.defer_expensive
     safety_wiring = req.safety_wiring
     tenant_id = req.tenant_id
-    if tenant_id == "default" and not is_global:
+    if tenant_id is None:
         try:
             from agent_context import get_agent
             _ctx = get_agent()
-            if _ctx.agent_id and _ctx.agent_id != "default":
+            if _ctx.agent_id and _ctx.agent_id != "default" and not is_global:
                 tenant_id = _ctx.agent_id
+            else:
+                tenant_id = "default"
         except (ImportError, AttributeError):
-            pass
+            tenant_id = "default"
     epistemic_source = req.epistemic_source
     belief_status = req.belief_status
     asserting_agent_id = req.asserting_agent_id

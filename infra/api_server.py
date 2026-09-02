@@ -188,7 +188,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         peer = self.client_address[0]
         if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
             self._principal_id = getattr(self.server, "agent_id", "") or os.environ.get("MEMORY_AGENT_ID", "ami")
-            self._tenant_id = os.environ.get("MEMORY_AGENT_ID", "ami")
+            self._tenant_id = "default"
             return True
         auth = self.headers.get("Authorization", "")
         bearer = ""
@@ -224,8 +224,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     )
                     if pid:
                         self._principal_id = pid
-                        self._principal = type("_Principal", (), {"id": pid, "tenant_id": claims.get("tenant_id", "ami")})()
-                        self._tenant_id = claims.get("tenant_id", "ami")
+                        self._principal = type("_Principal", (), {"id": pid, "tenant_id": claims.get("tenant_id", "default")})()
+                        self._tenant_id = claims.get("tenant_id", "default")
                 return True
             except Exception:
                 pass
@@ -256,12 +256,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if principal:
                 self._principal_id = principal.id
                 self._principal = principal
-                self._tenant_id = getattr(principal, "tenant_id", None) or os.environ.get("MEMORY_AGENT_ID", "ami")
+                self._tenant_id = getattr(principal, "tenant_id", None) or "default"
         except Exception:
             pass
         if not self._principal_id:
             self._principal_id = getattr(self.server, "agent_id", "") or os.environ.get("MEMORY_AGENT_ID", "ami")
-            self._tenant_id = os.environ.get("MEMORY_AGENT_ID", "ami")
+            self._tenant_id = "default"
         return True
 
     def _require_auth_ws(self) -> bool:
@@ -427,6 +427,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if self._rate_limited(key=getattr(self, "_principal_id", None)):
                 self._error("Rate limit exceeded", 429)
                 return
+            self._handle_search_memories(parse_qs(parsed.query))
         elif path == "/api/v1/memories/categories":
             if not self._require_auth():
                 return
@@ -721,7 +722,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_search_memories(self, query_params: dict) -> None:
         try:
-            query = query_params.get("query", [""])[0]
+            query = query_params.get("query", [""])[0] or query_params.get("q", [""])[0]
             if not query:
                 self._error("Missing required query parameter", 400)
                 return
@@ -1077,20 +1078,21 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             from infra.authorizer import mcp_authorize
             from agent_context import temporary_agent_context
 
-            principal_id = (
-                getattr(self, "_principal_id", None)
-                or getattr(self.server, "agent_id", "")
-                or os.environ.get("MEMORY_AGENT_ID", "")
-                or "ami"
-            )
-            tenant_id = (
-                getattr(self, "_tenant_id", None)
-                or (getattr(getattr(self, "_principal", None), "tenant_id", None))
-                or "default"
-            )
-            if not mcp_authorize(principal_id, "delete", "memory", str(self.server.db_path), tenant_id=tenant_id):
-                self._error("Access denied: missing authorization to delete memory", 403)
-                return
+            principal = getattr(self, "_principal", None)
+            if principal is not None:
+                principal_id = principal.id
+                tenant_id = getattr(principal, "tenant_id", "default") or "default"
+                if not mcp_authorize(principal_id, "delete", "memory", str(self.server.db_path), tenant_id=tenant_id):
+                    self._error("Access denied: missing authorization to delete memory", 403)
+                    return
+            else:
+                principal_id = (
+                    getattr(self, "_principal_id", None)
+                    or getattr(self.server, "agent_id", "")
+                    or os.environ.get("MEMORY_AGENT_ID", "")
+                    or "ami"
+                )
+                tenant_id = getattr(self, "_tenant_id", None) or "default"
             with temporary_agent_context(principal_id):
                 client = MemoryClient(db_path=self.server.db_path)
                 success = client.delete(note_id, tenant_id=tenant_id)
