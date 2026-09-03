@@ -77,16 +77,20 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
     os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
     os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
     os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"
+    os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_secret"
 
     # Monkey-patch stripe.checkout.Session.create at module level (visible to server thread)
+    pytest.importorskip("stripe")
     import stripe
     import unittest.mock
     _mock_session = unittest.mock.MagicMock()
     _mock_session.id = "cs_test_123"
     _mock_session.url = "https://checkout.stripe.com/pay/cs_test_123"
+    _orig_create = None
     if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session'):
         _orig_create = stripe.checkout.Session.create
         stripe.checkout.Session.create = unittest.mock.MagicMock(return_value=_mock_session)
+    _orig_construct = getattr(stripe.Webhook, "construct_event", None)
 
     # Start APIServer
     port = get_free_port()
@@ -157,11 +161,13 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
             }
         }
         
+        stripe.Webhook.construct_event = unittest.mock.MagicMock(return_value=webhook_payload)
         req = urllib.request.Request(
             f"{base_url}/api/v1/cloud/webhooks/stripe",
             data=json.dumps(webhook_payload).encode(),
             headers={
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Stripe-Signature": "t=123,v1=test_signature",
             },
             method="POST"
         )
@@ -194,7 +200,9 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
         # Restore monkey-patch and env vars
         if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session') and _orig_create:
             stripe.checkout.Session.create = _orig_create
-        for k in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_PRO", "STRIPE_PRICE_ENTERPRISE"):
+        if _orig_construct:
+            stripe.Webhook.construct_event = _orig_construct
+        for k in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_PRO", "STRIPE_PRICE_ENTERPRISE", "STRIPE_WEBHOOK_SECRET"):
             os.environ.pop(k, None)
 
 
