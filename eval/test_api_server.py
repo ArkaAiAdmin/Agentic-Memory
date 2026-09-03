@@ -406,54 +406,57 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("results", data)
 
-    def test_query_direct_main_bypass_blocked(self):
+    def test_query_case_insensitive_main_bypass_blocked(self):
+        # N1: Case variation like main.MEMORIES must still be blocked by authorizer
         status, data = self._http_request("/api/v1/query", "POST", {
-            "sql": "SELECT * FROM main.memories",
+            "sql": "SELECT * FROM main.MEMORIES",
         })
         self.assertEqual(status, 500)
         self.assertEqual(data.get("error"), "Query execution failed")
 
-    def test_query_stacked_statements_blocked(self):
+    def test_query_pragma_table_info_function_blocked(self):
+        # N2: pragma_table_info function form must be blocked from schema inspection
         status, data = self._http_request("/api/v1/query", "POST", {
-            "sql": "SELECT 1; DROP TABLE memories;",
+            "sql": "SELECT * FROM pragma_table_info('memories')",
         })
-        self.assertEqual(status, 400)
-        self.assertIn("single", data.get("error", "").lower())
+        self.assertEqual(status, 403)
+        self.assertIn("pragma", data.get("error", "").lower())
 
-    def test_query_error_sanitization(self):
+    def test_query_string_literal_with_dashes_and_slashes_allowed(self):
+        # N3: Strings containing -- or /* must not cause over-masking to EOL
         status, data = self._http_request("/api/v1/query", "POST", {
-            "sql": "SELECT * FROM non_existent_table_12345",
+            "sql": "SELECT content FROM memories WHERE content = 'foo -- bar; baz /* still literal */'",
         })
-        self.assertEqual(status, 500)
-        self.assertEqual(data.get("error"), "Query execution failed")
+        self.assertEqual(status, 200)
+        self.assertIn("results", data)
 
     def test_kg_limits_clamped(self):
-        # Insert 5 test entities to prove row count clamping
+        # Insert 550 test entities to strictly prove upper bound max clamp (500)
         from infra.db import open_db
         with open_db(self.db_path, write=True) as conn:
-            for i in range(5):
+            for i in range(550):
                 conn.execute(
                     "INSERT OR IGNORE INTO kg_entities (id, name, entity_type) VALUES (?, ?, ?)",
-                    (9100 + i, f"clamped_node_{i}", "entity"),
+                    (10000 + i, f"bulk_node_{i}", "entity"),
                 )
 
         # limit=2 should return at most 2 nodes (proving limit clamping)
         status, data = self._http_request("/api/v1/kg/nodes?limit=2", "GET")
         self.assertEqual(status, 200)
         self.assertIn("nodes", data)
-        self.assertLessEqual(len(data["nodes"]), 2)
+        self.assertEqual(len(data["nodes"]), 2)
 
         # limit=-1 should clamp to 1 (min)
         status, data = self._http_request("/api/v1/kg/nodes?limit=-1", "GET")
         self.assertEqual(status, 200)
         self.assertIn("nodes", data)
-        self.assertLessEqual(len(data["nodes"]), 1)
+        self.assertEqual(len(data["nodes"]), 1)
 
-        # limit=999999 should clamp to 500 (max)
-        status, data = self._http_request("/api/v1/kg/edges?limit=999999", "GET")
+        # limit=999999 with 550 rows in DB strictly proves max clamp to exactly 500 rows
+        status, data = self._http_request("/api/v1/kg/nodes?limit=999999", "GET")
         self.assertEqual(status, 200)
-        self.assertIn("edges", data)
-        self.assertLessEqual(len(data["edges"]), 500)
+        self.assertIn("nodes", data)
+        self.assertEqual(len(data["nodes"]), 500)
 
     def test_resolve_db_path_anchor_containment(self):
         from mcp_surface.mcp_verbs import _resolve_db_path

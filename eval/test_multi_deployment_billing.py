@@ -73,16 +73,18 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
     db_path, cloud_db = test_dirs
     run_cloud_migrations(cloud_db)
 
-    # Set Stripe env vars before server starts so the server thread sees them
+    pytest.importorskip("stripe")
+    import stripe
+    import unittest.mock
+
+    # Preserve existing environment variables before overriding
+    saved_env = {k: os.environ.get(k) for k in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_PRO", "STRIPE_PRICE_ENTERPRISE", "STRIPE_WEBHOOK_SECRET")}
     os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
     os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
     os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"
     os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_secret"
 
     # Monkey-patch stripe.checkout.Session.create at module level (visible to server thread)
-    pytest.importorskip("stripe")
-    import stripe
-    import unittest.mock
     _mock_session = unittest.mock.MagicMock()
     _mock_session.id = "cs_test_123"
     _mock_session.url = "https://checkout.stripe.com/pay/cs_test_123"
@@ -145,7 +147,7 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
         assert "checkout_url" in checkout_res
         session_id = checkout_res["session_id"]
         
-        # 2. Trigger Mock Stripe Webhook to activate subscription
+        # 2a. Negative test: Missing Stripe-Signature header -> 400
         webhook_payload = {
             "type": "checkout.session.completed",
             "data": {
@@ -160,7 +162,38 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
                 }
             }
         }
-        
+        req_no_sig = urllib.request.Request(
+            f"{base_url}/api/v1/cloud/webhooks/stripe",
+            data=json.dumps(webhook_payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            urllib.request.urlopen(req_no_sig)
+            assert False, "Expected 400 for missing Stripe-Signature"
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+        # 2b. Negative test: Invalid signature verification error -> 400
+        stripe.Webhook.construct_event = unittest.mock.MagicMock(
+            side_effect=stripe.error.SignatureVerificationError("Invalid sig", "sig_header")
+        )
+        req_bad_sig = urllib.request.Request(
+            f"{base_url}/api/v1/cloud/webhooks/stripe",
+            data=json.dumps(webhook_payload).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Stripe-Signature": "t=123,v1=invalid_signature",
+            },
+            method="POST"
+        )
+        try:
+            urllib.request.urlopen(req_bad_sig)
+            assert False, "Expected 400 for invalid signature"
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+        # 2c. Valid Stripe Webhook activates subscription
         stripe.Webhook.construct_event = unittest.mock.MagicMock(return_value=webhook_payload)
         req = urllib.request.Request(
             f"{base_url}/api/v1/cloud/webhooks/stripe",
@@ -197,13 +230,16 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
         
     finally:
         server.stop()
-        # Restore monkey-patch and env vars
+        # Restore monkey-patch and env vars non-destructively
         if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session') and _orig_create:
             stripe.checkout.Session.create = _orig_create
         if _orig_construct:
             stripe.Webhook.construct_event = _orig_construct
-        for k in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_PRO", "STRIPE_PRICE_ENTERPRISE", "STRIPE_WEBHOOK_SECRET"):
-            os.environ.pop(k, None)
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
 
 
 # ── Phase 5: Dedicated plan enforcement tests ────────────────────────────

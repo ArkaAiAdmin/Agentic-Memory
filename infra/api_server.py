@@ -1280,12 +1280,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Missing sql field", 400)
                 return
 
-            # Defeat stacked queries: mask comments and string literals, then check for unquoted semicolons
+            # Defeat stacked queries: mask string literals FIRST, then comments, then check for unquoted semicolons
             def _mask_literals_and_comments(s: str) -> str:
-                out = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), s, flags=re.DOTALL)
-                out = re.sub(r"--[^\r\n]*", lambda m: " " * len(m.group(0)), out)
-                out = re.sub(r"'(''|[^'])*'", lambda m: " " * len(m.group(0)), out)
+                # Mask string literals first so in-string comments like 'foo -- bar; baz' are not treated as comments
+                out = re.sub(r"'(''|[^'])*'", lambda m: " " * len(m.group(0)), s)
                 out = re.sub(r'"(""|[^"])*"', lambda m: " " * len(m.group(0)), out)
+                out = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), out, flags=re.DOTALL)
+                out = re.sub(r"--[^\r\n]*", lambda m: " " * len(m.group(0)), out)
                 return out
 
             masked_sql = _mask_literals_and_comments(sql)
@@ -1300,17 +1301,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Only simple SELECT queries allowed", 403)
                 return
 
-            # Strip comments for keyword inspection
-            sql_clean = re.sub(r"/\*.*?\*/", " ", single_sql, flags=re.DOTALL)
-            sql_clean = re.sub(r"--[^\r\n]*", " ", sql_clean).strip()
-            sql_no_comments = re.sub(r"/\*.*?\*/", "", single_sql, flags=re.DOTALL)
-            sql_no_comments = re.sub(r"--[^\r\n]*", "", sql_no_comments).strip()
-
             # Strip string literals so code-level keywords aren't matched inside literal values
-            sql_code_only = re.sub(r"'(''|[^'])*'", "''", sql_clean)
+            sql_code_only = re.sub(r"'(''|[^'])*'", "''", single_sql)
             sql_code_only = re.sub(r'"(""|[^"])*"', '""', sql_code_only)
-            sql_no_comments_code_only = re.sub(r"'(''|[^'])*'", "''", sql_no_comments)
-            sql_no_comments_code_only = re.sub(r'"(""|[^"])*"', '""', sql_no_comments_code_only)
+
+            # Strip comments for keyword inspection
+            sql_clean = re.sub(r"/\*.*?\*/", " ", sql_code_only, flags=re.DOTALL)
+            sql_clean = re.sub(r"--[^\r\n]*", " ", sql_clean).strip()
+            sql_no_comments = re.sub(r"/\*.*?\*/", "", sql_code_only, flags=re.DOTALL)
+            sql_no_comments = re.sub(r"--[^\r\n]*", "", sql_no_comments).strip()
 
             # Token-aware keyword check using word boundaries
             _forbidden_keywords = (
@@ -1319,10 +1318,16 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 "REINDEX", "ANALYZE", "UNION", "INTERSECT", "EXCEPT", "INTO",
             )
             for kw in _forbidden_keywords:
-                if (re.search(rf"\b{kw}\b", sql_code_only, re.IGNORECASE) or
-                        re.search(rf"\b{kw}\b", sql_no_comments_code_only, re.IGNORECASE)):
+                if (re.search(rf"\b{kw}\b", sql_clean, re.IGNORECASE) or
+                        re.search(rf"\b{kw}\b", sql_no_comments, re.IGNORECASE)):
                     self._error(f"SQL statement contains disallowed keyword: {kw}", 403)
                     return
+
+            # Block PRAGMA functions (e.g. pragma_table_info) to prevent schema inspection bypasses
+            if (re.search(r"\bpragma_[a-zA-Z0-9_]+\b", sql_clean, re.IGNORECASE) or
+                    re.search(r"\bpragma_[a-zA-Z0-9_]+\b", sql_no_comments, re.IGNORECASE)):
+                self._error("Access to PRAGMA functions is forbidden", 403)
+                return
 
             # System, security, and internal state tables blocked from read-queries
             _blocked_tables = {
@@ -1336,8 +1341,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 "coordination_audit", "memory_audit_log",
             }
             for tbl in _blocked_tables:
-                if (re.search(rf"\b{tbl}\b", sql_code_only, re.IGNORECASE) or
-                        re.search(rf"\b{tbl}\b", sql_no_comments_code_only, re.IGNORECASE)):
+                if (re.search(rf"\b{tbl}\b", sql_clean, re.IGNORECASE) or
+                        re.search(rf"\b{tbl}\b", sql_no_comments, re.IGNORECASE)):
                     self._error("Access to system or sensitive tables is forbidden", 403)
                     return
 
@@ -1360,20 +1365,28 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "shared_memories", "shared_tasks", "agent_messages",
                 }
 
+                # High-severity defense: pre-drop any stale temporary views on pooled connection
+                # to prevent cross-tenant view leaks across pooled connection reuse
+                for tbl in _TENANT_TABLES:
+                    try:
+                        conn.execute(f"DROP VIEW IF EXISTS temp.{tbl}")
+                    except Exception as drop_err:
+                        logger.warning("Failed to drop pre-existing temp view %s: %s", tbl, drop_err)
+
                 if not is_admin:
                     tenant_id = getattr(self, "_tenant_id", None) or "default"
                     if not re.match(r"^[a-zA-Z0-9_\-]+$", tenant_id):
                         self._error("Invalid tenant ID format", 400)
                         return
                     existing_tables = {
-                        r[0] for r in conn.execute(
+                        r[0].lower() for r in conn.execute(
                             "SELECT name FROM sqlite_master WHERE type='table'"
                         ).fetchall()
                     }
                     for tbl in _TENANT_TABLES:
                         if tbl in existing_tables:
                             conn.execute(
-                                f"CREATE TEMP VIEW IF NOT EXISTS {tbl} AS "
+                                f"CREATE TEMP VIEW {tbl} AS "
                                 f"SELECT * FROM main.{tbl} WHERE tenant_id = '{tenant_id}'"
                             )
                             created_views.append(tbl)
@@ -1381,10 +1394,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 def _query_authorizer(action, arg1, arg2, dbname, source):
                     if action not in (sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION):
                         return sqlite3.SQLITE_DENY
+                    # Block PRAGMA table-valued and scalar functions
+                    if (arg1 and isinstance(arg1, str) and arg1.lower().startswith("pragma_")) or \
+                       (arg2 and isinstance(arg2, str) and arg2.lower().startswith("pragma_")):
+                        return sqlite3.SQLITE_DENY
                     if action == sqlite3.SQLITE_READ and arg1 and arg1.lower() in _blocked_tables:
                         return sqlite3.SQLITE_DENY
-                    if not is_admin and action == sqlite3.SQLITE_READ and dbname == "main" and arg1 in _TENANT_TABLES:
-                        if source != arg1:
+                    # Case-insensitive tenant-table check to defeat case variations (e.g. main.MEMORIES)
+                    if not is_admin and action == sqlite3.SQLITE_READ and dbname == "main" and arg1 and arg1.lower() in _TENANT_TABLES:
+                        if not source or source.lower() != arg1.lower():
                             return sqlite3.SQLITE_DENY
                     return sqlite3.SQLITE_OK
 
@@ -1398,10 +1416,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 try:
                     conn.set_authorizer(None)
-                    for tbl in created_views:
+                except Exception as auth_err:
+                    logger.warning("Failed to reset query authorizer: %s", auth_err)
+                for tbl in created_views:
+                    try:
                         conn.execute(f"DROP VIEW IF EXISTS temp.{tbl}")
-                except Exception:
-                    pass
+                    except Exception as drop_err:
+                        logger.warning("Failed to drop temp view %s in cleanup: %s", tbl, drop_err)
                 safe_close_db(conn)
         except Exception as e:
             logger.warning("_handle_query failed: %s", e)
@@ -2801,7 +2822,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         "memory_facts_list", "memory_facts_search", "memory_facts_stats",
         "memory_graph_search", "memory_graph_shortest_path", "memory_graph_stats",
         "memory_graph_traverse", "memory_graph_insights", "memory_graph_evolution",
-        "memory_audit_query",
+        "memory_audit", "memory_audit_query",
         "memory_list_skills", "memory_list_federated_skills", "memory_list_revisions",
         "memory_list_threads", "memory_list_drift_alarms",
         "memory_profile_stats", "memory_profile_access", "memory_user_profile",
@@ -2815,13 +2836,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         "memory_compliance_check", "memory_pinned_decay_check",
         "memory_detect_contradictions", "memory_temporal_contradictions",
         "memory_daily_digest", "memory_dashboard",
-        "memory_okf_export", "memory_quality_stats",
-        "memory_retention_stats", "memory_review_schedule",
+        "memory_okf_export", "memory_quality_stats", "memory_quality_filter",
+        "memory_retention_stats", "memory_review_schedule", "memory_review_beliefs",
         "memory_scan_injection", "memory_sdk_demo",
-        "memory_session_admin_stats", "memory_summarization_stats",
+        "memory_session_admin_stats", "memory_summarization_stats", "memory_summarize",
         "memory_temporal_query", "memory_thread_context", "memory_tier_stats",
         "memory_whoami", "memory_admin_policy_hash", "memory_login_url",
-        "memory_sso_idp_list",
+        "memory_sso_idp_list", "memory_agent_list", "memory_pipeline_coverage",
     })
 
     @classmethod
@@ -2830,7 +2851,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         args = args or {}
         if tool_name in cls._EXPLICIT_READ_TOOLS:
             return "read"
-        if tool_name in ("memory_graph", "memory_share", "memory_profile", "memory_skills"):
+        if tool_name in ("memory_graph", "memory_share", "memory_profile", "memory_skills",
+                         "memory_note", "memory_coordinate", "memory_curate_autosave",
+                         "memory_metrics_server"):
             act = str(args.get("action", "")).strip().lower()
             if tool_name == "memory_graph" and act in ("search", "traverse", "shortest_path", "insights", "stats", "evolution"):
                 return "read"
@@ -2839,6 +2862,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if tool_name == "memory_profile" and act in ("get", "read", "view", "stats"):
                 return "read"
             if tool_name == "memory_skills" and act in ("list", "get", "view", "search"):
+                return "read"
+            if tool_name == "memory_note" and act in ("read", "get", "view", ""):
+                return "read"
+            if tool_name == "memory_coordinate" and act in ("get_project_state", "list_tasks", "check_lock", "read_messages", ""):
+                return "read"
+            if tool_name == "memory_curate_autosave" and act in ("list", "read", "view", ""):
+                return "read"
+            if tool_name == "memory_metrics_server" and act in ("status", "check", "get", ""):
+                return "read"
+            return "write"
+        if tool_name in ("memory_adaptive_retention", "memory_auto_summarize"):
+            if args.get("dry_run"):
                 return "read"
             return "write"
         _write_patterns = (
