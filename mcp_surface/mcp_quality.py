@@ -46,7 +46,7 @@ def memory_quality_filter(query: str, limit: int = 50) -> str:
             limit=limit,
             include_global=True,
             rerank=False,
-            safety_wiring=False,
+            safety_wiring=True,
         )
         results = raw.get("results", [])
         if not results:

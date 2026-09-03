@@ -137,14 +137,17 @@ def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
     4. Default memory/memory.db
     """
     if db_path:
-        return Path(db_path)
+        p = Path(db_path).resolve()
+        if p.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
+            raise ValueError(f"Invalid database file extension: {p.suffix}")
+        return p
     env_path = os.environ.get("MEMORY_DB_PATH")
     if env_path:
-        return Path(env_path)
+        return Path(env_path).resolve()
     if is_global:
-        return GLOBAL_MEM_DIR / "memory.db"
+        return (GLOBAL_MEM_DIR / "memory.db").resolve()
     _, local_mem, _ = get_memory_paths()
-    return local_mem / "memory.db"
+    return (local_mem / "memory.db").resolve()
 
 
 def _auto_slug(content: str) -> str:

@@ -33,7 +33,7 @@ http://localhost:9878
 
 ## Authentication
 
-All endpoints require a Bearer token unless the server is started with `insecure_loopback=True`.
+All endpoints require a Bearer token (`Authorization: Bearer <token>`). The server operates securely by default (`insecure_loopback=False`). The `insecure_loopback=True` bypass is intended strictly for local development and must never be enabled in production environments.
 
 ```bash
 export MEMORY_API_TOKEN=your-token-here

@@ -113,12 +113,29 @@ class TestAPIServer(unittest.TestCase):
         status, data = self._http_request("/health")
         self.assertEqual(status, 200)
         self.assertIn(data["status"], ("healthy", "degraded"))
-        self.assertTrue(data.get("db_ok"))
         self.assertIn("db_path", data)
+        self.assertEqual(data["db_path"], Path(self.db_path).name)
+        self.assertNotIn("/", data["db_path"])
+        self.assertNotIn("\\", data["db_path"])
         self.assertIn("journal_pending", data)
         self.assertIn("dead_letter", data)
         # SEC (LOW-2): unauth /health must not leak agent identity
         self.assertNotIn("agent_id", data)
+
+    def test_health_check_failure_sanitized_503(self):
+        old_path = self.server.db_path
+        try:
+            self.server.db_path = "/nonexistent/invalid_dir/no_db.db"
+            status, data = self._http_request("/health")
+            self.assertEqual(status, 503)
+            self.assertEqual(data["status"], "unhealthy")
+            self.assertFalse(data["db_ok"])
+            self.assertEqual(data["db_path"], "no_db.db")
+            self.assertNotIn("/", data["db_path"])
+            self.assertEqual(data["error"], "Database health probe failed")
+            self.assertNotIn("/nonexistent", data["error"])
+        finally:
+            self.server.db_path = old_path
 
     def test_invalid_query_params_return_400(self):
         status, data = self._http_request("/api/v1/memories/search?query=test&limit=invalid")

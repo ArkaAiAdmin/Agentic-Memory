@@ -114,6 +114,8 @@ def memory_graph_search(query: str, limit: int = 10, max_hops: int = 2) -> str:
     try:
         from knowledge_graph import graph_search_db
 
+        limit = max(1, min(int(limit), 100))
+        max_hops = max(1, min(int(max_hops), 5))
         result = graph_search_db(db_path, query, limit=limit, max_hops=max_hops)
         if not result["entities"]:
             return f"No graph results for '{query}'."
@@ -209,6 +211,7 @@ def memory_facts_search(query: str, limit: int = 10) -> str:
     try:
         from fact import facts_search_db
 
+        limit = max(1, min(int(limit), 100))
         results = facts_search_db(db_path, query, limit=limit)
         if not results:
             return f"No facts found for '{query}'."
@@ -246,6 +249,8 @@ def memory_facts_list(limit: int = 20, min_confidence: float = 0.0) -> str:
     try:
         from fact import facts_list_db
 
+        limit = max(1, min(int(limit), 100))
+        min_confidence = max(0.0, min(float(min_confidence), 1.0))
         results = facts_list_db(db_path, limit=limit, min_confidence=min_confidence)
         if not results:
             return "No facts extracted yet."

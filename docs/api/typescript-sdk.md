@@ -57,7 +57,7 @@ class MemoryClient {
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `baseUrl` | `string` | `"http://127.0.0.1:9878"` | Memory server URL |
-| `token` | `string` | — | API auth token (required unless server uses insecure_loopback) |
+| `token` | `string` | — | API auth token (required; server is secure by default) |
 
 **Example:**
 ```typescript

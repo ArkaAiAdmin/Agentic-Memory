@@ -458,7 +458,7 @@ default = 600                           # catch-all for tools without an explici
 enable_server = false                   # MEMORY_API_ENABLE_SERVER — start API server
 listen_host = "127.0.0.1"              # MEMORY_API_LISTEN_HOST
 listen_port = 9879                      # MEMORY_API_LISTEN_PORT — 9879 to avoid colliding with the MCP sync server (9878)
-token = "am-local-stable-token-8f3c2a1b9e7d6450"  # MEMORY_API_TOKEN — stable local-dev bearer token (set explicitly so it survives restarts).
+token = "am-local-stable-token-7e9b4d2c1f8a5360"  # MEMORY_API_TOKEN — stable local-dev bearer token (set explicitly so it survives restarts).
 insecure_loopback = false              # MEMORY_API_INSECURE_LOOPBACK — secure by default: all clients (including loopback) must provide Bearer token.
 
 [embedding]

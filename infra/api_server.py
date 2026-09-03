@@ -677,7 +677,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         note_count = 0
         db_ok = True
         err_msg = None
-        from pathlib import Path
         db_path_str = Path(self.server.db_path).name
         journal_pending = 0
         dead_letter = 0
@@ -687,11 +686,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         except Exception as _wp_exc:
             logger.warning("_handle_health probe failed: %s", _wp_exc)
             db_ok = False
-            err_msg = str(_wp_exc)
+            err_msg = "Database health probe failed"
 
         # Inspect write_journal in journal.db if present
         try:
-            from pathlib import Path
             journal_db = Path(self.server.db_path).parent / "journal.db"
             if journal_db.exists():
                 import sqlite3
@@ -1291,7 +1289,25 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if any(_kw in sql_upper for _kw in _dangerous):
                 self._error("Only simple SELECT queries allowed", 403)
                 return
+            _blocked_tables = (
+                "sqlite_master", "sqlite_schema", "sqlite_temp_master",
+                "principals", "api_tokens", "idem_token_key", "secrets",
+                "users", "tenants", "audit_log",
+            )
+            sql_lower = sql.lower()
+            if any(tbl in sql_lower for tbl in _blocked_tables):
+                self._error("Access to system or sensitive tables is forbidden", 403)
+                return
             params = req.get("params", [])
+            tenant_id = getattr(self, "_tenant_id", None)
+            if tenant_id and tenant_id != "default" and "memories" in sql_lower and "tenant_id" not in sql_lower:
+                sql = f"SELECT * FROM ({sql}) WHERE tenant_id = ?"
+                if isinstance(params, list):
+                    params = list(params) + [tenant_id]
+                elif isinstance(params, tuple):
+                    params = tuple(list(params) + [tenant_id])
+                else:
+                    params = [tenant_id]
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
@@ -2526,18 +2542,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         sig_header = self.headers.get("Stripe-Signature", "")
 
         if not webhook_secret:
-            stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
-            if stripe_key.startswith("sk_test_"):
-                try:
-                    event = json.loads(raw_body.decode("utf-8"))
-                except Exception:
-                    self._error("Invalid JSON payload", 400)
-                    return
-            else:
-                logger.error("Stripe webhook secret not configured")
-                self._error("Webhook secret not configured", 500)
-                return
-        elif not sig_header:
+            logger.error("Stripe webhook secret not configured")
+            self._error("Webhook secret not configured", 500)
+            return
+        if not sig_header:
             self._error("Missing Stripe-Signature header", 400)
             return
         else:
@@ -2720,6 +2728,27 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 valid_args = args
             else:
                 valid_args = {k: v for k, v in args.items() if k in sig.parameters}
+
+            principal_id = getattr(self, "_principal_id", None)
+            if principal_id:
+                action = "write" if any(w in tool_name for w in ("save", "update", "delete", "organize", "drop")) else "read"
+                from infra.authorizer import mcp_authorize, log_authorization_decision
+                allowed = mcp_authorize(
+                    principal_id=principal_id,
+                    action=action,
+                    resource="memory",
+                    db_path=str(self.server.db_path),
+                )
+                if not allowed:
+                    log_authorization_decision(
+                        principal_id=principal_id,
+                        action=action,
+                        resource="memory",
+                        allowed=False,
+                        db_path=str(self.server.db_path),
+                    )
+                    self._error(f"Principal '{principal_id}' not authorized for '{action}' on 'memory'", 403)
+                    return
 
             result = tool_fn(**valid_args)
             if isinstance(result, str):
