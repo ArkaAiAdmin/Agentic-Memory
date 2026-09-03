@@ -2855,12 +2855,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                          "memory_note", "memory_coordinate", "memory_curate_autosave",
                          "memory_metrics_server"):
             raw_act = args.get("action")
-            if raw_act is None or raw_act == "":
+            act = str(raw_act).strip().lower() if raw_act is not None else ""
+            if not act:
                 # Canonical parameter defaults from MCP tool signatures
                 _defaults = {
-                    "memory_graph": "search",
+                    "memory_graph": "explore",
                     "memory_share": "list",
-                    "memory_profile": "view",
+                    "memory_profile": "stats",
                     "memory_skills": "list",
                     "memory_note": "read",
                     "memory_coordinate": "get_project_state",
@@ -2868,14 +2869,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "memory_metrics_server": "status",
                 }
                 act = _defaults.get(tool_name, "")
-            else:
-                act = str(raw_act).strip().lower()
 
-            if tool_name == "memory_graph" and act in ("search", "traverse", "shortest_path", "insights", "stats", "evolution"):
+            if tool_name == "memory_graph" and act in ("explore", "search", "traverse", "shortest_path", "insights", "stats", "evolution"):
                 return "read"
             if tool_name == "memory_share" and act in ("list", "status", "stats"):
                 return "read"
-            if tool_name == "memory_profile" and act in ("get", "read", "view", "stats"):
+            if tool_name == "memory_profile" and act in ("stats", "user", "agents", "skills", "arc", "get", "read", "view"):
                 return "read"
             if tool_name == "memory_skills" and act in ("list", "get", "view", "search"):
                 return "read"

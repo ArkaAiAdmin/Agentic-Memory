@@ -459,16 +459,16 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("results", data)
 
     def test_kg_limits_clamped(self):
-        # Insert 550 test entities to strictly prove upper bound max clamp (500)
+        # Insert 550 test entities inside try to strictly prove upper bound max clamp (500)
         from infra.db import open_db
-        with open_db(self.db_path, write=True) as conn:
-            for i in range(550):
-                conn.execute(
-                    "INSERT OR IGNORE INTO kg_entities (id, name, entity_type) VALUES (?, ?, ?)",
-                    (10000 + i, f"bulk_node_{i}", "entity"),
-                )
-
         try:
+            with open_db(self.db_path, write=True) as conn:
+                for i in range(550):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO kg_entities (id, name, entity_type) VALUES (?, ?, ?)",
+                        (10000 + i, f"bulk_node_{i}", "entity"),
+                    )
+
             # limit=2 should return at most 2 nodes (proving limit clamping)
             status, data = self._http_request("/api/v1/kg/nodes?limit=2", "GET")
             self.assertEqual(status, 200)
