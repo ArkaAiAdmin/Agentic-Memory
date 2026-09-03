@@ -312,13 +312,16 @@ def _supplement_with_pending(db_path: Path, query: str, limit: int) -> list[dict
     try:
         from infra.db import open_db
         import sqlite3
+        def _escape_like(s: str) -> str:
+            return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
         with open_db(journal_path, timeout=30.0, pooled=True, write=False) as _conn:
             _conn.row_factory = sqlite3.Row
             _rows = _conn.execute(
                 "SELECT note_id, content, category, title_slug, tags, importance, created_at "
-                "FROM write_journal WHERE status='pending' AND content LIKE ? "
+                "FROM write_journal WHERE status='pending' AND content LIKE ? ESCAPE '\\' "
                 "ORDER BY created_at DESC LIMIT ?",
-                (f"%{query}%", limit),
+                (f"%{_escape_like(query)}%", limit),
             ).fetchall()
             return [
                 {
@@ -646,6 +649,7 @@ def memory_note(
     category: str = "",
     title_slug: str = "",
     tags: list[str] | None = None,
+    importance: int = 3,
     rationale: str = "",
     additions: list[str] | None = None,
     deletions: list[str] | None = None,
@@ -661,6 +665,7 @@ def memory_note(
         category: New category (for update).
         title_slug: New slug (for update/supersede target).
         tags: New tags (for update).
+        importance: Importance level 1..5 for update (default 3).
         rationale: Reason for the action (required for supersede, patch, revert_supersede; recommended for delete).
         additions: Text segments to insert (for patch action).
         deletions: Text segments to remove by content match (for patch action).
@@ -721,12 +726,13 @@ def memory_note(
             from save_pipeline import save_memory_auto, SaveValidationError
 
             try:
+                clamped_importance = max(1, min(5, int(importance)))
                 result = save_memory_auto(
                     content=content,
                     category=category or "lessons",
                     title_slug=title_slug or note_id.split("/")[-1],
                     tags=tags or [],
-                    importance=3,
+                    importance=clamped_importance,
                     is_global=False,
                 )
                 return str(result)

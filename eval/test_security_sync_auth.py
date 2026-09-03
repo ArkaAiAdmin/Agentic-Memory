@@ -37,15 +37,23 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
             handler.headers = {}
             return handler
 
-    def test_loopback_allows_without_token(self):
+    def test_loopback_denies_without_token_by_default(self):
         handler = self._make_handler(host="127.0.0.1")
-        result = handler._require_auth()
-        self.assertTrue(result)
+        with patch.object(handler, "_error"):
+            result = handler._require_auth()
+        self.assertFalse(result)
 
-    def test_loopback_ipv6_allows_without_token(self):
-        handler = self._make_handler(host="::1")
-        result = handler._require_auth()
-        self.assertTrue(result)
+    def test_loopback_allows_without_token_when_opted_out(self):
+        with patch.dict(os.environ, {"MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK": "1"}, clear=False):
+            handler = self._make_handler(host="127.0.0.1")
+            result = handler._require_auth()
+            self.assertTrue(result)
+
+    def test_loopback_ipv6_allows_without_token_when_opted_out(self):
+        with patch.dict(os.environ, {"MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK": "1"}, clear=False):
+            handler = self._make_handler(host="::1")
+            result = handler._require_auth()
+            self.assertTrue(result)
 
     def test_non_loopback_denies_without_token(self):
         handler = self._make_handler(host="0.0.0.0")

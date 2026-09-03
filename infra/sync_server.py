@@ -59,13 +59,18 @@ SYNC_AUTH_TOKEN = (
     or os.environ.get("MEMORY_API_TOKEN", "").strip()
 )
 
-# A06-001 fix: opt-in hard-fail when MEMORY_SYNC_TOKEN_REQUIRED=1.
-# When enabled, the server refuses to start if SYNC_AUTH_TOKEN is
-# unset — even on loopback.  Default is OFF so local development
-# workflows keep working without a token.
-_TOKEN_REQUIRED = os.environ.get("MEMORY_SYNC_TOKEN_REQUIRED", "").lower() in (
-    "1", "true", "yes", "on",
-)
+# SEC-1 / A9 hardening: require token authentication by default across all interfaces,
+# including loopback. Unauthenticated loopback access requires explicit opt-out via
+# MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1.
+_ALLOW_UNAUTH_LOOPBACK = os.environ.get(
+    "MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK", ""
+).lower() in ("1", "true", "yes", "on")
+
+_TOKEN_REQUIRED_ENV = os.environ.get("MEMORY_SYNC_TOKEN_REQUIRED", "")
+if _TOKEN_REQUIRED_ENV:
+    _TOKEN_REQUIRED = _TOKEN_REQUIRED_ENV.lower() in ("1", "true", "yes", "on")
+else:
+    _TOKEN_REQUIRED = not _ALLOW_UNAUTH_LOOPBACK
 
 # Y1 fix: configurable CORS allowlist.  Default = no CORS (empty list).
 # Set MEMORY_SYNC_CORS_ORIGINS="https://a.example,https://b.example"
@@ -244,14 +249,14 @@ class _SyncHandler(BaseHTTPRequestHandler):
         """
         peer = getattr(self, "host", None) or getattr(self, "client_address", ("127.0.0.1",))[0]
         if not SYNC_AUTH_TOKEN:
-            if not _is_loopback(peer):
+            if not (_is_loopback(peer) and _ALLOW_UNAUTH_LOOPBACK):
                 logger.warning(
-                    "sync_server: auth rejected (no token configured, non-loopback peer=%s): "
+                    "sync_server: auth rejected (no token configured, peer=%s): "
                     "401",
                     peer,
                 )
                 self._error(
-                    "Auth required: set MEMORY_SYNC_TOKEN or bind to 127.0.0.1",
+                    "Auth required: set MEMORY_SYNC_TOKEN or MEMORY_API_TOKEN",
                     401,
                 )
                 return False
@@ -1659,17 +1664,13 @@ class SyncServer:
                 "env var or bind to 127.0.0.1.",
                 self.host,
             )
-        # A06-001 fix: opt-in hard-fail when MEMORY_SYNC_TOKEN_REQUIRED=1.
-        # When enabled, the server refuses to start if SYNC_AUTH_TOKEN is
-        # unset — even on loopback.  Default is OFF so local development
-        # workflows keep working without a token.
+        # SEC-1 / A9 hardening: token is required by default.
         if _TOKEN_REQUIRED and not SYNC_AUTH_TOKEN:
             logger.error(
-                "sync_server: MEMORY_SYNC_TOKEN_REQUIRED=1 is set but "
-                "MEMORY_SYNC_TOKEN is empty. Refusing to start. Set "
-                "MEMORY_SYNC_TOKEN to a strong random value (32+ bytes) "
-                "or unset MEMORY_SYNC_TOKEN_REQUIRED to allow tokenless "
-                "loopback operation.",
+                "sync_server: Authentication token is required. Refusing to start "
+                "without authentication. Set MEMORY_SYNC_TOKEN or MEMORY_API_TOKEN, "
+                "or set MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1 to explicitly "
+                "allow unauthenticated loopback operation.",
             )
             self._server.server_close()
             self._server = None

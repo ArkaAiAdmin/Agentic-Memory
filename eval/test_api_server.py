@@ -489,7 +489,7 @@ class TestAPIServer(unittest.TestCase):
         finally:
             # Clean up seeded test entities so shared-DB counts are not polluted
             with open_db(self.db_path, write=True) as conn:
-                conn.execute("DELETE FROM kg_entities WHERE id >= 10000")
+                conn.execute("DELETE FROM kg_entities WHERE name LIKE 'bulk_node_%'")
 
     def test_resolve_db_path_anchor_containment(self):
         from mcp_surface.mcp_verbs import _resolve_db_path
@@ -529,6 +529,27 @@ class TestAPIServer(unittest.TestCase):
                 os.environ["MEMORY_AUTH_MODE"] = orig_mode
             else:
                 os.environ.pop("MEMORY_AUTH_MODE", None)
+
+    def test_strict_token_hard_fails(self):
+        from unittest.mock import patch
+        from infra.api_server import APIServer
+        with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": "1"}, clear=False):
+            with self.assertRaises(ValueError) as ctx:
+                APIServer(db_path=self.db_path, agent_id="test-agent", token="weak-short-token")
+            self.assertIn("minimum security requirements", str(ctx.exception))
+
+    def test_memory_note_importance_parameter(self):
+        from mcp_surface.mcp_verbs import memory_note
+        import json
+        # Update action with importance parameter
+        note_id = "lessons/test-importance-note"
+        res = memory_note(
+            note_id=note_id,
+            action="update",
+            content="Testing importance parameter",
+            importance=5,
+        )
+        self.assertNotIn("Error", res)
 
 
 if __name__ == "__main__":

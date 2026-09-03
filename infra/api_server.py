@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -365,7 +366,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _resolve_ws_principal(self, raw_token: str) -> None:
         """Resolve principal from a WS bearer token and store on self."""
         server_token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
-        if server_token and raw_token == server_token:
+        if server_token and hmac.compare_digest(raw_token, server_token):
             self._principal_id = "legacy"
             self._principal = None
             return
@@ -3157,6 +3158,13 @@ class APIServer(ThreadingHTTPServer):
         self._discovery_file: Optional[Path] = None
 
         if self.token and not validate_api_token(self.token):
+            strict_token = os.environ.get("MEMORY_API_STRICT_TOKEN", "").lower() in ("1", "true", "yes", "on")
+            if strict_token:
+                raise ValueError(
+                    "api_server: API token does not meet minimum security requirements "
+                    "(length >= 32, URL-safe chars) and MEMORY_API_STRICT_TOKEN=1 is set. "
+                    "Refusing to start."
+                )
             logger.warning(
                 "api_server: API token does not meet minimum security requirements "
                 "(length >= 32, URL-safe chars). Replace MEMORY_API_TOKEN with a "
@@ -3165,8 +3173,8 @@ class APIServer(ThreadingHTTPServer):
 
         # Phase 2: per-IP sliding-window rate limit. Disabled when <= 0.
         # Configured via MEMORY_API_RATE_LIMIT (requests) and
-        # MEMORY_API_RATE_WINDOW (seconds, default 60).
-        self.rate_limit = int(os.environ.get("MEMORY_API_RATE_LIMIT", "0") or "0")
+        # MEMORY_API_RATE_WINDOW (seconds, default 60). Defaults to 600 req/min (10 req/s).
+        self.rate_limit = int(os.environ.get("MEMORY_API_RATE_LIMIT", "600") or "600")
         self.rate_window = int(os.environ.get("MEMORY_API_RATE_WINDOW", "60") or "60")
         self._rate_buckets: Dict[str, list[float]] = {}
         self._rate_lock = threading.Lock()
