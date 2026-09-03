@@ -76,6 +76,22 @@ SYNC_CORS_ORIGINS = frozenset(
     if o.strip()
 )
 
+
+def _is_allowed_origin(origin: str) -> bool:
+    if not origin:
+        return False
+    if origin in SYNC_CORS_ORIGINS:
+        return True
+    return (
+        origin.startswith("http://localhost")
+        or origin.startswith("http://127.0.0.1")
+        or origin.startswith("http://[::1]")
+        or origin.startswith("tauri://")
+        or origin.startswith("http://tauri.localhost")
+        or origin.startswith("https://tauri.localhost")
+        or origin.startswith("asset://")
+    )
+
 # Y2 fix: optional HMAC secret for payload integrity.  When set, every
 # mutating request must include X-Sync-Signature: sha256=<hex>.  The HMAC
 # is computed over the raw request body using this shared secret.
@@ -193,7 +209,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         # Y1 fix: only echo origin if it's in the allowlist.  Default
         # deny is the secure posture.
         origin = self.headers.get("Origin", "")
-        if origin and origin in SYNC_CORS_ORIGINS:
+        if _is_allowed_origin(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
         self.end_headers()
         self.wfile.write(json.dumps(data).encode("utf-8"))
@@ -372,7 +388,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(204)
         origin = self.headers.get("Origin", "")
-        if origin and origin in SYNC_CORS_ORIGINS:
+        if _is_allowed_origin(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")

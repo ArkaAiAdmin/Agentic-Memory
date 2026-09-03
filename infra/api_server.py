@@ -90,10 +90,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             or origin.startswith("https://tauri.localhost")
             or origin.startswith("asset://")
         )
-        if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS or is_local):
+        if origin and (is_local or (API_CORS_ORIGINS and origin in API_CORS_ORIGINS)):
             headers.append(("Access-Control-Allow-Origin", origin))
-        elif not API_CORS_ORIGINS:
-            headers.append(("Access-Control-Allow-Origin", "*"))
         return headers
 
     def _write_json(self, data: dict | list, status_code: int = 200) -> None:
@@ -2076,6 +2074,20 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_ws_handshake(self) -> None:
         """RFC 6455 WebSocket Handshake and protocol upgrade."""
+        origin = self.headers.get("Origin", "")
+        if origin:
+            is_local = (
+                origin.startswith("http://localhost")
+                or origin.startswith("http://127.0.0.1")
+                or origin.startswith("http://[::1]")
+                or origin.startswith("tauri://")
+                or origin.startswith("http://tauri.localhost")
+                or origin.startswith("https://tauri.localhost")
+                or origin.startswith("asset://")
+            )
+            if not is_local and (not API_CORS_ORIGINS or origin not in API_CORS_ORIGINS):
+                self.send_error(403, "Cross-origin WebSocket connections rejected")
+                return
         if not self._require_auth_ws():
             return
         key = self.headers.get("Sec-WebSocket-Key")

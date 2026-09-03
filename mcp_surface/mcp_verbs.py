@@ -343,6 +343,12 @@ def memory_save(
     auth_err = _check_authorization("write", "memory")
     if auth_err:
         return auth_err
+    if not content or not content.strip():
+        return _err(ErrorCode.INVALID_PARAMS, "content cannot be empty")
+    try:
+        importance = max(1, min(5, int(importance)))
+    except (ValueError, TypeError):
+        importance = 3
     try:
         from infra.idempotency import get_idempotent_result, set_idempotent_result
         if idempotency_key:
@@ -683,6 +689,8 @@ def memory_note(
             result = memory_restore(note_id)
             return str(result)
         elif action == "update":
+            if not content or not content.strip():
+                return _err(ErrorCode.INVALID_PARAMS, "content is required for update action")
             from save_pipeline import save_memory_auto, SaveValidationError
 
             try:
