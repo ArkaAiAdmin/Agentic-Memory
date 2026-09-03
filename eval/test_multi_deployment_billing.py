@@ -79,52 +79,53 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
 
     # Preserve existing environment variables before overriding
     saved_env = {k: os.environ.get(k) for k in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_PRO", "STRIPE_PRICE_ENTERPRISE", "STRIPE_WEBHOOK_SECRET")}
-    os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
-    os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
-    os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"
-    os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_secret"
-
-    # Monkey-patch stripe.checkout.Session.create at module level (visible to server thread)
-    _mock_session = unittest.mock.MagicMock()
-    _mock_session.id = "cs_test_123"
-    _mock_session.url = "https://checkout.stripe.com/pay/cs_test_123"
     _orig_create = None
-    if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session'):
-        _orig_create = stripe.checkout.Session.create
-        stripe.checkout.Session.create = unittest.mock.MagicMock(return_value=_mock_session)
-    _orig_construct = getattr(stripe.Webhook, "construct_event", None)
-
-    # Start APIServer
-    port = get_free_port()
-    token = "test-token-secret"
-    server = APIServer(
-        db_path=db_path,
-        agent_id="test-agent",
-        host="127.0.0.1",
-        port=port,
-        token=token
-    )
-    server.start()
-    
-    # Wait for server to start
-    for _ in range(20):
-        try:
-            s = socket.socket()
-            s.connect(("127.0.0.1", port))
-            s.close()
-            break
-        except Exception:
-            time.sleep(0.05)
-            
-    # Setup test customer and deployment in the cloud_state.db
-    store = CloudStateStore(cloud_db)
-    store.create_customer("cust_b", "b@example.com")
-    store.create_deployment("dep_b", "cust_b", "tenant_b", api_base=f"http://127.0.0.1:{port}")
-
-    # Set Stripe env vars and fix placeholder price IDs so checkout can proceed
-    base_url = f"http://127.0.0.1:{port}"
-    
+    _orig_construct = None
+    server = None
     try:
+        os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
+        os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
+        os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"
+        os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_secret"
+
+        # Monkey-patch stripe.checkout.Session.create at module level (visible to server thread)
+        _mock_session = unittest.mock.MagicMock()
+        _mock_session.id = "cs_test_123"
+        _mock_session.url = "https://checkout.stripe.com/pay/cs_test_123"
+        if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session'):
+            _orig_create = stripe.checkout.Session.create
+            stripe.checkout.Session.create = unittest.mock.MagicMock(return_value=_mock_session)
+        _orig_construct = getattr(stripe.Webhook, "construct_event", None)
+
+        # Start APIServer
+        port = get_free_port()
+        token = "test-token-secret"
+        server = APIServer(
+            db_path=db_path,
+            agent_id="test-agent",
+            host="127.0.0.1",
+            port=port,
+            token=token
+        )
+        server.start()
+        
+        # Wait for server to start
+        for _ in range(20):
+            try:
+                s = socket.socket()
+                s.connect(("127.0.0.1", port))
+                s.close()
+                break
+            except Exception:
+                time.sleep(0.05)
+                
+        # Setup test customer and deployment in the cloud_state.db
+        store = CloudStateStore(cloud_db)
+        store.create_customer("cust_b", "b@example.com")
+        store.create_deployment("dep_b", "cust_b", "tenant_b", api_base=f"http://127.0.0.1:{port}")
+
+        # Set Stripe env vars and fix placeholder price IDs so checkout can proceed
+        base_url = f"http://127.0.0.1:{port}"
         # 1. Trigger Checkout Session (mock Stripe SDK)
         checkout_payload = {
             "deployment_id": "dep_b",
@@ -229,7 +230,8 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
         assert usage_res["invoices"][0]["amount_cents"] == 4900
         
     finally:
-        server.stop()
+        if server is not None:
+            server.stop()
         # Restore monkey-patch and env vars non-destructively
         if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session') and _orig_create:
             stripe.checkout.Session.create = _orig_create

@@ -407,9 +407,37 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("results", data)
 
     def test_query_case_insensitive_main_bypass_blocked(self):
-        # N1: Case variation like main.MEMORIES must still be blocked by authorizer
+        # N1: Case variations on table name and dbname (main.MEMORIES, MAIN.memories) must be blocked
         status, data = self._http_request("/api/v1/query", "POST", {
             "sql": "SELECT * FROM main.MEMORIES",
+        })
+        self.assertEqual(status, 500)
+        self.assertEqual(data.get("error"), "Query execution failed")
+
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT * FROM MAIN.memories",
+        })
+        self.assertEqual(status, 500)
+        self.assertEqual(data.get("error"), "Query execution failed")
+
+    def test_query_stacked_statements_blocked(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT 1; DROP TABLE memories;",
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("single", data.get("error", "").lower())
+
+    def test_query_exploit_stacked_after_dash_string_blocked(self):
+        # Exploit-shaped N3: string literal with dashes followed by stacked statement
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT * FROM memories WHERE content = 'a--b'; DROP TABLE memories;",
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("single", data.get("error", "").lower())
+
+    def test_query_error_sanitization(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT * FROM non_existent_table_12345",
         })
         self.assertEqual(status, 500)
         self.assertEqual(data.get("error"), "Query execution failed")
@@ -440,23 +468,28 @@ class TestAPIServer(unittest.TestCase):
                     (10000 + i, f"bulk_node_{i}", "entity"),
                 )
 
-        # limit=2 should return at most 2 nodes (proving limit clamping)
-        status, data = self._http_request("/api/v1/kg/nodes?limit=2", "GET")
-        self.assertEqual(status, 200)
-        self.assertIn("nodes", data)
-        self.assertEqual(len(data["nodes"]), 2)
+        try:
+            # limit=2 should return at most 2 nodes (proving limit clamping)
+            status, data = self._http_request("/api/v1/kg/nodes?limit=2", "GET")
+            self.assertEqual(status, 200)
+            self.assertIn("nodes", data)
+            self.assertEqual(len(data["nodes"]), 2)
 
-        # limit=-1 should clamp to 1 (min)
-        status, data = self._http_request("/api/v1/kg/nodes?limit=-1", "GET")
-        self.assertEqual(status, 200)
-        self.assertIn("nodes", data)
-        self.assertEqual(len(data["nodes"]), 1)
+            # limit=-1 should clamp to 1 (min)
+            status, data = self._http_request("/api/v1/kg/nodes?limit=-1", "GET")
+            self.assertEqual(status, 200)
+            self.assertIn("nodes", data)
+            self.assertEqual(len(data["nodes"]), 1)
 
-        # limit=999999 with 550 rows in DB strictly proves max clamp to exactly 500 rows
-        status, data = self._http_request("/api/v1/kg/nodes?limit=999999", "GET")
-        self.assertEqual(status, 200)
-        self.assertIn("nodes", data)
-        self.assertEqual(len(data["nodes"]), 500)
+            # limit=999999 with 550 rows in DB strictly proves max clamp to exactly 500 rows
+            status, data = self._http_request("/api/v1/kg/nodes?limit=999999", "GET")
+            self.assertEqual(status, 200)
+            self.assertIn("nodes", data)
+            self.assertEqual(len(data["nodes"]), 500)
+        finally:
+            # Clean up seeded test entities so shared-DB counts are not polluted
+            with open_db(self.db_path, write=True) as conn:
+                conn.execute("DELETE FROM kg_entities WHERE id >= 10000")
 
     def test_resolve_db_path_anchor_containment(self):
         from mcp_surface.mcp_verbs import _resolve_db_path
