@@ -671,10 +671,12 @@ export MEMORY_API_CORS_ORIGINS="http://localhost:3000,http://localhost:8080"
 
 ## Stripe Webhooks
 
-The API server supports receiving Stripe webhook events at `/api/v1/stripe/webhook`.
+The API server supports receiving Stripe webhook events at `/api/v1/cloud/webhooks/stripe`.
 
 ### Webhook Verification Policy (Fail-Closed)
-Webhook signature verification is strictly enforced across all environments. Every incoming webhook request must provide the `Stripe-Signature` header and match the configured `STRIPE_WEBHOOK_SECRET`. Requests with missing secrets, missing signatures, or invalid signatures are rejected with HTTP 400.
+Webhook signature verification is strictly enforced across all environments. Every incoming webhook request must provide the `Stripe-Signature` header and match the configured `STRIPE_WEBHOOK_SECRET`.
+- If `STRIPE_WEBHOOK_SECRET` is not configured in the server environment, the request is rejected with **HTTP 500** (`Webhook secret not configured`).
+- If the `Stripe-Signature` header is missing or verification fails, the request is rejected with **HTTP 400** (`Missing Stripe-Signature header` or `Invalid webhook signature`).
 
 ### Local Development & Testing with Stripe CLI
 To test Stripe webhook integration locally with signature verification:
@@ -682,7 +684,7 @@ To test Stripe webhook integration locally with signature verification:
 1. Install the Stripe CLI (`brew install stripe/stripe-cli/stripe` or from stripe.com).
 2. Forward webhook events to your local API server:
    ```bash
-   stripe listen --forward-to localhost:9879/api/v1/stripe/webhook
+   stripe listen --forward-to localhost:9879/api/v1/cloud/webhooks/stripe
    ```
 3. Copy the webhook signing secret output by the CLI (format: `whsec_...`):
    ```

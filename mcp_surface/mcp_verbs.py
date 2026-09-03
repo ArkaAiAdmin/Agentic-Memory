@@ -128,10 +128,34 @@ def _check_authorization(action: str, resource: str = "memory") -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
-    """Resolve the active memory DB path.
+def _validate_db_anchor(p: Path, source_label: str = "database path") -> Path:
+    """Validate that resolved db path is within allowed storage anchors.
 
-    Resolution order:
+    Note: Check-then-open (TOCTOU) is accepted here as an in-process pre-flight boundary,
+    since the database connection is subsequently opened via SQLite OS filesystem APIs
+    within the same process lifecycle.
+    """
+    if p.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
+        raise ValueError(f"Invalid database file extension in {source_label}: {p.suffix}")
+    _allowed_roots = [
+        GLOBAL_MEM_DIR.resolve(),
+        Path.home().resolve(),
+        Path.cwd().resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    try:
+        _, local_mem, _ = get_memory_paths()
+        _allowed_roots.append(local_mem.resolve())
+    except Exception:
+        pass
+    if not any(r == p or r in p.parents for r in _allowed_roots):
+        raise ValueError(f"Path escape: {source_label} '{p}' is outside allowed anchors")
+    return p
+
+
+def _resolve_db_path(db_path: str | None = None, is_global: bool = False) -> Path:
+    """Resolve the SQLite database path with deterministic priority:
+
     1. Explicit db_path argument
     2. MEMORY_DB_PATH env var (for multi-agent isolation)
     3. Global path (if is_global)
@@ -139,28 +163,11 @@ def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
     """
     if db_path:
         p = Path(db_path).resolve()
-        if p.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
-            raise ValueError(f"Invalid database file extension: {p.suffix}")
-        _allowed_roots = [
-            GLOBAL_MEM_DIR.resolve(),
-            Path.home().resolve(),
-            Path.cwd().resolve(),
-            Path(tempfile.gettempdir()).resolve(),
-        ]
-        try:
-            _, local_mem, _ = get_memory_paths()
-            _allowed_roots.append(local_mem.resolve())
-        except Exception:
-            pass
-        if not any(r == p or r in p.parents for r in _allowed_roots):
-            raise ValueError(f"Path escape: database path '{p}' is outside allowed anchors")
-        return p
+        return _validate_db_anchor(p, "database path")
     env_path = os.environ.get("MEMORY_DB_PATH")
     if env_path:
         p = Path(env_path).resolve()
-        if p.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
-            raise ValueError(f"Invalid database file extension in MEMORY_DB_PATH: {p.suffix}")
-        return p
+        return _validate_db_anchor(p, "MEMORY_DB_PATH")
     if is_global:
         return (GLOBAL_MEM_DIR / "memory.db").resolve()
     _, local_mem, _ = get_memory_paths()

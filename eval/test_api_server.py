@@ -105,8 +105,8 @@ class TestAPIServer(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    def _http_request(self, path: str, method: str = "GET", body: dict | None = None, timeout: float = 30.0) -> Tuple[int, dict]:
-        status, data = self.server.handle_request_direct(method=method, path=path, body=body)
+    def _http_request(self, path: str, method: str = "GET", body: dict | None = None, headers: dict | None = None, timeout: float = 30.0) -> Tuple[int, dict]:
+        status, data = self.server.handle_request_direct(method=method, path=path, body=body, headers=headers)
         return status, data
 
     def test_health_check(self):
@@ -392,6 +392,27 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("results", data)
 
+    def test_query_quoted_semicolon_allowed(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT content FROM memories WHERE content = 'test; with semicolon'",
+        })
+        self.assertEqual(status, 200)
+        self.assertIn("results", data)
+
+    def test_query_table_alias_and_qualifiers_allowed(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT m.id, m.content FROM memories AS m WHERE m.content LIKE '%users%'",
+        })
+        self.assertEqual(status, 200)
+        self.assertIn("results", data)
+
+    def test_query_direct_main_bypass_blocked(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT * FROM main.memories",
+        })
+        self.assertEqual(status, 500)
+        self.assertEqual(data.get("error"), "Query execution failed")
+
     def test_query_stacked_statements_blocked(self):
         status, data = self._http_request("/api/v1/query", "POST", {
             "sql": "SELECT 1; DROP TABLE memories;",
@@ -400,22 +421,39 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("single", data.get("error", "").lower())
 
     def test_query_error_sanitization(self):
-        # Query with non-existent table triggers execution failure
         status, data = self._http_request("/api/v1/query", "POST", {
             "sql": "SELECT * FROM non_existent_table_12345",
         })
         self.assertEqual(status, 500)
-        # Verify generic error payload without sqlite internals
         self.assertEqual(data.get("error"), "Query execution failed")
 
     def test_kg_limits_clamped(self):
+        # Insert 5 test entities to prove row count clamping
+        from infra.db import open_db
+        with open_db(self.db_path, write=True) as conn:
+            for i in range(5):
+                conn.execute(
+                    "INSERT OR IGNORE INTO kg_entities (id, name, entity_type) VALUES (?, ?, ?)",
+                    (9100 + i, f"clamped_node_{i}", "entity"),
+                )
+
+        # limit=2 should return at most 2 nodes (proving limit clamping)
+        status, data = self._http_request("/api/v1/kg/nodes?limit=2", "GET")
+        self.assertEqual(status, 200)
+        self.assertIn("nodes", data)
+        self.assertLessEqual(len(data["nodes"]), 2)
+
+        # limit=-1 should clamp to 1 (min)
         status, data = self._http_request("/api/v1/kg/nodes?limit=-1", "GET")
         self.assertEqual(status, 200)
         self.assertIn("nodes", data)
+        self.assertLessEqual(len(data["nodes"]), 1)
 
+        # limit=999999 should clamp to 500 (max)
         status, data = self._http_request("/api/v1/kg/edges?limit=999999", "GET")
         self.assertEqual(status, 200)
         self.assertIn("edges", data)
+        self.assertLessEqual(len(data["edges"]), 500)
 
     def test_resolve_db_path_anchor_containment(self):
         from mcp_surface.mcp_verbs import _resolve_db_path
@@ -424,6 +462,25 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("outside allowed anchors", str(ctx.exception))
 
     def test_tool_call_authorization_denied_closed_mode(self):
+        # 1. Anonymous HTTP tool call (empty authorization header) is rejected with 401
+        status, data = self._http_request(
+            "/api/v1/tools/call",
+            "POST",
+            {"tool": "memory_search", "args": {"query": "test"}},
+            headers={"Authorization": ""},
+        )
+        self.assertEqual(status, 401)
+
+        # 2. Invalid bearer token is rejected with 401
+        status, data = self._http_request(
+            "/api/v1/tools/call",
+            "POST",
+            {"tool": "memory_search", "args": {"query": "test"}},
+            headers={"Authorization": "Bearer completely-invalid-token-xyz"},
+        )
+        self.assertEqual(status, 401)
+
+        # 3. Fail-closed authorizer check when principal is None/unauthorized
         from infra.authorizer import mcp_authorize
         orig_mode = os.environ.get("MEMORY_AUTH_MODE")
         try:

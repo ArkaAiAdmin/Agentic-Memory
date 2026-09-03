@@ -65,7 +65,8 @@ _bootstrap_path = GLOBAL_SCRIPTS_DIR
 def _resolve_memory_dir() -> Path:
     db_path = os.environ.get("MEMORY_DB_PATH")
     if db_path is not None:
-        return Path(db_path).parent
+        from mcp_surface.mcp_verbs import _resolve_db_path
+        return _resolve_db_path(db_path=db_path).parent
     return resolve_active_memory_dir()
 
 

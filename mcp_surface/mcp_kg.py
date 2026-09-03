@@ -381,7 +381,8 @@ def memory_graph_insights(
                 sample_ids = [nid for nid, _ in top_pr[:sample_n]] if top_pr else []
                 if len(sample_ids) >= 2:
                     from kg.kg_traversal import find_shortest_path
-                    for i in range(min(len(sample_ids) - 1, sample_size)):
+                    max_pairs = min(len(sample_ids) - 1, 20)  # Bound pairwise shortest paths to at most 20
+                    for i in range(max_pairs):
                         try:
                             dist = find_shortest_path(
                                 conn, source_name=str(sample_ids[i]), target_name=str(sample_ids[i + 1]), max_depth=4
@@ -523,6 +524,9 @@ def memory_graph_evolution(since: str = "24h", limit: int = 5) -> str:
                     logger.warning("Unhandled exception in memory_graph_evolution: %s", e)
             else:
                 out.append("\nNo previous snapshot to diff against.")
+
+            if len(rows) > limit:
+                out.append(f"\n[Truncated: showing {limit} of {len(rows)} snapshots]")
 
         return "\n".join(out)
     except Exception as e:

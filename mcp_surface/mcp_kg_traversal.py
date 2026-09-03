@@ -82,14 +82,20 @@ def memory_graph_traverse(start: str, edge_patterns: Union[str, List[str]]) -> s
 
     # Parse edge patterns
     if isinstance(edge_patterns, str):
+        if len(edge_patterns) > 500:
+            return _err(ErrorCode.INVALID_PARAMS, "edge_patterns string exceeds maximum length of 500 characters")
         patterns = [p.strip() for p in edge_patterns.split(",") if p.strip()]
     elif isinstance(edge_patterns, list):
+        if len(edge_patterns) > 50:
+            return _err(ErrorCode.INVALID_PARAMS, "edge_patterns list exceeds maximum of 50 entries")
         patterns = [str(p).strip() for p in edge_patterns if str(p).strip()]
     else:
         return _err(ErrorCode.INVALID_PARAMS, "edge_patterns must be a list of strings or a comma-separated string")
 
     if not patterns:
         return _err(ErrorCode.INVALID_PARAMS, "edge_patterns cannot be empty")
+
+    patterns = patterns[:10]  # Bound traversal sequence depth to 10 steps
 
     try:
         from infra.db import open_db
@@ -102,7 +108,13 @@ def memory_graph_traverse(start: str, edge_patterns: Union[str, List[str]]) -> s
             rel_path_str = " -> ".join(patterns)
             return f"No paths found matching pattern '{start} -[{rel_path_str}]-> ...'"
 
-        lines = [f"**Traversed {len(paths)} paths starting at '{start}' matching relation sequence {patterns}:**"]
+        total_paths = len(paths)
+        truncated = False
+        if total_paths > 100:
+            paths = paths[:100]
+            truncated = True
+
+        lines = [f"**Traversed {total_paths} paths starting at '{start}' matching relation sequence {patterns}:**"]
         for idx, path in enumerate(paths):
             path_str_parts = []
             for element in path:
@@ -111,6 +123,9 @@ def memory_graph_traverse(start: str, edge_patterns: Union[str, List[str]]) -> s
                 else:
                     path_str_parts.append(f"{element['name']}")
             lines.append(f"  {idx + 1}. " + " ".join(path_str_parts))
+
+        if truncated:
+            lines.append(f"  ... [Truncated: showing first 100 of {total_paths} paths]")
 
         return "\n".join(lines)
 

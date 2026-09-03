@@ -1280,29 +1280,37 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Missing sql field", 400)
                 return
 
-            # Strip SQL comments (C-style /* ... */ and line-comments -- ...) to defeat comment evasion
-            sql_clean = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
-            sql_clean = re.sub(r"--[^\r\n]*", " ", sql_clean).strip()
+            # Defeat stacked queries: mask comments and string literals, then check for unquoted semicolons
+            def _mask_literals_and_comments(s: str) -> str:
+                out = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), s, flags=re.DOTALL)
+                out = re.sub(r"--[^\r\n]*", lambda m: " " * len(m.group(0)), out)
+                out = re.sub(r"'(''|[^'])*'", lambda m: " " * len(m.group(0)), out)
+                out = re.sub(r'"(""|[^"])*"', lambda m: " " * len(m.group(0)), out)
+                return out
 
-            # Strip comments without spaces to detect comment-splitting evasion (e.g. prin/**/cipals)
-            sql_no_comments = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
-            sql_no_comments = re.sub(r"--[^\r\n]*", "", sql_no_comments).strip()
-
-            # Enforce single statement
-            statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
-            if len(statements) != 1:
+            masked_sql = _mask_literals_and_comments(sql)
+            if re.search(r";\s*\S", masked_sql):
                 self._error("Only a single SQL statement is allowed", 400)
                 return
-            single_sql = statements[0]
+
+            single_sql = sql.strip().rstrip(";").strip()
 
             # M52: Strict SELECT-only guard
             if not re.match(r"^\s*SELECT\b", single_sql, re.IGNORECASE):
                 self._error("Only simple SELECT queries allowed", 403)
                 return
 
-            # Strip string literals to prevent false-positives on literal values (e.g. LIKE '%users%')
-            sql_code_only = re.sub(r"'(''|[^'])*'", "''", single_sql)
+            # Strip comments for keyword inspection
+            sql_clean = re.sub(r"/\*.*?\*/", " ", single_sql, flags=re.DOTALL)
+            sql_clean = re.sub(r"--[^\r\n]*", " ", sql_clean).strip()
+            sql_no_comments = re.sub(r"/\*.*?\*/", "", single_sql, flags=re.DOTALL)
+            sql_no_comments = re.sub(r"--[^\r\n]*", "", sql_no_comments).strip()
+
+            # Strip string literals so code-level keywords aren't matched inside literal values
+            sql_code_only = re.sub(r"'(''|[^'])*'", "''", sql_clean)
+            sql_code_only = re.sub(r'"(""|[^"])*"', '""', sql_code_only)
             sql_no_comments_code_only = re.sub(r"'(''|[^'])*'", "''", sql_no_comments)
+            sql_no_comments_code_only = re.sub(r'"(""|[^"])*"', '""', sql_no_comments_code_only)
 
             # Token-aware keyword check using word boundaries
             _forbidden_keywords = (
@@ -1316,13 +1324,17 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     self._error(f"SQL statement contains disallowed keyword: {kw}", 403)
                     return
 
-            # Token-aware system and sensitive tables check
-            _blocked_tables = (
+            # System, security, and internal state tables blocked from read-queries
+            _blocked_tables = {
                 "sqlite_master", "sqlite_schema", "sqlite_temp_master",
-                "principals", "api_tokens", "idem_token_key", "secrets",
-                "users", "tenants", "audit_log", "principal_identities",
-                "roles", "role_permissions",
-            )
+                "principals", "principal_identities", "principal_roles_audit",
+                "roles", "role_bindings", "policies", "acl_overrides",
+                "api_tokens", "users", "tenants", "secrets",
+                "idem_token_key", "sso_idp_cache",
+                "saga_log", "saga_audit_log",
+                "file_locks", "system_locks", "distributed_locks",
+                "coordination_audit", "memory_audit_log",
+            }
             for tbl in _blocked_tables:
                 if (re.search(rf"\b{tbl}\b", sql_code_only, re.IGNORECASE) or
                         re.search(rf"\b{tbl}\b", sql_no_comments_code_only, re.IGNORECASE)):
@@ -1330,32 +1342,66 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     return
 
             params = req.get("params", [])
-            tenant_id = getattr(self, "_tenant_id", None)
-            if tenant_id and tenant_id != "admin":
-                if not re.match(r"^[a-zA-Z0-9_\-]+$", tenant_id):
-                    self._error("Invalid tenant ID format", 400)
-                    return
-                _tenant_tables = ("memories", "memory_chunks", "chunks", "embeddings", "kg_entities", "kg_edges", "facts", "kg_facts")
-                sql_to_run = single_sql
-                for tbl in _tenant_tables:
-                    sql_to_run = re.sub(
-                        rf"\b{tbl}\b",
-                        f"(SELECT * FROM {tbl} WHERE tenant_id = '{tenant_id}') AS {tbl}",
-                        sql_to_run,
-                        flags=re.IGNORECASE,
-                    )
-            else:
-                sql_to_run = single_sql
 
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            created_views: list[str] = []
             try:
-                cursor = conn.execute(sql_to_run, params)
+                import sqlite3
+                from infra.authorizer import _is_cross_tenant_admin
+                principal_id = getattr(self, "_principal_id", None)
+                is_admin = bool(principal_id and _is_cross_tenant_admin(conn, principal_id))
+
+                _TENANT_TABLES = {
+                    "memories", "memory_chunks", "memory_embeddings", "chunks",
+                    "kg_entities", "kg_edges", "kg_facts", "facts",
+                    "sessions", "decision_threads", "thread_events",
+                    "belief_assertions", "entailment_chains", "memory_skills",
+                    "shared_memories", "shared_tasks", "agent_messages",
+                }
+
+                if not is_admin:
+                    tenant_id = getattr(self, "_tenant_id", None) or "default"
+                    if not re.match(r"^[a-zA-Z0-9_\-]+$", tenant_id):
+                        self._error("Invalid tenant ID format", 400)
+                        return
+                    existing_tables = {
+                        r[0] for r in conn.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'"
+                        ).fetchall()
+                    }
+                    for tbl in _TENANT_TABLES:
+                        if tbl in existing_tables:
+                            conn.execute(
+                                f"CREATE TEMP VIEW IF NOT EXISTS {tbl} AS "
+                                f"SELECT * FROM main.{tbl} WHERE tenant_id = '{tenant_id}'"
+                            )
+                            created_views.append(tbl)
+
+                def _query_authorizer(action, arg1, arg2, dbname, source):
+                    if action not in (sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION):
+                        return sqlite3.SQLITE_DENY
+                    if action == sqlite3.SQLITE_READ and arg1 and arg1.lower() in _blocked_tables:
+                        return sqlite3.SQLITE_DENY
+                    if not is_admin and action == sqlite3.SQLITE_READ and dbname == "main" and arg1 in _TENANT_TABLES:
+                        if source != arg1:
+                            return sqlite3.SQLITE_DENY
+                    return sqlite3.SQLITE_OK
+
+                conn.set_authorizer(_query_authorizer)
+
+                cursor = conn.execute(single_sql, params)
                 columns = [desc[0] for desc in cursor.description] if cursor.description else []
                 rows = cursor.fetchall()
                 results = [dict(zip(columns, row)) for row in rows]
                 self._write_json({"results": results, "count": len(results)})
             finally:
+                try:
+                    conn.set_authorizer(None)
+                    for tbl in created_views:
+                        conn.execute(f"DROP VIEW IF EXISTS temp.{tbl}")
+                except Exception:
+                    pass
                 safe_close_db(conn)
         except Exception as e:
             logger.warning("_handle_query failed: %s", e)
@@ -1666,8 +1712,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 safe_close_db(conn)
         except Exception as e:
-            logger.warning("_handle_kg_nodes: broad except swallowed: %s", e)
-            self._error(f"Failed to list KG nodes: {e}", 500)
+            logger.warning("_handle_kg_nodes: %s", e)
+            self._error("Failed to list KG nodes", 500)
 
     def _handle_kg_edges(self, query_params: dict) -> None:
         try:
@@ -1696,8 +1742,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 safe_close_db(conn)
         except Exception as e:
-                logger.warning("_handle_kg_edges: broad except swallowed: %s", e)
-                self._error(f"Failed to list KG edges: {e}", 500)
+            logger.warning("_handle_kg_edges: %s", e)
+            self._error("Failed to list KG edges", 500)
 
     def _handle_kg_create_edge(self) -> None:
         """Create a KG edge via the authenticated API (dashboard gap-detector)."""
@@ -2747,7 +2793,67 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._write_json({"result": result_text})
         except Exception as e:
             logger.warning("_handle_kg_explore: %s", e)
-            self._error(f"KG explore failed: {e}", 500)
+            self._error("KG explore failed", 500)
+
+    _EXPLICIT_READ_TOOLS = frozenset({
+        "memory_search", "memory_semantic_search", "search_memories",
+        "memory_recall_context", "memory_recall_stats",
+        "memory_facts_list", "memory_facts_search", "memory_facts_stats",
+        "memory_graph_search", "memory_graph_shortest_path", "memory_graph_stats",
+        "memory_graph_traverse", "memory_graph_insights", "memory_graph_evolution",
+        "memory_audit_query",
+        "memory_list_skills", "memory_list_federated_skills", "memory_list_revisions",
+        "memory_list_threads", "memory_list_drift_alarms",
+        "memory_profile_stats", "memory_profile_access", "memory_user_profile",
+        "memory_shared_list", "memory_shared_stats",
+        "memory_arc_stats", "memory_crdt_status",
+        "memory_auto_save_status", "memory_auto_save_daemon_metrics",
+        "memory_background_task_status", "memory_circuit_breaker_status",
+        "memory_health_check", "memory_system_health", "memory_heartbeat",
+        "memory_check_concept_drift", "memory_check_contradictions",
+        "memory_check_embedding_model", "memory_check_integrity",
+        "memory_compliance_check", "memory_pinned_decay_check",
+        "memory_detect_contradictions", "memory_temporal_contradictions",
+        "memory_daily_digest", "memory_dashboard",
+        "memory_okf_export", "memory_quality_stats",
+        "memory_retention_stats", "memory_review_schedule",
+        "memory_scan_injection", "memory_sdk_demo",
+        "memory_session_admin_stats", "memory_summarization_stats",
+        "memory_temporal_query", "memory_thread_context", "memory_tier_stats",
+        "memory_whoami", "memory_admin_policy_hash", "memory_login_url",
+        "memory_sso_idp_list",
+    })
+
+    @classmethod
+    def _classify_tool_action(cls, tool_name: str, args: dict | None = None) -> str:
+        """Classify tool execution as 'read' or 'write' for RBAC authorization."""
+        args = args or {}
+        if tool_name in cls._EXPLICIT_READ_TOOLS:
+            return "read"
+        if tool_name in ("memory_graph", "memory_share", "memory_profile", "memory_skills"):
+            act = str(args.get("action", "")).strip().lower()
+            if tool_name == "memory_graph" and act in ("search", "traverse", "shortest_path", "insights", "stats", "evolution"):
+                return "read"
+            if tool_name == "memory_share" and act in ("list", "status", "stats"):
+                return "read"
+            if tool_name == "memory_profile" and act in ("get", "read", "view", "stats"):
+                return "read"
+            if tool_name == "memory_skills" and act in ("list", "get", "view", "search"):
+                return "read"
+            return "write"
+        _write_patterns = (
+            "save", "update", "delete", "organize", "drop", "rollback",
+            "edit", "record", "create", "note", "supersede", "restore",
+            "share", "coordinate", "curate", "profile", "skills",
+            "crdt", "rotate", "purge", "trash", "compact", "rebuild",
+            "backfill", "consolidate", "dedup", "maintenance", "advanced",
+            "init", "clear", "reset", "hook", "compile", "ingest",
+            "reinforce", "resolve", "rewrite", "sync", "import", "add",
+            "strip", "migration", "adaptive",
+        )
+        if any(w in tool_name for w in _write_patterns):
+            return "write"
+        return "write"
 
     def _handle_tool_call(self) -> None:
         """POST /api/v1/tools/call — generic tool dispatch passthrough."""
@@ -2782,12 +2888,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
             principal_id = getattr(self, "_principal_id", None)
             tenant_id = getattr(self, "_tenant_id", "default")
-            _write_verbs = (
-                "save", "update", "delete", "organize", "drop", "rollback",
-                "edit", "record", "create", "note", "supersede", "restore",
-                "share", "coordinate", "curate", "profile", "skills",
-            )
-            action = "write" if any(w in tool_name for w in _write_verbs) else "read"
+            action = self._classify_tool_action(tool_name, valid_args)
             from infra.authorizer import mcp_authorize, log_authorization_decision
             allowed = mcp_authorize(
                 principal_id=principal_id,
