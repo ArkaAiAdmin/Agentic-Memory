@@ -677,9 +677,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         note_count = 0
         db_ok = True
         err_msg = None
+        from pathlib import Path
+        db_path_str = Path(self.server.db_path).name
         journal_pending = 0
         dead_letter = 0
-        db_path_str = str(self.server.db_path)
         try:
             client = MemoryClient(db_path=self.server.db_path)
             note_count = client.stats().memories
