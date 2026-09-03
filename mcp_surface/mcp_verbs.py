@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional, cast
@@ -140,10 +141,26 @@ def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
         p = Path(db_path).resolve()
         if p.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
             raise ValueError(f"Invalid database file extension: {p.suffix}")
+        _allowed_roots = [
+            GLOBAL_MEM_DIR.resolve(),
+            Path.home().resolve(),
+            Path.cwd().resolve(),
+            Path(tempfile.gettempdir()).resolve(),
+        ]
+        try:
+            _, local_mem, _ = get_memory_paths()
+            _allowed_roots.append(local_mem.resolve())
+        except Exception:
+            pass
+        if not any(r == p or r in p.parents for r in _allowed_roots):
+            raise ValueError(f"Path escape: database path '{p}' is outside allowed anchors")
         return p
     env_path = os.environ.get("MEMORY_DB_PATH")
     if env_path:
-        return Path(env_path).resolve()
+        p = Path(env_path).resolve()
+        if p.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
+            raise ValueError(f"Invalid database file extension in MEMORY_DB_PATH: {p.suffix}")
+        return p
     if is_global:
         return (GLOBAL_MEM_DIR / "memory.db").resolve()
     _, local_mem, _ = get_memory_paths()
@@ -955,6 +972,10 @@ def memory_graph(
     auth_err = _check_authorization("search", "memory")
     if auth_err:
         return auth_err
+    try:
+        max_depth = max(1, min(int(max_depth), 10))
+    except (ValueError, TypeError):
+        max_depth = 2
     try:
         from mcp_surface.mcp_kg import memory_facts_list, memory_graph_stats
         from mcp_surface.mcp_kg_traversal import memory_graph_shortest_path, memory_graph_traverse

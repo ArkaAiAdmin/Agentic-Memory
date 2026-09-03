@@ -32,6 +32,11 @@ def memory_graph_shortest_path(source: str, target: str, max_depth: int = 5) -> 
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
 
     try:
+        max_depth = max(1, min(int(max_depth), 10))
+    except (ValueError, TypeError):
+        max_depth = 5
+
+    try:
         from infra.db import open_db
         from kg.kg_traversal import find_shortest_path
 

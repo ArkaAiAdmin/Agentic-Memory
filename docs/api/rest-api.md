@@ -669,6 +669,34 @@ Configure allowed origins:
 export MEMORY_API_CORS_ORIGINS="http://localhost:3000,http://localhost:8080"
 ```
 
+## Stripe Webhooks
+
+The API server supports receiving Stripe webhook events at `/api/v1/stripe/webhook`.
+
+### Webhook Verification Policy (Fail-Closed)
+Webhook signature verification is strictly enforced across all environments. Every incoming webhook request must provide the `Stripe-Signature` header and match the configured `STRIPE_WEBHOOK_SECRET`. Requests with missing secrets, missing signatures, or invalid signatures are rejected with HTTP 400.
+
+### Local Development & Testing with Stripe CLI
+To test Stripe webhook integration locally with signature verification:
+
+1. Install the Stripe CLI (`brew install stripe/stripe-cli/stripe` or from stripe.com).
+2. Forward webhook events to your local API server:
+   ```bash
+   stripe listen --forward-to localhost:9879/api/v1/stripe/webhook
+   ```
+3. Copy the webhook signing secret output by the CLI (format: `whsec_...`):
+   ```
+   > Ready! Your webhook signing secret is whsec_1234567890abcdef...
+   ```
+4. Set `STRIPE_WEBHOOK_SECRET` in your environment before running the server:
+   ```bash
+   export STRIPE_WEBHOOK_SECRET=whsec_1234567890abcdef...
+   ```
+5. In another terminal, trigger a test event:
+   ```bash
+   stripe trigger checkout.session.completed
+   ```
+
 ## Rate Limiting
 
 The API server includes built-in rate limiting (if configured):

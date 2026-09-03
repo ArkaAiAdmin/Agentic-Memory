@@ -378,6 +378,65 @@ class TestAPIServer(unittest.TestCase):
         # Clean up socket
         sock.close()
 
+    def test_query_comment_evasion_blocked(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT * FROM prin/**/cipals",
+        })
+        self.assertEqual(status, 403)
+        self.assertIn("forbidden", data.get("error", "").lower())
+
+    def test_query_literal_string_not_false_positive(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT content FROM memories WHERE content LIKE '%users%'",
+        })
+        self.assertEqual(status, 200)
+        self.assertIn("results", data)
+
+    def test_query_stacked_statements_blocked(self):
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT 1; DROP TABLE memories;",
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("single", data.get("error", "").lower())
+
+    def test_query_error_sanitization(self):
+        # Query with non-existent table triggers execution failure
+        status, data = self._http_request("/api/v1/query", "POST", {
+            "sql": "SELECT * FROM non_existent_table_12345",
+        })
+        self.assertEqual(status, 500)
+        # Verify generic error payload without sqlite internals
+        self.assertEqual(data.get("error"), "Query execution failed")
+
+    def test_kg_limits_clamped(self):
+        status, data = self._http_request("/api/v1/kg/nodes?limit=-1", "GET")
+        self.assertEqual(status, 200)
+        self.assertIn("nodes", data)
+
+        status, data = self._http_request("/api/v1/kg/edges?limit=999999", "GET")
+        self.assertEqual(status, 200)
+        self.assertIn("edges", data)
+
+    def test_resolve_db_path_anchor_containment(self):
+        from mcp_surface.mcp_verbs import _resolve_db_path
+        with self.assertRaises(ValueError) as ctx:
+            _resolve_db_path(db_path="/etc/passwd.sqlite")
+        self.assertIn("outside allowed anchors", str(ctx.exception))
+
+    def test_tool_call_authorization_denied_closed_mode(self):
+        from infra.authorizer import mcp_authorize
+        orig_mode = os.environ.get("MEMORY_AUTH_MODE")
+        try:
+            os.environ["MEMORY_AUTH_MODE"] = "closed"
+            self.assertFalse(mcp_authorize(None, "write", "memory", db_path=self.db_path))
+            self.assertFalse(mcp_authorize("", "write", "memory", db_path=self.db_path))
+            self.assertFalse(mcp_authorize("unauthorized-user-999", "write", "memory", db_path=self.db_path))
+        finally:
+            if orig_mode is not None:
+                os.environ["MEMORY_AUTH_MODE"] = orig_mode
+            else:
+                os.environ.pop("MEMORY_AUTH_MODE", None)
+
 
 if __name__ == "__main__":
     unittest.main()

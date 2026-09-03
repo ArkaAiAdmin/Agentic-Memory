@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -1278,40 +1279,78 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not sql:
                 self._error("Missing sql field", 400)
                 return
-            sql_upper = sql.upper().strip()
-            # M52: Strict SELECT-only guard.  Rejects WITH (CTEs),
-            # UNION, subqueries, and DML keywords.
-            if not sql_upper.startswith("SELECT") or "INTO" in sql_upper:
+
+            # Strip SQL comments (C-style /* ... */ and line-comments -- ...) to defeat comment evasion
+            sql_clean = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+            sql_clean = re.sub(r"--[^\r\n]*", " ", sql_clean).strip()
+
+            # Strip comments without spaces to detect comment-splitting evasion (e.g. prin/**/cipals)
+            sql_no_comments = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+            sql_no_comments = re.sub(r"--[^\r\n]*", "", sql_no_comments).strip()
+
+            # Enforce single statement
+            statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
+            if len(statements) != 1:
+                self._error("Only a single SQL statement is allowed", 400)
+                return
+            single_sql = statements[0]
+
+            # M52: Strict SELECT-only guard
+            if not re.match(r"^\s*SELECT\b", single_sql, re.IGNORECASE):
                 self._error("Only simple SELECT queries allowed", 403)
                 return
-            _dangerous = ("UNION", "INTERSECT", "EXCEPT", "ATTACH", "DETACH",
-                          "PRAGMA", "VACUUM", "REINDEX", "ANALYZE")
-            if any(_kw in sql_upper for _kw in _dangerous):
-                self._error("Only simple SELECT queries allowed", 403)
-                return
+
+            # Strip string literals to prevent false-positives on literal values (e.g. LIKE '%users%')
+            sql_code_only = re.sub(r"'(''|[^'])*'", "''", single_sql)
+            sql_no_comments_code_only = re.sub(r"'(''|[^'])*'", "''", sql_no_comments)
+
+            # Token-aware keyword check using word boundaries
+            _forbidden_keywords = (
+                "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
+                "REPLACE", "TRUNCATE", "ATTACH", "DETACH", "PRAGMA", "VACUUM",
+                "REINDEX", "ANALYZE", "UNION", "INTERSECT", "EXCEPT", "INTO",
+            )
+            for kw in _forbidden_keywords:
+                if (re.search(rf"\b{kw}\b", sql_code_only, re.IGNORECASE) or
+                        re.search(rf"\b{kw}\b", sql_no_comments_code_only, re.IGNORECASE)):
+                    self._error(f"SQL statement contains disallowed keyword: {kw}", 403)
+                    return
+
+            # Token-aware system and sensitive tables check
             _blocked_tables = (
                 "sqlite_master", "sqlite_schema", "sqlite_temp_master",
                 "principals", "api_tokens", "idem_token_key", "secrets",
-                "users", "tenants", "audit_log",
+                "users", "tenants", "audit_log", "principal_identities",
+                "roles", "role_permissions",
             )
-            sql_lower = sql.lower()
-            if any(tbl in sql_lower for tbl in _blocked_tables):
-                self._error("Access to system or sensitive tables is forbidden", 403)
-                return
+            for tbl in _blocked_tables:
+                if (re.search(rf"\b{tbl}\b", sql_code_only, re.IGNORECASE) or
+                        re.search(rf"\b{tbl}\b", sql_no_comments_code_only, re.IGNORECASE)):
+                    self._error("Access to system or sensitive tables is forbidden", 403)
+                    return
+
             params = req.get("params", [])
             tenant_id = getattr(self, "_tenant_id", None)
-            if tenant_id and tenant_id != "default" and "memories" in sql_lower and "tenant_id" not in sql_lower:
-                sql = f"SELECT * FROM ({sql}) WHERE tenant_id = ?"
-                if isinstance(params, list):
-                    params = list(params) + [tenant_id]
-                elif isinstance(params, tuple):
-                    params = tuple(list(params) + [tenant_id])
-                else:
-                    params = [tenant_id]
+            if tenant_id and tenant_id != "admin":
+                if not re.match(r"^[a-zA-Z0-9_\-]+$", tenant_id):
+                    self._error("Invalid tenant ID format", 400)
+                    return
+                _tenant_tables = ("memories", "memory_chunks", "chunks", "embeddings", "kg_entities", "kg_edges", "facts", "kg_facts")
+                sql_to_run = single_sql
+                for tbl in _tenant_tables:
+                    sql_to_run = re.sub(
+                        rf"\b{tbl}\b",
+                        f"(SELECT * FROM {tbl} WHERE tenant_id = '{tenant_id}') AS {tbl}",
+                        sql_to_run,
+                        flags=re.IGNORECASE,
+                    )
+            else:
+                sql_to_run = single_sql
+
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
-                cursor = conn.execute(sql, params)
+                cursor = conn.execute(sql_to_run, params)
                 columns = [desc[0] for desc in cursor.description] if cursor.description else []
                 rows = cursor.fetchall()
                 results = [dict(zip(columns, row)) for row in rows]
@@ -1319,8 +1358,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 safe_close_db(conn)
         except Exception as e:
-            logger.warning("_handle_query: %s", e)
-            self._error(f"Query failed: {e}", 500)
+            logger.warning("_handle_query failed: %s", e)
+            self._error("Query execution failed", 500)
 
     # ── Categories ──────────────────────────────────────────────────────────
 
@@ -1602,20 +1641,24 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_kg_nodes(self, query_params: dict) -> None:
         try:
-            limit = int(query_params.get("limit", ["100"])[0])
+            try:
+                raw_limit = int(query_params.get("limit", ["100"])[0])
+                limit = max(1, min(raw_limit, 500))
+            except (ValueError, TypeError):
+                limit = 100
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
                 rows = conn.execute(
-                    "SELECT id, name, type, properties FROM kg_entities LIMIT ?",
+                    "SELECT id, name, entity_type FROM kg_entities LIMIT ?",
                     (limit,),
                 ).fetchall()
                 nodes = [
                     {
                         "id": r[0],
                         "name": r[1],
-                        "type": r[2],
-                        "properties": json.loads(r[3]) if r[3] else {}
+                        "type": r[2] or "entity",
+                        "properties": {}
                     }
                     for r in rows
                 ]
@@ -1628,7 +1671,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_kg_edges(self, query_params: dict) -> None:
         try:
-            limit = int(query_params.get("limit", ["100"])[0])
+            try:
+                raw_limit = int(query_params.get("limit", ["100"])[0])
+                limit = max(1, min(raw_limit, 500))
+            except (ValueError, TypeError):
+                limit = 100
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
@@ -2673,7 +2720,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             action = query_params.get("action", ["explore"])[0]
             start = query_params.get("start", [""])[0]
             edge_patterns = query_params.get("edge_patterns", [""])[0]
-            max_depth = int(query_params.get("max_depth", ["2"])[0])
+            try:
+                raw_depth = int(query_params.get("max_depth", ["2"])[0])
+                max_depth = max(1, min(raw_depth, 10))
+            except (ValueError, TypeError):
+                max_depth = 2
 
             from mcp_surface.mcp_kg import memory_facts_list, memory_graph_stats
             from mcp_surface.mcp_kg_traversal import memory_graph_traverse
@@ -2730,25 +2781,31 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 valid_args = {k: v for k, v in args.items() if k in sig.parameters}
 
             principal_id = getattr(self, "_principal_id", None)
-            if principal_id:
-                action = "write" if any(w in tool_name for w in ("save", "update", "delete", "organize", "drop")) else "read"
-                from infra.authorizer import mcp_authorize, log_authorization_decision
-                allowed = mcp_authorize(
+            tenant_id = getattr(self, "_tenant_id", "default")
+            _write_verbs = (
+                "save", "update", "delete", "organize", "drop", "rollback",
+                "edit", "record", "create", "note", "supersede", "restore",
+                "share", "coordinate", "curate", "profile", "skills",
+            )
+            action = "write" if any(w in tool_name for w in _write_verbs) else "read"
+            from infra.authorizer import mcp_authorize, log_authorization_decision
+            allowed = mcp_authorize(
+                principal_id=principal_id,
+                action=action,
+                resource="memory",
+                db_path=str(self.server.db_path),
+                tenant_id=tenant_id,
+            )
+            if not allowed:
+                log_authorization_decision(
                     principal_id=principal_id,
                     action=action,
                     resource="memory",
+                    allowed=False,
                     db_path=str(self.server.db_path),
                 )
-                if not allowed:
-                    log_authorization_decision(
-                        principal_id=principal_id,
-                        action=action,
-                        resource="memory",
-                        allowed=False,
-                        db_path=str(self.server.db_path),
-                    )
-                    self._error(f"Principal '{principal_id}' not authorized for '{action}' on 'memory'", 403)
-                    return
+                self._error(f"Principal '{principal_id or 'anonymous'}' not authorized for '{action}' on 'memory'", 403)
+                return
 
             result = tool_fn(**valid_args)
             if isinstance(result, str):

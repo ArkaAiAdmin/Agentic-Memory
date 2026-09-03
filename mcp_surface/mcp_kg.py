@@ -320,6 +320,10 @@ def memory_graph_insights(
     auth_err = _check_authorization("read", "memory")
     if auth_err:
         return auth_err
+    try:
+        sample_size = max(1, min(int(sample_size), 500))
+    except (ValueError, TypeError):
+        sample_size = 20
     from knowledge_graph import KG_ENABLED
 
     if not KG_ENABLED:
@@ -458,6 +462,10 @@ def memory_graph_evolution(since: str = "24h", limit: int = 5) -> str:
     auth_err = _check_authorization("read", "memory")
     if auth_err:
         return auth_err
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (ValueError, TypeError):
+        limit = 5
     try:
         from infra.db import open_db
         import json as _json
