@@ -15,7 +15,7 @@ Mechanism & Hardening:
    - live files in ts-sdk/dist/ (working tree)
    - git staged blobs via `git show :ts-sdk/dist/<path>` (closing staged-only blind spot).
 4. Compiler version verification: Verifies active `tsc` version against the pinned
-   dependency in `ts-sdk/package-lock.json` (5.9.3).
+   dependency in `ts-sdk/package-lock.json`.
 """
 
 from __future__ import annotations
@@ -49,20 +49,31 @@ def main() -> int:
         print("ERROR: ts-sdk/dist directory does not exist. Run 'npm --prefix ts-sdk run build'.", file=sys.stderr)
         return 1
 
-    # Resolve tsc binary: prefer pinned local node_modules, fall back to PATH
-    tsc_cmd = [str(LOCAL_TSC)] if LOCAL_TSC.is_file() else ["npx", "tsc"]
-
-    # Verify tsc version against lockfile
     expected_version = get_expected_tsc_version()
+    if not expected_version:
+        print("ERROR: Failed to read expected typescript version from ts-sdk/package-lock.json.", file=sys.stderr)
+        return 1
+
+    # Resolve tsc binary: prefer pinned local node_modules, fall back to version-pinned npx
+    if LOCAL_TSC.is_file():
+        tsc_cmd = [str(LOCAL_TSC)]
+    else:
+        tsc_cmd = ["npx", "--package", f"typescript@{expected_version}", "tsc"]
+
+    # Verify tsc version against lockfile (fail-closed)
     version_res = subprocess.run(tsc_cmd + ["--version"], cwd=REPO_ROOT, capture_output=True, text=True)
-    if version_res.returncode == 0:
-        actual_version = version_res.stdout.strip().replace("Version ", "")
-        if expected_version and actual_version != expected_version:
-            print(
-                f"ERROR: tsc compiler version mismatch: expected {expected_version} from package-lock.json, got {actual_version}",
-                file=sys.stderr,
-            )
-            return 1
+    if version_res.returncode != 0:
+        print(f"ERROR: Failed to run {tsc_cmd[0]} --version:\n{version_res.stderr or version_res.stdout}", file=sys.stderr)
+        return 1
+
+    actual_version = version_res.stdout.strip().replace("Version ", "")
+    if actual_version != expected_version:
+        print(
+            f"ERROR: tsc compiler version mismatch: expected {expected_version} from package-lock.json, got {actual_version}.\n"
+            f"Remediation: Run 'npm --prefix ts-sdk ci' to restore pinned dependencies.",
+            file=sys.stderr,
+        )
+        return 1
 
     # 1. Compile out-of-place to a temporary directory to avoid dirtying working tree on failure
     with tempfile.TemporaryDirectory(prefix="ts_sdk_drift_") as tmpdir:
@@ -157,7 +168,7 @@ def main() -> int:
             print(f"  {line}", file=sys.stderr)
         return 1
 
-    print("ts-sdk/dist is clean, fully built, and synchronized (disk, index, and tsc 5.9.3 verified).")
+    print(f"ts-sdk/dist is clean, fully built, and synchronized (disk, index, and tsc {actual_version} verified).")
     return 0
 
 
