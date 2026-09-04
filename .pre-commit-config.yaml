@@ -86,6 +86,13 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: ts-sdk-drift-check
+        name: ts-sdk-drift-check
+        description: Verify ts-sdk dist is tracked, compiled, and matches ts-sdk/src
+        entry: venv/bin/python scripts/check_ts_sdk_drift.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: agents-md-contract
         name: agents-md-contract
         description: "Rule 22/23 — AGENTS.md stays a stable contract: line budget, no volatile counts in prose, links resolve"

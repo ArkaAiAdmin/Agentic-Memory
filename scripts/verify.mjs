@@ -102,6 +102,7 @@ async function main() {
       steps: [
         { name: "Python Mypy (Kernel & Surface)", cmd: "./venv/bin/mypy", args: ["--config-file", "pyproject.toml"] },
         { name: "TypeScript Typecheck (IDE)", cmd: "pnpm", args: ["--dir", "ide", "typecheck"] },
+        { name: "TypeScript SDK Build & Dist Invariance", cmd: "./venv/bin/python", args: ["scripts/check_ts_sdk_drift.py"] },
       ],
     },
     {

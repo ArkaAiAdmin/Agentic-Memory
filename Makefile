@@ -53,7 +53,8 @@ verify-rules: ## Rule 16/17/18/22/23/24 guards: worktrees, TODO/secret scan, AGE
 	$(PYTHON) scripts/check_agents_md.py
 	$(PYTHON) scripts/doc_drift_check.py
 	$(PYTHON) scripts/verify_doc_meta.py
-	@echo "All rule guards pass (16, 17, 18, 22, 23, 24)."
+	$(PYTHON) scripts/check_ts_sdk_drift.py
+	@echo "All rule guards pass (16, 17, 18, 22, 23, 24, ts-sdk)."
 
 lint: ## Ruff lint check over entire codebase
 	$(PYTHON) -m ruff check . --config pyproject.toml

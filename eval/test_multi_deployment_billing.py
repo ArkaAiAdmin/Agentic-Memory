@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 import socket
@@ -320,9 +321,10 @@ def test_signup_provisions_memory_db(test_dirs):
     with tempfile.TemporaryDirectory() as td:
         mem_db = Path(td) / "memory.db"
         store.create_customer("cust_signup", "signup@example.com", "Test User")
+        default_port = inspect.signature(APIServer.__init__).parameters["port"].default
         store.create_deployment(
             "dep_signup", "cust_signup", "tenant_signup",
-            db_path=str(mem_db), api_base="http://127.0.0.1:9879",
+            db_path=str(mem_db), api_base=f"http://127.0.0.1:{default_port}",
         )
 
         dep = store.get_deployment("dep_signup")

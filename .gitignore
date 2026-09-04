@@ -5,6 +5,7 @@
 __pycache__/
 agentic_memory.egg-info/
 dist/
+!ts-sdk/dist/
 build/
 uv.lock
 venv/
