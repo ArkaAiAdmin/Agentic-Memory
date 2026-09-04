@@ -704,7 +704,7 @@ To test Stripe webhook integration locally with signature verification:
 The API server includes built-in rate limiting (if configured):
 
 ```bash
-export MEMORY_API_RATE_LIMIT=60  # requests per minute per IP
+export MEMORY_API_RATE_LIMIT=600  # requests per minute per IP/principal (default: 600; set to 0 to disable)
 ```
 
 ## Troubleshooting

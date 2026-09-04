@@ -452,6 +452,8 @@ class SyncConfig:
     listen_port: int = 9877
     peers: tuple = field(default_factory=tuple)
     interval_minutes: int = 5
+    allow_unauthenticated_loopback: bool = False
+    token_required: bool = True
 
 
 @dataclass(frozen=True)
@@ -462,6 +464,8 @@ class APIConfig:
     api_token: str = ""
     insecure_loopback: bool = False
     dashboard_address: str = "127.0.0.1"
+    strict_token: bool = False
+    rate_limit: int = 600
 
 
 @dataclass(frozen=True)
@@ -1451,6 +1455,20 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         interval_minutes=_b(
             "MEMORY_SYNC_INTERVAL_MINUTES", "sync.schedule.interval_minutes", 5, int, toml_data
         ),
+        allow_unauthenticated_loopback=_b(
+            "MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK",
+            "sync.allow_unauthenticated_loopback",
+            False,
+            bool,
+            toml_data,
+        ),
+        token_required=_b(
+            "MEMORY_SYNC_TOKEN_REQUIRED",
+            "sync.token_required",
+            True,
+            bool,
+            toml_data,
+        ),
     )
 
     # ---- api ----
@@ -1470,6 +1488,12 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         dashboard_address=_b(
             "MEMORY_DASHBOARD_ADDRESS", "api.dashboard_address", "127.0.0.1", str, toml_data
+        ),
+        strict_token=_b(
+            "MEMORY_API_STRICT_TOKEN", "api.strict_token", False, bool, toml_data
+        ),
+        rate_limit=_b(
+            "MEMORY_API_RATE_LIMIT", "api.rate_limit", 600, int, toml_data
         ),
     )
 

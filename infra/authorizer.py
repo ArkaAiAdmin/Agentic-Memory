@@ -19,14 +19,24 @@ Design principles:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 from infra.rbac import Principal, check_permission
 
 logger = logging.getLogger(__name__)
+
+
+def timing_safe_compare(a: str, b: str) -> bool:
+    """Constant-time string comparison immune to non-ASCII inputs and timing attacks."""
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+    try:
+        return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +137,7 @@ def resolve_principal(
     # return None so RBAC is not enforced.  The legacy token grants
     # full access (same as before RBAC existed).
     legacy_token = os.environ.get("MEMORY_API_TOKEN", "")
-    if legacy_token and token == legacy_token:
+    if legacy_token and timing_safe_compare(token, legacy_token):
         return None
 
     # --- Static config mapping (Phase 1 RBAC — no SSO) ---

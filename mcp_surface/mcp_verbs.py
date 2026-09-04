@@ -376,9 +376,12 @@ def memory_save(
     if not content or not content.strip():
         return _err(ErrorCode.INVALID_PARAMS, "content cannot be empty")
     try:
-        importance = max(1, min(5, int(importance)))
+        imp_val = int(importance)
+        if not (1 <= imp_val <= 5):
+            return _err(ErrorCode.INVALID_PARAMS, "importance must be an integer between 1 and 5")
+        importance = imp_val
     except (ValueError, TypeError):
-        importance = 3
+        return _err(ErrorCode.INVALID_PARAMS, "importance must be an integer between 1 and 5")
     try:
         from infra.idempotency import get_idempotent_result, set_idempotent_result
         if idempotency_key:
@@ -726,7 +729,10 @@ def memory_note(
             from save_pipeline import save_memory_auto, SaveValidationError
 
             try:
-                clamped_importance = max(1, min(5, int(importance)))
+                imp_val = int(importance)
+                if not (1 <= imp_val <= 5):
+                    return _err(ErrorCode.INVALID_PARAMS, "importance must be an integer between 1 and 5")
+                clamped_importance = imp_val
                 result = save_memory_auto(
                     content=content,
                     category=category or "lessons",

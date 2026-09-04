@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -250,8 +249,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if not token:
             self._error("Auth required: set MEMORY_API_TOKEN or request locally", 401)
             return False
-        import hmac
-        if not hmac.compare_digest(bearer, token):
+        from infra.authorizer import timing_safe_compare
+        if not timing_safe_compare(bearer, token):
             self._error("Invalid token", 401)
             return False
         # Resolve principal for downstream handlers (config-first, DB fallback)
@@ -340,9 +339,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             )
             return False
 
-        import hmac
+        from infra.authorizer import timing_safe_compare
 
-        if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], token):
+        if auth.startswith("Bearer ") and timing_safe_compare(auth[7:], token):
             self._resolve_ws_principal(auth[7:])
             return True
 
@@ -350,7 +349,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         ws_protocols = self.headers.get("Sec-WebSocket-Protocol", "")
         if ws_protocols:
             for candidate in (p.strip() for p in ws_protocols.split(",")):
-                if hmac.compare_digest(candidate, token):
+                if timing_safe_compare(candidate, token):
                     self._resolve_ws_principal(candidate)
                     self._ws_subprotocol = candidate
                     return True
@@ -365,8 +364,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _resolve_ws_principal(self, raw_token: str) -> None:
         """Resolve principal from a WS bearer token and store on self."""
+        from infra.authorizer import timing_safe_compare
         server_token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
-        if server_token and hmac.compare_digest(raw_token, server_token):
+        if server_token and timing_safe_compare(raw_token, server_token):
             self._principal_id = "legacy"
             self._principal = None
             return
@@ -881,7 +881,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
                 row = conn.execute(
-                    "SELECT id, content, tags, category, created_at, updated_at, deleted_at "
+                    "SELECT id, content, tags, category, created_at, updated_at, deleted_at, importance "
                     "FROM tenant_memories WHERE id = ?",
                     (note_id,),
                 ).fetchone()
@@ -903,6 +903,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "created_at": row[4],
                     "updated_at": row[5],
                     "deleted_at": row[6],
+                    "importance": row[7],
                 })
             finally:
                 safe_close_db(conn)
@@ -944,8 +945,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         # Validate the presented token against the same anchors _require_auth
         # trusts. Resolves a principal so the JWT can carry the identity.
         principal_id = None
+        from infra.authorizer import timing_safe_compare
         legacy = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
-        if legacy and token == legacy:
+        if legacy and timing_safe_compare(token, legacy):
             # Legacy token grants full access; mint a cookie without a bound
             # principal (downstream RBAC is not enforced for it, matching the
             # pre-RBAC behaviour).
@@ -968,7 +970,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 if entry:
                     principal_id = entry.partition(":")[-1]
 
-        if principal_id is None and not (legacy and token == legacy):
+        if principal_id is None and not (legacy and timing_safe_compare(token, legacy)):
             self._error("Invalid token", 403)
             return
 
@@ -1017,7 +1019,23 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             category = req.get("category", "sdk")
             is_global = req.get("is_global", False)
             pinned = req.get("pinned", False)
-            importance = req.get("importance", 3)
+            importance = 3
+            if "importance" in req:
+                try:
+                    imp_val = int(req["importance"])
+                    if not (1 <= imp_val <= 5):
+                        raise ValueError()
+                    importance = imp_val
+                except (ValueError, TypeError):
+                    self._write_json(
+                        {
+                            "error": "Error [INVALID_PARAMS]: importance must be an integer between 1 and 5",
+                            "code": "INVALID_PARAMS",
+                            "field": "importance",
+                        },
+                        400,
+                    )
+                    return
             title_slug = req.get("title_slug", "")
 
             # CHANGE 5: tenant write-path validation. The authenticated
@@ -1099,7 +1117,23 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             content = req.get("content")
             tags = req.get("tags")
             pinned = req.get("pinned")
-            importance = req.get("importance")
+            importance = None
+            if "importance" in req and req["importance"] is not None:
+                try:
+                    imp_val = int(req["importance"])
+                    if not (1 <= imp_val <= 5):
+                        raise ValueError()
+                    importance = imp_val
+                except (ValueError, TypeError):
+                    self._write_json(
+                        {
+                            "error": "Error [INVALID_PARAMS]: importance must be an integer between 1 and 5",
+                            "code": "INVALID_PARAMS",
+                            "field": "importance",
+                        },
+                        400,
+                    )
+                    return
 
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
@@ -2649,7 +2683,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         plan changes and cancellations.
         """
         import os
-        import json
         import stripe
 
         webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")

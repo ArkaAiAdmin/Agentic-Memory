@@ -1,23 +1,59 @@
 # Security Residuals & Risk Acceptance Ledger (B1–B13)
 
-This document formalizes the accepted security residuals and operational risk boundaries for `agentic-memory-ide` and the `agentic-memory` Python kernel. Every residual documented below has been analyzed against the threat model of a local desktop developer IDE and autonomous agent harness.
+This document formalizes the accepted security residuals, operational risk boundaries, and migration procedures for the `agentic-memory` Python kernel and its interaction with the `agentic-memory-ide` desktop harness.
 
 ---
 
-## Accepted Residuals Matrix
+## 1. Memory Kernel Residuals (B11–B13)
 
-| ID | Finding Ref | Domain | Severity | Residual Description & Rationale | Mitigations & Compensating Controls |
-|---|---|---|---|---|---|
-| **B1** | F1 | Native Process | Low-Medium | **Shell String Execution vs Argv:** While `run_command_argv` executes without a shell, `run_command` accepts a shell command string for developer workflows where pipelines (`\|`) or redirection (`>`) are required. Accepted by design for developer IDE workflows. | Mutating tool approval gate; `extractCommandString` pattern checks in policy guard middleware; sandbox root containment checks. |
-| **B2** | F2 | Native Process | Low | **Arbitrary Command Execution:** Autonomous coding agents execute CLI tools (compilers, linters, git, tests) by design. | Explicit user confirmation required for mutating commands; YOLO auto-approval mode is strictly opt-in and user-scoped. |
-| **B3** | F3 | Native FS | Low | **Temporary File Permissions:** Files created in temporary directories inherit standard user umask (typically `0644` or `0600`). In a single-user macOS environment, cross-user temp hijacking is bounded. | Temporary directory isolation via `/private/var/folders/` and `/tmp`; path traversal re-validation post-`create_dir_all` and atomic rename. |
-| **B4** | F4 | Process/PTY | Low | **Process Group Signaling PID Reuse:** Potential race condition where a child PID terminates and is reused by the OS before process group kill occurs. Accepted given standard 32-bit PID turnover rates on macOS. | Verified `libc::getpgid(pid) > 0` before sending negative PGID signal, with fallback to single PID termination. |
-| **B5** | F5 | Native Process | Low | **Shell-Quoted String Display Formatting:** Formatter functions produce quoted shell strings for display and UI logging. | Display-only formatting; never passed to `sh -c` or executed by the backend. |
-| **B6** | F7 | Environment | Low | **Environment Variable Inheritance:** Spawned child processes inherit the developer's ambient environment (`PATH`, development keys, config paths) by design for tool compatibility. | Critical IPC authentication tokens (`MEMORY_API_TOKEN`) are injected explicitly and scrubbed from general log output. |
-| **B7** | F9 | Memory/Buffer | Low-Medium | **Process Output Memory Buffering:** Large process stdout/stderr streams are buffered in memory before being sent to the frontend or LLM context. | Memory-capped output buffering (10MB max buffer with truncation notices); 1MB cap on process stdin writes (`MAX_STDIN_WRITE_BYTES`). |
-| **B8** | F10 | Lifecycle | Low | **Process Cleanup on Abnormal Crash:** If the IDE process is killed abruptly (`SIGKILL`), background child processes may briefly linger until OS init/launchd reaps them. | `AgentResourceRegistry` handles structured hierarchical teardown; Tauri `on_window_event` hook terminates active PTYs and spawned child processes on normal exit. |
-| **B9** | F12 | Native FS | Low | **Symlink Loop Traversal:** Malicious or circular symlink topologies could cause infinite recursion during directory scanning. | Bounded recursion depth in file tree walks; canonical target deduplication; three-anchor containment enforcement. |
-| **B10** | F13 | Process Table | Low | **Command Line Visibility:** Arguments of commands executed by the IDE are visible in the local OS process list (`ps`, Activity Monitor). | Standard OS-level behavior on developer workstations; sensitive API keys are passed via headers and environment rather than command-line flags. |
-| **B11** | Kernel Token | Auth | Low | **API Token Strength Warn-Only Default:** For local developer ease-of-use, weak tokens emit warnings on startup rather than aborting by default. | Production environments can enforce hard startup failure by setting `MEMORY_API_STRICT_TOKEN=1`. Constant-time comparison (`hmac.compare_digest`) used across REST and WebSocket. |
-| **B12** | Sync Plane | Auth | Low | **Loopback Sync Authentication Opt-Out:** Outbound multi-agent sync on `127.0.0.1:9880` enforces Bearer token authentication by default. | Unauthenticated loopback sync can be explicitly enabled for legacy local configurations via `MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1`. |
-| **B13** | CQRS Journal | Resilience | Low | **Write Journal Backlog Fail-Closed:** The CQRS write journal fails closed (`write_journal_fallback_sync = false`) by default when backlog capacity is exceeded, preserving crash consistency. | Optional synchronous fallback can be enabled in `memory.toml` (`write_journal_fallback_sync = true`) if data availability is preferred over strict queue order. |
+| ID | Domain | Severity | Residual Description & Rationale | Mitigations & Compensating Controls |
+|---|---|---|---|---|
+| **B11** | Auth / Token | Low | **API Token Strength Warn-Only Default:** For local developer convenience, short or weak API tokens log warnings on startup rather than aborting by default. | Production environments can enforce hard startup failure by setting `MEMORY_API_STRICT_TOKEN=1`. Timing attacks are mitigated across all REST, WebSocket, and sync handlers using UTF-8 byte-encoded constant-time comparison (`timing_safe_compare` via `hmac.compare_digest`) with non-ASCII error handling to prevent 500 crashes. |
+| **B12** | Sync Plane | Low | **Loopback Sync Authentication Opt-Out:** Outbound multi-agent sync on default bind `127.0.0.1:9877` (as well as peer ports like OPENCODE on `9878` and AMI on `9880`) enforces Bearer token authentication by default across all interfaces. | Unauthenticated loopback sync can be explicitly enabled for legacy local configurations via `MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1`. Non-loopback interfaces always refuse unauthenticated startup regardless of flags. |
+| **B13** | CQRS Journal | Low | **Write Journal Backlog Fail-Closed:** The CQRS write journal fails closed (`write_journal_fallback_sync = false`) by default when backlog capacity is exceeded, preserving crash consistency and strict queue ordering. | Optional synchronous fallback can be enabled in `memory.toml` (`write_journal_fallback_sync = true`) if data availability is preferred over strict queue order. |
+
+---
+
+## 2. Migration Guide & Operational Notes
+
+### A. Multi-Agent Sync Daemons (A9)
+- **Change:** As of the SEC-1 / A9 hardening, the sync server on `127.0.0.1:9877` (and peers on 9878/9880) enforces Bearer token authentication by default on loopback.
+- **Impact:** Unauthenticated scripts or background sync daemons will receive `401 Unauthorized` responses.
+- **Migration:**
+  - *Recommended:* Configure `MEMORY_SYNC_TOKEN` or `MEMORY_API_TOKEN` in the environment of all sync clients and send `Authorization: Bearer <token>`.
+  - *Opt-out (local dev only):* Set `MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1` on the sync listener to restore legacy unauthenticated loopback access.
+
+### B. REST API Rate Limit Restoration (A10)
+- **Change:** A default rate limit of 600 requests per minute (~10 req/s) is now active per client IP/principal.
+- **Impact:** High-throughput bulk ingestors or rapid automated test suites may encounter `429 Too Many Requests`.
+- **Migration:**
+  - *Bulk Ingestion:* Set `MEMORY_API_RATE_LIMIT=0` to completely disable rate limiting during bulk data loads.
+  - *Tuning:* Set `MEMORY_API_RATE_LIMIT=<N>` to adjust the allowable requests per minute.
+
+### C. CQRS Write Journal Backlog Exceptions (A10)
+- **Change:** With `write_journal_fallback_sync = false` (the default), writes reject when the async queue is full rather than silently falling back to synchronous database locking.
+- **Impact:** Callers will receive a structured error / `RuntimeError("Journal buffer full")` if write volume exceeds queue drainage capacity.
+- **Operational Handling:**
+  - Client applications and dashboards should catch this condition, apply backpressure, and retry with exponential backoff.
+  - If immediate persistence availability is preferred over queue ordering, enable synchronous fallback in `memory.toml`:
+    ```toml
+    [features]
+    write_journal_fallback_sync = true
+    ```
+
+---
+
+## 3. Desktop IDE Harness Residuals (B1–B10 Cross-Reference)
+
+The following residuals govern native OS capability primitives in the desktop IDE harness (`agentic-memory-ide`). For full technical rationales and IPC test fixtures, refer to `docs/SECURITY_RESIDUAL.md` in the `agentic-memory-ide` repository.
+
+- **B1 (Native Process):** Shell string execution accepted alongside argv for pipeline/redirection workflows; gated by mutating approval.
+- **B2 (Native Process):** Agent CLI tool execution accepted by design; gated by explicit user confirmation and scoped YOLO mode.
+- **B3 (Native FS):** Temp file permissions inherit OS user umask (`0644`/`0600`); mitigated by three-anchor sandboxing.
+- **B4 (Process/PTY):** Process group signaling PID reuse risk bounded by checking `libc::getpgid(pid) > 0` before negative PGID signaling with ESRCH check.
+- **B5 (Native Process):** Shell-quoted strings used strictly for UI display formatting, never passed to shell execution.
+- **B6 (Environment):** Child processes inherit developer environment; IPC authentication tokens are injected explicitly.
+- **B7 (Memory/Buffer):** Process output buffering capped at 10MB; stdin writes capped at 1MB (`MAX_STDIN_WRITE_BYTES`).
+- **B8 (Lifecycle):** Abnormal process crash mitigation managed via `AgentResourceRegistry` and window event hooks.
+- **B9 (Native FS):** Symlink loop traversal prevented via bounded recursion depth and canonical path deduplication.
+- **B10 (Process Table):** Command line visibility in OS process table accepted as standard developer OS behavior; secrets passed via headers/env.

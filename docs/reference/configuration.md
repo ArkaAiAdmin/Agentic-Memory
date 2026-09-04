@@ -84,10 +84,12 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK` | `False` | TOML: `sync.allow_unauthenticated_loopback=False` |
 | `MEMORY_SYNC_ENABLE_SERVER` | `False` | TOML: `sync.enable_server=True` |
 | `MEMORY_SYNC_INTERVAL_MINUTES` | `5` | TOML: `sync.schedule.interval_minutes=5` |
 | `MEMORY_SYNC_LISTEN_HOST` | `127.0.0.1` | TOML: `sync.listen_host=127.0.0.1` |
 | `MEMORY_SYNC_LISTEN_PORT` | `9877` | TOML: `sync.listen_port=9877` |
+| `MEMORY_SYNC_TOKEN_REQUIRED` | `True` | TOML: `sync.token_required=True` |
 
 ## API Server
 
@@ -99,6 +101,8 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 | `MEMORY_API_INSECURE_LOOPBACK` | `False` | TOML: `api.insecure_loopback=False` |
 | `MEMORY_API_LISTEN_HOST` | `127.0.0.1` | TOML: `api.listen_host=127.0.0.1` |
 | `MEMORY_API_LISTEN_PORT` | `9878` | TOML: `api.listen_port=9879` |
+| `MEMORY_API_RATE_LIMIT` | `600` | TOML: `api.rate_limit=600` |
+| `MEMORY_API_STRICT_TOKEN` | `False` |  |
 
 ## Write Pipeline
 
@@ -362,6 +366,8 @@ idle_unload_seconds = 1800              # MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECO
 enable_server = true                  # MEMORY_SYNC_ENABLE_SERVER — start HTTP sync server
 listen_host = "127.0.0.1"            # MEMORY_SYNC_LISTEN_HOST
 listen_port = 9877                    # MEMORY_SYNC_LISTEN_PORT — fallback if agent has no peer entry
+allow_unauthenticated_loopback = false # MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK — require token by default across all interfaces
+token_required = true                 # MEMORY_SYNC_TOKEN_REQUIRED — refuse to start without auth token
 
 [[sync.peers]]                        # OPENCODE workspace (port 9878)
 name = "OPENCODE"
@@ -460,6 +466,8 @@ listen_host = "127.0.0.1"              # MEMORY_API_LISTEN_HOST
 listen_port = 9879                      # MEMORY_API_LISTEN_PORT — 9879 to avoid colliding with the MCP sync server (9878)
 token = "am-local-stable-token-4555e819903acada182cc0dc40f1f6b3ae8a6c46914ff0783b4cca2c7286df29"  # MEMORY_API_TOKEN — stable local-dev bearer token (set explicitly so it survives restarts).
 insecure_loopback = false              # MEMORY_API_INSECURE_LOOPBACK — secure by default: all clients (including loopback) must provide Bearer token.
+strict_token = false                   # MEMORY_API_STRICT_TOKEN — refuse startup if token is weak or short
+rate_limit = 600                       # MEMORY_API_RATE_LIMIT — requests per minute per IP/principal (0 = disable)
 
 [embedding]
 # Embedding backend selection.

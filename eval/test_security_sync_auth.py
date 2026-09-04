@@ -24,8 +24,8 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
 
     def _make_handler(self, host="127.0.0.1", token_env="MEMORY_SYNC_TOKEN"):
         """Import fresh _SyncHandler and return an instance with the given host."""
-        # We patch the environment before importing/loading the module
-        with patch.dict(os.environ, {token_env: ""}, clear=False):
+        # We patch the environment before importing/loading the module, clearing both sync & api token
+        with patch.dict(os.environ, {token_env: "", "MEMORY_API_TOKEN": ""}, clear=False):
             # Force reimport to pick up patched env
             for mod in list(sys.modules):
                 if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):

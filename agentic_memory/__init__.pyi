@@ -49,6 +49,16 @@ class MemoryClient:
     ) -> SearchResults: ...
     def delete(self, note_id: str, hard: bool = False) -> bool: ...
     def restore(self, note_id: str) -> bool: ...
+    def update(
+        self,
+        note_id: str,
+        *,
+        content: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        pinned: Optional[bool] = None,
+        importance: Optional[int] = None,
+        tenant_id: Optional[str] = None,
+    ) -> bool: ...
     def get(self, note_id: str) -> Optional[MemoryResult]: ...
     def list(
         self,

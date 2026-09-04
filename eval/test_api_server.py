@@ -9,8 +9,6 @@ import sqlite3
 import sys
 import tempfile
 import time
-import urllib.request
-import urllib.error
 
 import pytest
 import unittest
@@ -21,7 +19,6 @@ INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
 from infra.memory_common import connection_pool
-from infra.db_migrations import run_schema_setup
 from infra.api_server import APIServer
 from agentic_memory.client import MemoryClient
 
@@ -56,6 +53,8 @@ class TestAPIServer(unittest.TestCase):
         cls.old_db_path = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(cls.db_path)
         os.environ["MEMORY_RERANKER_DISABLED"] = "true"
+        cls.old_journal = os.environ.get("MEMORY_WRITE_JOURNAL_ENABLED")
+        os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = "0"
 
         # Initialize database schema including migration 031 outbox events
         connection_pool.clear()
@@ -87,6 +86,10 @@ class TestAPIServer(unittest.TestCase):
         else:
             os.environ.pop("MEMORY_DB_PATH", None)
         os.environ.pop("MEMORY_RERANKER_DISABLED", None)
+        if cls.old_journal is not None:
+            os.environ["MEMORY_WRITE_JOURNAL_ENABLED"] = cls.old_journal
+        else:
+            os.environ.pop("MEMORY_WRITE_JOURNAL_ENABLED", None)
         import shutil
         shutil.rmtree(cls.tmp_dir, ignore_errors=True)
 
@@ -489,7 +492,7 @@ class TestAPIServer(unittest.TestCase):
         finally:
             # Clean up seeded test entities so shared-DB counts are not polluted
             with open_db(self.db_path, write=True) as conn:
-                conn.execute("DELETE FROM kg_entities WHERE name LIKE 'bulk_node_%'")
+                conn.execute("DELETE FROM kg_entities WHERE name LIKE 'bulk\\_node\\_%' ESCAPE '\\'")
 
     def test_resolve_db_path_anchor_containment(self):
         from mcp_surface.mcp_verbs import _resolve_db_path
@@ -540,7 +543,6 @@ class TestAPIServer(unittest.TestCase):
 
     def test_memory_note_importance_parameter(self):
         from mcp_surface.mcp_verbs import memory_note
-        import json
         # Update action with importance parameter
         note_id = "lessons/test-importance-note"
         res = memory_note(
@@ -550,6 +552,118 @@ class TestAPIServer(unittest.TestCase):
             importance=5,
         )
         self.assertNotIn("Error", res)
+
+
+    def test_like_escape_prevents_overmatching(self):
+        from infra.db import open_db
+        with open_db(self.db_path, write=True) as conn:
+            conn.execute(
+                "INSERT INTO kg_entities (name, entity_type) VALUES (?, ?)",
+                ("bulk_node_alpha", "concept"),
+            )
+            conn.execute(
+                "INSERT INTO kg_entities (name, entity_type) VALUES (?, ?)",
+                ("bulk-node-bravo", "concept"),
+            )
+            # Delete with ESCAPE '\' must match literal underscore and delete only bulk_node_alpha
+            conn.execute("DELETE FROM kg_entities WHERE name LIKE 'bulk\\_node\\_%' ESCAPE '\\'")
+
+            cur = conn.execute("SELECT name FROM kg_entities WHERE name IN ('bulk_node_alpha', 'bulk-node-bravo')")
+            remaining = [r[0] for r in cur.fetchall()]
+            self.assertEqual(remaining, ["bulk-node-bravo"])
+            conn.execute("DELETE FROM kg_entities WHERE name = 'bulk-node-bravo'")
+
+    def test_non_ascii_token_returns_401_not_500(self):
+        # timing_safe_compare should return 401 without throwing TypeError / 500 on unicode/non-ASCII
+        status, data = self._http_request(
+            "/api/v1/memories",
+            "GET",
+            headers={"Authorization": "Bearer café_token_ü_ñ"},
+        )
+        self.assertIn(status, (401, 403))
+        self.assertNotEqual(status, 500)
+
+    def test_importance_validation_roundtrip_and_rejection(self):
+        # 1. Negative importance rejected with structured INVALID_PARAMS envelope
+        status, data = self._http_request(
+            "/api/v1/memories",
+            "POST",
+            body={"content": "Importance test negative", "importance": -1},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(data.get("code"), "INVALID_PARAMS")
+
+        # 2. Overflow importance rejected
+        status, data = self._http_request(
+            "/api/v1/memories",
+            "POST",
+            body={"content": "Importance test overflow", "importance": 99},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(data.get("code"), "INVALID_PARAMS")
+
+        # 3. Valid importance 4 accepted and round-trips
+        status, data = self._http_request(
+            "/api/v1/memories",
+            "POST",
+            body={"content": "Importance test valid 4", "importance": 4, "category": "sdk"},
+        )
+        self.assertEqual(status, 201)
+        note_id = data["id"]
+
+        # Read-back fidelity
+        status, get_data = self._http_request(f"/api/v1/memories/{note_id}", "GET")
+        self.assertEqual(status, 200)
+        self.assertEqual(get_data.get("importance"), 4)
+
+        # 4. Patch with invalid importance rejected
+        status, patch_err = self._http_request(
+            f"/api/v1/memories/{note_id}",
+            "PATCH",
+            body={"importance": 0},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(patch_err.get("code"), "INVALID_PARAMS")
+
+        # 5. Patch with valid importance 5 succeeds
+        status, patch_ok = self._http_request(
+            f"/api/v1/memories/{note_id}",
+            "PATCH",
+            body={"importance": 5},
+        )
+        self.assertEqual(status, 200)
+
+        # Read-back after patch
+        status, get_patched = self._http_request(f"/api/v1/memories/{note_id}", "GET")
+        self.assertEqual(status, 200)
+        self.assertEqual(get_patched.get("importance"), 5)
+
+    def test_rate_limit_429_and_disable(self):
+        # Save original rate limit
+        orig_limit = getattr(self.server, "rate_limit", 600)
+        orig_buckets = getattr(self.server, "_rate_buckets", {})
+        try:
+            # Set rate limit to 2
+            self.server.rate_limit = 2
+            self.server._rate_buckets = {}
+
+            s1, _ = self._http_request("/api/v1/memories", "GET")
+            s2, _ = self._http_request("/api/v1/memories", "GET")
+            s3, data3 = self._http_request("/api/v1/memories", "GET")
+            self.assertEqual(s1, 200)
+            self.assertEqual(s2, 200)
+            self.assertEqual(s3, 429)
+            self.assertEqual(data3.get("error"), "Rate limit exceeded")
+
+            # Disable rate limit by setting to 0
+            self.server.rate_limit = 0
+            self.server._rate_buckets = {}
+            for _ in range(5):
+                s, _ = self._http_request("/api/v1/memories", "GET")
+                self.assertEqual(s, 200)
+        finally:
+            self.server.rate_limit = orig_limit
+            self.server._rate_buckets = orig_buckets
 
 
 if __name__ == "__main__":

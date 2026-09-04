@@ -256,6 +256,59 @@ class MemoryClient:
 
         return restore_note(str(self._db_path), note_id, tenant_id=tenant_id)
 
+    def update(
+        self,
+        note_id: str,
+        *,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        pinned: bool | None = None,
+        importance: int | None = None,
+        tenant_id: str | None = None,
+    ) -> bool:
+        """Update fields of an existing memory, scoped to a tenant."""
+        if tenant_id is None:
+            tenant_id = _resolve_tenant()
+        if importance is not None and not (1 <= int(importance) <= 5):
+            raise ValidationError("Importance must be between 1 and 5")
+
+        updates: list[str] = []
+        params: list[Any] = []
+
+        if content is not None:
+            if not content.strip():
+                raise ValidationError("Content must be non-empty")
+            updates.append("content = ?")
+            params.append(content)
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags) if isinstance(tags, list) else str(tags))
+        if pinned is not None:
+            updates.append("pinned = ?")
+            params.append(1 if pinned else 0)
+        if importance is not None:
+            updates.append("importance = ?")
+            params.append(int(importance))
+
+        if not updates:
+            return True
+
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        updates.append("updated_at = ?")
+        params.append(now)
+
+        params.extend([note_id, tenant_id])
+
+        sql = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL"
+        conn = get_db_connection(self._db_path)
+        try:
+            cur = conn.execute(sql, params)
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            safe_close_db(conn)
+
     def get(self, note_id: str, *, tenant_id: str = "default") -> MemoryResult | None:
         """Retrieve a single memory by note ID, scoped to a tenant."""
         conn = get_db_connection(self._db_path)

@@ -237,19 +237,23 @@ class _SyncHandler(BaseHTTPRequestHandler):
     def _require_auth(self) -> bool:
         """Bearer token check for mutating endpoints.
 
-        SEC-1 fix: when ``MEMORY_SYNC_TOKEN`` is unset, deny access on
-        non-loopback interfaces (prevents accidental exposure).  Loopback
-        (the default ``127.0.0.1:9877``) is allowed without a token so
-        local development workflows keep working out of the box.
-
-        .. SECURITY NOTE: The loopback auth-free default is intentional
-        for local dev convenience but MUST be overridden in production
-        by setting MEMORY_SYNC_TOKEN.  Any non-loopback peer without a
-        token is always rejected.
+        SEC-1 / A9 hardening: token authentication is required by default
+        across all interfaces, including loopback (127.0.0.1:9877). Local
+        loopback unauthenticated access is only permitted when explicitly opted
+        into via MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1.
         """
         peer = getattr(self, "host", None) or getattr(self, "client_address", ("127.0.0.1",))[0]
-        if not SYNC_AUTH_TOKEN:
-            if not (_is_loopback(peer) and _ALLOW_UNAUTH_LOOPBACK):
+        effective_token = (
+            os.environ.get("MEMORY_SYNC_TOKEN", "").strip()
+            or os.environ.get("MEMORY_API_TOKEN", "").strip()
+            or SYNC_AUTH_TOKEN
+        )
+        allow_unauth = (
+            os.environ.get("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK", "").lower() in ("1", "true", "yes", "on")
+            or _ALLOW_UNAUTH_LOOPBACK
+        )
+        if not effective_token:
+            if not (_is_loopback(peer) and allow_unauth):
                 logger.warning(
                     "sync_server: auth rejected (no token configured, peer=%s): "
                     "401",
@@ -270,8 +274,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._error("Authorization required: Bearer <token>", 401)
             return False
         token = auth[7:]
-        import hmac as _hmac
-        if not _hmac.compare_digest(token or '', SYNC_AUTH_TOKEN or ''):
+        from infra.authorizer import timing_safe_compare
+        if not timing_safe_compare(token or '', effective_token or ''):
             logger.warning(
                 "sync_server: auth rejected (invalid token, peer=%s): 403",
                 peer,
@@ -1657,15 +1661,37 @@ class SyncServer:
                 "TLS env vars).",
                 self.host,
             )
-        if not SYNC_AUTH_TOKEN and not _is_loopback(self.host):
+        effective_token = (
+            os.environ.get("MEMORY_SYNC_TOKEN", "").strip()
+            or os.environ.get("MEMORY_API_TOKEN", "").strip()
+            or SYNC_AUTH_TOKEN
+        )
+        allow_unauth = (
+            os.environ.get("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK", "").lower() in ("1", "true", "yes", "on")
+            or _ALLOW_UNAUTH_LOOPBACK
+        )
+        token_required_env = os.environ.get("MEMORY_SYNC_TOKEN_REQUIRED", "")
+        if token_required_env:
+            token_required = token_required_env.lower() in ("1", "true", "yes", "on")
+        else:
+            token_required = not allow_unauth
+
+        # Non-loopback MUST ALWAYS require token authentication regardless of TOKEN_REQUIRED=0
+        if not _is_loopback(self.host):
+            token_required = True
+
+        if not effective_token and not _is_loopback(self.host):
             logger.error(
                 "sync_server: MEMORY_SYNC_TOKEN is required when bound to "
-                "non-loopback %s. All mutating endpoints are open. Set the "
-                "env var or bind to 127.0.0.1.",
+                "non-loopback %s. Refusing to start without authentication.",
                 self.host,
             )
-        # SEC-1 / A9 hardening: token is required by default.
-        if _TOKEN_REQUIRED and not SYNC_AUTH_TOKEN:
+            self._server.server_close()
+            self._server = None
+            return False
+
+        # SEC-1 / A9 hardening: token is required by default across all interfaces.
+        if token_required and not effective_token:
             logger.error(
                 "sync_server: Authentication token is required. Refusing to start "
                 "without authentication. Set MEMORY_SYNC_TOKEN or MEMORY_API_TOKEN, "
@@ -1690,8 +1716,6 @@ class SyncServer:
             )
 
         # Bootstrap mDNS advertiser/browser and gossip client if discovery is enabled
-        import os
-
         enable_discovery = self.discover or os.environ.get(
             "MEMORY_SYNC_DISCOVER", ""
         ).strip().lower() in ("1", "true", "yes")
