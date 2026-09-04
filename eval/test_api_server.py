@@ -837,27 +837,39 @@ class TestAPIServer(unittest.TestCase):
                 server.server_close()
 
         # Invalid rate window falls back safely to 60 without raising
-        with patch.dict(os.environ, {"MEMORY_API_RATE_WINDOW": "invalid_window"}, clear=False):
-            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
-            try:
-                self.assertEqual(server.rate_window, 60)
-            finally:
-                server.server_close()
+        for invalid_window in ("invalid_window", "garbage_not_int", "not_a_number", "-"):
+            with patch.dict(os.environ, {"MEMORY_API_RATE_WINDOW": invalid_window}, clear=False):
+                server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
+                try:
+                    self.assertEqual(server.rate_window, 60)
+                finally:
+                    server.server_close()
 
-        # Strict token: weak token with MEMORY_API_STRICT_TOKEN=1 raises ValueError
-        with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": "1"}, clear=False):
-            with self.assertRaises(ValueError):
-                APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
-
-        # Weak token with MEMORY_API_STRICT_TOKEN=0 warns instead of raising
+        # Strict token precedence:
+        # 1. Env MEMORY_API_STRICT_TOKEN=0 overrides config strict_token=True (warns instead of raising)
         with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": "0"}, clear=False):
-            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
-            try:
-                self.assertEqual(server.token, "short")
-            finally:
-                server.server_close()
+            with patch("infra.config.get_config") as mock_get_config:
+                mock_cfg = MagicMock()
+                mock_cfg.api.strict_token = True
+                mock_cfg.api.rate_limit = 600
+                mock_get_config.return_value = mock_cfg
+                server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
+                try:
+                    self.assertEqual(server.token, "short")
+                finally:
+                    server.server_close()
 
-        # Weak token with strict_token=True in config raises ValueError when env unset
+        # 2. Env MEMORY_API_STRICT_TOKEN=1 overrides config strict_token=False (raises ValueError)
+        with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": "1"}, clear=False):
+            with patch("infra.config.get_config") as mock_get_config:
+                mock_cfg = MagicMock()
+                mock_cfg.api.strict_token = False
+                mock_cfg.api.rate_limit = 600
+                mock_get_config.return_value = mock_cfg
+                with self.assertRaises(ValueError):
+                    APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
+
+        # 3. Weak token with strict_token=True in config raises ValueError when env is unset
         with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": ""}, clear=False):
             with patch("infra.config.get_config") as mock_get_config:
                 mock_cfg = MagicMock()
@@ -866,6 +878,19 @@ class TestAPIServer(unittest.TestCase):
                 mock_get_config.return_value = mock_cfg
                 with self.assertRaises(ValueError):
                     APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
+
+        # 4. Weak token with strict_token=False in config does not raise when env is unset
+        with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": ""}, clear=False):
+            with patch("infra.config.get_config") as mock_get_config:
+                mock_cfg = MagicMock()
+                mock_cfg.api.strict_token = False
+                mock_cfg.api.rate_limit = 600
+                mock_get_config.return_value = mock_cfg
+                server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
+                try:
+                    self.assertEqual(server.token, "short")
+                finally:
+                    server.server_close()
 
     def test_categories_tenant_isolation(self):
         conn = sqlite3.connect(str(self.db_path))
@@ -899,6 +924,30 @@ class TestAPIServer(unittest.TestCase):
         categories_beta = data_beta.get("categories", [])
         self.assertIn("cat_beta", categories_beta)
         self.assertNotIn("cat_alpha", categories_beta)
+
+        # Cross-tenant direct memory access returns 404 (isolation beyond aggregate categories listing)
+        status, data = self._http_request("/api/v1/memories/mem-cat-1", headers={"X-Tenant-ID": "tenant_beta"})
+        self.assertEqual(status, 404)
+        self.assertIn("not found", data.get("error", "").lower())
+
+        status, data = self._http_request("/api/v1/memories/mem-cat-2", headers={"X-Tenant-ID": "tenant_alpha"})
+        self.assertEqual(status, 404)
+        self.assertIn("not found", data.get("error", "").lower())
+
+        # Non-existent memory returns 404
+        status, data = self._http_request("/api/v1/memories/nonexistent-cat-mem", headers={"X-Tenant-ID": "tenant_alpha"})
+        self.assertEqual(status, 404)
+        self.assertIn("not found", data.get("error", "").lower())
+
+        # Soft-deleted memory returns 410 Gone
+        status, data = self._http_request("/api/v1/memories/mem-cat-3", headers={"X-Tenant-ID": "tenant_alpha"})
+        self.assertEqual(status, 410)
+        self.assertIn("soft-deleted", data.get("error", "").lower())
+
+        # Empty categories for tenant without memories returns 200 with empty list
+        status, data_empty = self._http_request("/api/v1/memories/categories", headers={"X-Tenant-ID": "tenant_empty"})
+        self.assertEqual(status, 200)
+        self.assertEqual(data_empty.get("categories"), [])
 
     def test_tools_call_tenant_injection(self):
         from unittest.mock import patch
@@ -955,6 +1004,87 @@ class TestAPIServer(unittest.TestCase):
             )
             self.assertEqual(status, 200)
             self.assertEqual(received_kwargs.get("tenant_id"), "default")
+
+    def test_non_admin_spoofed_header_write_denied(self):
+        """Verify that a non-admin principal sending a spoofed X-Tenant-ID header
+        for a write or delete operation is denied with HTTP 403 by mcp_authorize containment."""
+        from unittest.mock import patch
+        import mcp_surface.mcp_tools as tools
+
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            # Bind test-agent to tenant_alpha without any cross-tenant admin role
+            conn.execute("INSERT OR REPLACE INTO principals (id, kind, tenant_id, display_name) VALUES ('test-agent', 'agent', 'tenant_alpha', 'Test Agent')")
+            conn.execute("DELETE FROM role_bindings WHERE principal_id = 'test-agent'")
+            conn.execute("INSERT OR IGNORE INTO roles (id, name, tenant_id) VALUES (888, 'memory:writer', 'tenant_alpha')")
+            conn.execute("INSERT OR IGNORE INTO policies (role_id, resource, action) VALUES (888, 'memory', 'write')")
+            conn.execute("INSERT OR REPLACE INTO role_bindings (principal_id, role_id) VALUES ('test-agent', 888)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        def dummy_save(*args, **kwargs):
+            return json.dumps({"id": "mem-dummy-1", "status": "saved"})
+
+        try:
+            with patch.object(tools, "memory_save", dummy_save):
+                # 1. Non-admin principal sends spoofed X-Tenant-ID header -> denied with 403 by mcp_authorize
+                status, data = self._http_request(
+                    "/api/v1/tools/call",
+                    method="POST",
+                    body={
+                        "tool": "memory_save",
+                        "arguments": {
+                            "content": "Malicious cross-tenant save attempt",
+                        },
+                    },
+                    headers={"X-Tenant-ID": "victim_tenant"},
+                )
+                self.assertEqual(status, 403)
+                self.assertIn("not authorized for 'write' on 'memory'", data.get("error", ""))
+
+                # 2. Legitimate write within principal's own tenant (tenant_alpha) is allowed
+                status, data = self._http_request(
+                    "/api/v1/tools/call",
+                    method="POST",
+                    body={
+                        "tool": "memory_save",
+                        "arguments": {
+                            "content": "Legitimate save in own tenant",
+                        },
+                    },
+                    headers={"X-Tenant-ID": "tenant_alpha"},
+                )
+                self.assertEqual(status, 200)
+
+                # 3. Create a memory in tenant_alpha and verify cross-tenant write via PATCH with victim_tenant is denied with 404
+                status_create, data_create = self._http_request(
+                    "/api/v1/memories",
+                    method="POST",
+                    body={"content": "Alpha memory for scoping test"},
+                    headers={"X-Tenant-ID": "tenant_alpha"},
+                )
+                self.assertEqual(status_create, 201)
+                created_id = data_create["id"]
+
+                status_patch, data_patch = self._http_request(
+                    f"/api/v1/memories/{created_id}",
+                    method="PATCH",
+                    body={"content": "Attempted cross-tenant overwrite"},
+                    headers={"X-Tenant-ID": "victim_tenant"},
+                )
+                self.assertEqual(status_patch, 404)
+                self.assertIn("not found", data_patch.get("error", "").lower())
+        finally:
+            conn = sqlite3.connect(str(self.db_path))
+            try:
+                conn.execute("DELETE FROM role_bindings WHERE principal_id = 'test-agent'")
+                conn.execute("DELETE FROM roles WHERE id = 888")
+                conn.execute("DELETE FROM policies WHERE role_id = 888")
+                conn.execute("DELETE FROM principals WHERE id = 'test-agent'")
+                conn.commit()
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":

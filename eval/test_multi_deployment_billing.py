@@ -322,7 +322,7 @@ def test_signup_provisions_memory_db(test_dirs):
         store.create_customer("cust_signup", "signup@example.com", "Test User")
         store.create_deployment(
             "dep_signup", "cust_signup", "tenant_signup",
-            db_path=str(mem_db), api_base="http://127.0.0.1:9878",
+            db_path=str(mem_db), api_base="http://127.0.0.1:9879",
         )
 
         dep = store.get_deployment("dep_signup")
