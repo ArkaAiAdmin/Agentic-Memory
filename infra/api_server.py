@@ -271,6 +271,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._tenant_id = "default"
         return True
 
+    def _resolve_tenant_id(self) -> str:
+        """Resolve the authoritative tenant ID for the current authenticated request."""
+        return (
+            getattr(self, "_tenant_id", None)
+            or getattr(getattr(self, "_principal", None), "tenant_id", None)
+            or "default"
+        )
+
     def _require_auth_ws(self) -> bool:
         """Auth check for WebSocket upgrades.
 
@@ -881,11 +889,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
-                _principal_tenant = (
-                    getattr(self, "_tenant_id", None)
-                    or (getattr(getattr(self, "_principal", None), "tenant_id", None))
-                    or "default"
-                )
+                _principal_tenant = self._resolve_tenant_id()
                 row = conn.execute(
                     "SELECT id, content, tags, category, created_at, updated_at, deleted_at, importance "
                     "FROM memories WHERE id = ? AND tenant_id = ?",
@@ -1041,18 +1045,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 importance = imp_raw
             title_slug = req.get("title_slug", "")
 
-            # CHANGE 5: tenant write-path validation. The authenticated
-            # principal's tenant is authoritative; it is threaded through to
-            # the save pipeline so the row is scoped to the principal's tenant
-            # (the pipeline refuses to re-derive a different tenant).
-            _principal_tenant = "default"
-            try:
-                if getattr(self, "_principal", None) is not None:
-                    _principal_tenant = getattr(
-                        self._principal, "tenant_id", "default"
-                    ) or "default"
-            except Exception:
-                pass
+            _principal_tenant = self._resolve_tenant_id()
 
             # Idempotency support: check X-Idempotency-Key header or body field
             idempotency_key = (
@@ -1135,11 +1128,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     return
                 importance = imp_raw
 
-            _principal_tenant = (
-                getattr(self, "_tenant_id", None)
-                or (getattr(getattr(self, "_principal", None), "tenant_id", None))
-                or "default"
-            )
+            if content is None and tags is None and pinned is None and importance is None:
+                self._error("No fields provided to update", 400)
+                return
+
+            _principal_tenant = self._resolve_tenant_id()
 
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
@@ -1192,7 +1185,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     or os.environ.get("MEMORY_AGENT_ID", "")
                     or "ami"
                 )
-                tenant_id = getattr(self, "_tenant_id", None) or "default"
+                tenant_id = self._resolve_tenant_id()
             with temporary_agent_context(principal_id):
                 client = MemoryClient(db_path=self.server.db_path)
                 success = client.delete(note_id, tenant_id=tenant_id)
@@ -1421,7 +1414,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         logger.warning("Failed to drop pre-existing temp view %s: %s", tbl, drop_err)
 
                 if not is_admin:
-                    tenant_id = getattr(self, "_tenant_id", None) or "default"
+                    tenant_id = self._resolve_tenant_id()
                     if not re.match(r"^[a-zA-Z0-9_\-]+$", tenant_id):
                         self._error("Invalid tenant ID format", 400)
                         return
@@ -2984,7 +2977,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 valid_args = {k: v for k, v in args.items() if k in sig.parameters}
 
             principal_id = getattr(self, "_principal_id", None)
-            tenant_id = getattr(self, "_tenant_id", "default")
+            tenant_id = self._resolve_tenant_id()
             action = self._classify_tool_action(tool_name, valid_args)
             from infra.authorizer import mcp_authorize, log_authorization_decision
             allowed = mcp_authorize(
@@ -3233,8 +3226,24 @@ class APIServer(ThreadingHTTPServer):
         # MEMORY_API_RATE_WINDOW (seconds, default 60). Defaults to 600 req/min (10 req/s).
         default_rate_limit = cfg_api.rate_limit if cfg_api is not None else 600
         env_rate_limit = os.environ.get("MEMORY_API_RATE_LIMIT")
-        self.rate_limit = int(env_rate_limit) if env_rate_limit is not None and env_rate_limit.strip() else default_rate_limit
-        self.rate_window = int(os.environ.get("MEMORY_API_RATE_WINDOW", "60") or "60")
+        if env_rate_limit is not None and env_rate_limit.strip():
+            try:
+                self.rate_limit = int(env_rate_limit.strip())
+            except ValueError:
+                logger.warning("Invalid MEMORY_API_RATE_LIMIT=%r; falling back to %s", env_rate_limit, default_rate_limit)
+                self.rate_limit = default_rate_limit
+        else:
+            self.rate_limit = default_rate_limit
+
+        env_rate_window = os.environ.get("MEMORY_API_RATE_WINDOW")
+        if env_rate_window is not None and env_rate_window.strip():
+            try:
+                self.rate_window = int(env_rate_window.strip())
+            except ValueError:
+                logger.warning("Invalid MEMORY_API_RATE_WINDOW=%r; falling back to 60", env_rate_window)
+                self.rate_window = 60
+        else:
+            self.rate_window = 60
         self._rate_buckets: Dict[str, list[float]] = {}
         self._rate_lock = threading.Lock()
 
@@ -3523,7 +3532,7 @@ def start_server_from_config(db_path: str | Path) -> Optional[APIServer]:
         db_path=db_path,
         agent_id=agent_id,
         host=getattr(cfg, "api_listen_host", "127.0.0.1"),
-        port=getattr(cfg, "api_listen_port", 9878),
+        port=getattr(cfg, "api_listen_port", 9879),
         token=getattr(cfg, "api_token", ""),
         insecure_loopback=getattr(cfg, "api_insecure_loopback", False),
     )

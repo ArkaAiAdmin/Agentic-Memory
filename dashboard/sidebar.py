@@ -213,7 +213,7 @@ def render_sidebar():
                     pass
             st.session_state.pop("authenticated", None)
             st.session_state.api_client = ApiClient(
-                base_url=os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9878"),
+                base_url=os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879"),
                 token=os.environ.get("MEMORY_API_TOKEN", ""),
             )
             st.rerun()

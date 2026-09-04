@@ -100,7 +100,7 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 | `MEMORY_API_ENABLE_SERVER` | `False` | TOML: `api.enable_server=False` |
 | `MEMORY_API_INSECURE_LOOPBACK` | `False` | TOML: `api.insecure_loopback=False` |
 | `MEMORY_API_LISTEN_HOST` | `127.0.0.1` | TOML: `api.listen_host=127.0.0.1` |
-| `MEMORY_API_LISTEN_PORT` | `9878` | TOML: `api.listen_port=9878` |
+| `MEMORY_API_LISTEN_PORT` | `9879` | TOML: `api.listen_port=9879` |
 | `MEMORY_API_RATE_LIMIT` | `600` | TOML: `api.rate_limit=600` |
 | `MEMORY_API_STRICT_TOKEN` | `False` |  |
 
@@ -463,7 +463,7 @@ default = 600                           # catch-all for tools without an explici
 # REST & WebSocket API Server settings.
 enable_server = false                   # MEMORY_API_ENABLE_SERVER — start API server
 listen_host = "127.0.0.1"              # MEMORY_API_LISTEN_HOST
-listen_port = 9878                      # MEMORY_API_LISTEN_PORT — default port for REST & WebSocket API server
+listen_port = 9879                      # MEMORY_API_LISTEN_PORT — 9879 to avoid colliding with the MCP sync server (9878)
 token = "am-local-stable-token-4555e819903acada182cc0dc40f1f6b3ae8a6c46914ff0783b4cca2c7286df29"  # MEMORY_API_TOKEN — stable local-dev bearer token (set explicitly so it survives restarts).
 insecure_loopback = false              # MEMORY_API_INSECURE_LOOPBACK — secure by default: all clients (including loopback) must provide Bearer token.
 strict_token = false                   # MEMORY_API_STRICT_TOKEN — refuse startup if token is weak or short

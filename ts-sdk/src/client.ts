@@ -5,7 +5,7 @@ export class MemoryClient {
   private token: string;
 
   constructor(options: { baseUrl?: string; token?: string } = {}) {
-    this.baseUrl = (options.baseUrl || 'http://127.0.0.1:9878').replace(/\/$/, '');
+    this.baseUrl = (options.baseUrl || 'http://127.0.0.1:9879').replace(/\/$/, '');
     this.token = options.token || '';
   }
 

@@ -11,7 +11,7 @@ export class StreamingClient {
   private reconnectInterval: number = 1000;
 
   constructor(options: { baseUrl?: string; token?: string } = {}) {
-    const base = options.baseUrl || 'http://127.0.0.1:9878';
+    const base = options.baseUrl || 'http://127.0.0.1:9879';
     this.wsUrl = base.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws';
     this.token = options.token || '';
   }

@@ -1075,7 +1075,7 @@ def api_server_main() -> None:
 
     cfg = get_config()
     host = parsed.host or getattr(cfg, "api_listen_host", "127.0.0.1")
-    port = parsed.port if parsed.port is not None else getattr(cfg, "api_listen_port", 9878)
+    port = parsed.port if parsed.port is not None else getattr(cfg, "api_listen_port", 9879)
     api_token = getattr(cfg, "api_token", "") or os.environ.get("MEMORY_API_TOKEN", "")
     api_insecure_loopback = getattr(cfg, "api_insecure_loopback", False)
 

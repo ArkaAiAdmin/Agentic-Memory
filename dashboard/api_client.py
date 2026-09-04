@@ -15,7 +15,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BASE = "http://127.0.0.1:9878"
+_DEFAULT_BASE = "http://127.0.0.1:9879"
 
 
 def resolve_api_token(memory_dir: str | None = None) -> str:

@@ -296,7 +296,15 @@ class MemoryClient:
             params.append(int(importance))
 
         if not updates:
-            return True
+            conn = get_db_connection(self._db_path)
+            try:
+                row = conn.execute(
+                    "SELECT 1 FROM memories WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
+                    (note_id, tenant_id),
+                ).fetchone()
+                return row is not None
+            finally:
+                safe_close_db(conn)
 
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()

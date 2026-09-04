@@ -18,7 +18,7 @@ This document formalizes the accepted security residuals, operational risk bound
 
 ### A. Multi-Agent Sync Daemons (A9)
 - **Change:** As of the SEC-1 / A9 hardening, the sync server on `127.0.0.1:9877` (and peers on 9878/9880) enforces Bearer token authentication by default across all interfaces, including loopback.
-- **Impact:** Mutating requests without valid authentication are rejected: `401 Unauthorized` when the `Authorization: Bearer <token>` header is missing or no token is configured on a non-loopback listener, and `403 Forbidden` when an invalid token is provided.
+- **Impact (Sync-Plane Specific):** Mutating requests to the sync server without valid authentication are rejected: `401 Unauthorized` when the `Authorization: Bearer <token>` header is missing or no token is configured on a non-loopback listener, and `403 Forbidden` when an invalid token is provided. (Note: The REST API plane at `infra/api_server.py` returns `401 Unauthorized` for both missing and invalid tokens).
 - **Migration:**
   - *Recommended:* Configure `MEMORY_SYNC_TOKEN` or `MEMORY_API_TOKEN` in the environment of all sync clients and send `Authorization: Bearer <token>`.
   - *Opt-out (local dev only):* Set `MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1` (or `MEMORY_SYNC_TOKEN_REQUIRED=0`) on the sync listener to restore legacy unauthenticated loopback access. **Nuance:** This opt-out strictly applies to loopback interfaces (`127.0.0.1`, `::1`); remote/non-loopback interfaces always refuse unauthenticated startup and reject requests regardless of flags.

@@ -460,7 +460,7 @@ class SyncConfig:
 class APIConfig:
     enable_server: bool = False
     listen_host: str = "127.0.0.1"
-    listen_port: int = 9878
+    listen_port: int = 9879
     api_token: str = ""
     insecure_loopback: bool = False
     dashboard_address: str = "127.0.0.1"
@@ -1480,7 +1480,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_API_LISTEN_HOST", "api.listen_host", "127.0.0.1", str, toml_data
         ),
         listen_port=_b(
-            "MEMORY_API_LISTEN_PORT", "api.listen_port", 9878, int, toml_data
+            "MEMORY_API_LISTEN_PORT", "api.listen_port", 9879, int, toml_data
         ),
         api_token=_b("MEMORY_API_TOKEN", "api.token", "", str, toml_data),
         insecure_loopback=_b(

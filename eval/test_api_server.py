@@ -702,6 +702,124 @@ class TestAPIServer(unittest.TestCase):
             self.server.rate_limit = orig_limit
             self.server._rate_buckets = orig_buckets
 
+    def test_tenant_isolation_get_and_patch(self):
+        client = MemoryClient(db_path=self.db_path)
+        note_alpha = client.save(content="Alpha secret content", tenant_id="tenant_alpha")
+        note_beta = client.save(content="Beta normal content", tenant_id="default")
+
+        # 1. Default tenant GET note_alpha must 404 (cross-tenant read blocked)
+        status_get, data_get = self._http_request(f"/api/v1/memories/{note_alpha}", "GET")
+        self.assertEqual(status_get, 404)
+        self.assertIn("not found", data_get.get("error", "").lower())
+
+        # 2. Default tenant PATCH note_alpha must 404 (cross-tenant write blocked)
+        status_patch, data_patch = self._http_request(
+            f"/api/v1/memories/{note_alpha}",
+            "PATCH",
+            body={"content": "Tampered by default tenant"},
+        )
+        self.assertEqual(status_patch, 404)
+        self.assertIn("not found", data_patch.get("error", "").lower())
+
+        # Verify note_alpha was NOT modified in the database
+        res_alpha = client.get(note_alpha, tenant_id="tenant_alpha")
+        self.assertIsNotNone(res_alpha)
+        self.assertEqual(res_alpha.content, "Alpha secret content")
+
+        # Verify client.get across tenants returns None
+        self.assertIsNone(client.get(note_alpha, tenant_id="default"))
+        # Verify client.update across tenants returns False
+        self.assertFalse(client.update(note_alpha, content="Hacked", tenant_id="default"))
+
+        # 3. Same-tenant (default) GET and PATCH on note_beta must succeed (200)
+        s_beta_get, d_beta_get = self._http_request(f"/api/v1/memories/{note_beta}", "GET")
+        self.assertEqual(s_beta_get, 200)
+        self.assertEqual(d_beta_get["content"], "Beta normal content")
+
+        s_beta_patch, d_beta_patch = self._http_request(
+            f"/api/v1/memories/{note_beta}",
+            "PATCH",
+            body={"content": "Updated beta content"},
+        )
+        self.assertEqual(s_beta_patch, 200)
+        self.assertEqual(d_beta_patch["status"], "updated")
+
+    def test_importance_float_and_string_rejected(self):
+        # POST with float or string importance must 400
+        for bad_imp in (3.5, 4.2, "3", "5", True, False):
+            status, data = self._http_request(
+                "/api/v1/memories",
+                "POST",
+                body={"content": f"test {bad_imp}", "importance": bad_imp},
+            )
+            self.assertEqual(status, 400)
+            self.assertEqual(data.get("code"), "INVALID_PARAMS")
+            self.assertEqual(data.get("field"), "importance")
+
+        # Create valid memory
+        client = MemoryClient(db_path=self.db_path)
+        nid = client.save(content="Valid note", importance=3)
+
+        # PATCH with float or string importance must 400
+        for bad_imp in (3.5, 4.2, "3", "5", True, False):
+            status, data = self._http_request(
+                f"/api/v1/memories/{nid}",
+                "PATCH",
+                body={"importance": bad_imp},
+            )
+            self.assertEqual(status, 400)
+            self.assertEqual(data.get("code"), "INVALID_PARAMS")
+            self.assertEqual(data.get("field"), "importance")
+
+    def test_empty_patch_rejected_and_client_check(self):
+        client = MemoryClient(db_path=self.db_path)
+        nid = client.save(content="Existing note")
+
+        # 1. Empty body to REST PATCH returns 400
+        status, data = self._http_request(f"/api/v1/memories/{nid}", "PATCH", body={})
+        self.assertEqual(status, 400)
+        self.assertIn("No fields provided to update", data.get("error", ""))
+
+        # 2. Empty body to nonexistent note returns 400
+        status_none, data_none = self._http_request("/api/v1/memories/nonexistent-999", "PATCH", body={})
+        self.assertEqual(status_none, 400)
+        self.assertIn("No fields provided to update", data_none.get("error", ""))
+
+        # 3. Client.update on empty updates checks existence & tenant containment
+        self.assertFalse(client.update("nonexistent-999"))
+        self.assertTrue(client.update(nid))
+        self.assertFalse(client.update(nid, tenant_id="unowned_tenant"))
+
+    def test_config_precedence_api_server(self):
+        from unittest.mock import patch
+        from infra.api_server import APIServer
+        from infra.config import get_config
+
+        cfg = get_config()
+        # Fallback to config when env is unset
+        with patch.dict(os.environ, {"MEMORY_API_RATE_LIMIT": ""}, clear=False):
+            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
+            try:
+                self.assertEqual(server.rate_limit, cfg.api.rate_limit)
+            finally:
+                server.server_close()
+
+        # Env takes precedence when set
+        with patch.dict(os.environ, {"MEMORY_API_RATE_LIMIT": "1234"}, clear=False):
+            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
+            try:
+                self.assertEqual(server.rate_limit, 1234)
+            finally:
+                server.server_close()
+
+        # Invalid env falls back safely to config default without raising
+        with patch.dict(os.environ, {"MEMORY_API_RATE_LIMIT": "garbage_not_int"}, clear=False):
+            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
+            try:
+                self.assertEqual(server.rate_limit, cfg.api.rate_limit)
+            finally:
+                server.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()
