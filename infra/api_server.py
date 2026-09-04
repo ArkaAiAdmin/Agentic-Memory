@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse, parse_qs
 
 from agentic_memory.client import MemoryClient
+from agentic_memory.exceptions import ValidationError
 
 from infra.api_token import validate_api_token
 from infra.db_migrations import SCHEMA_VERSION
@@ -880,10 +881,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
+                _principal_tenant = (
+                    getattr(self, "_tenant_id", None)
+                    or (getattr(getattr(self, "_principal", None), "tenant_id", None))
+                    or "default"
+                )
                 row = conn.execute(
                     "SELECT id, content, tags, category, created_at, updated_at, deleted_at, importance "
-                    "FROM tenant_memories WHERE id = ?",
-                    (note_id,),
+                    "FROM memories WHERE id = ? AND tenant_id = ?",
+                    (note_id, _principal_tenant),
                 ).fetchone()
                 if not row:
                     self._error(f"Memory not found: {note_id}", 404)
@@ -1021,12 +1027,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             pinned = req.get("pinned", False)
             importance = 3
             if "importance" in req:
-                try:
-                    imp_val = int(req["importance"])
-                    if not (1 <= imp_val <= 5):
-                        raise ValueError()
-                    importance = imp_val
-                except (ValueError, TypeError):
+                imp_raw = req["importance"]
+                if isinstance(imp_raw, bool) or not isinstance(imp_raw, int) or not (1 <= imp_raw <= 5):
                     self._write_json(
                         {
                             "error": "Error [INVALID_PARAMS]: importance must be an integer between 1 and 5",
@@ -1036,6 +1038,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         400,
                     )
                     return
+                importance = imp_raw
             title_slug = req.get("title_slug", "")
 
             # CHANGE 5: tenant write-path validation. The authenticated
@@ -1119,12 +1122,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             pinned = req.get("pinned")
             importance = None
             if "importance" in req and req["importance"] is not None:
-                try:
-                    imp_val = int(req["importance"])
-                    if not (1 <= imp_val <= 5):
-                        raise ValueError()
-                    importance = imp_val
-                except (ValueError, TypeError):
+                imp_raw = req["importance"]
+                if isinstance(imp_raw, bool) or not isinstance(imp_raw, int) or not (1 <= imp_raw <= 5):
                     self._write_json(
                         {
                             "error": "Error [INVALID_PARAMS]: importance must be an integer between 1 and 5",
@@ -1134,16 +1133,27 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         400,
                     )
                     return
+                importance = imp_raw
+
+            _principal_tenant = (
+                getattr(self, "_tenant_id", None)
+                or (getattr(getattr(self, "_principal", None), "tenant_id", None))
+                or "default"
+            )
 
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
-                client.update(
+                updated = client.update(
                     note_id,
                     content=content,
                     tags=tags,
                     pinned=pinned,
                     importance=importance,
+                    tenant_id=_principal_tenant,
                 )
+            if not updated:
+                self._error(f"Memory not found: {note_id}", 404)
+                return
             # Audit: tag as dashboard REST call
             try:
                 from infra.audit import enqueue_audit
@@ -1157,6 +1167,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             self._write_json({"id": note_id, "status": "updated"})
+        except (ValidationError, ValueError, TypeError) as e:
+            self._error(f"Validation error: {e}", 400)
         except Exception as e:
             logger.warning("_handle_update_memory: %s", e)
             self._error(f"Failed to update memory: {e}", 500)
@@ -3190,8 +3202,20 @@ class APIServer(ThreadingHTTPServer):
         self.insecure_loopback = insecure_loopback
         self._discovery_file: Optional[Path] = None
 
+        cfg_api = None
+        try:
+            from infra.config import get_config
+            cfg_api = get_config().api
+        except Exception:
+            pass
+
         if self.token and not validate_api_token(self.token):
-            strict_token = os.environ.get("MEMORY_API_STRICT_TOKEN", "").lower() in ("1", "true", "yes", "on")
+            strict_token_default = cfg_api.strict_token if cfg_api is not None else False
+            strict_token_env = os.environ.get("MEMORY_API_STRICT_TOKEN")
+            if strict_token_env is not None and strict_token_env.strip():
+                strict_token = strict_token_env.lower() in ("1", "true", "yes", "on")
+            else:
+                strict_token = strict_token_default
             if strict_token:
                 raise ValueError(
                     "api_server: API token does not meet minimum security requirements "
@@ -3207,7 +3231,9 @@ class APIServer(ThreadingHTTPServer):
         # Phase 2: per-IP sliding-window rate limit. Disabled when <= 0.
         # Configured via MEMORY_API_RATE_LIMIT (requests) and
         # MEMORY_API_RATE_WINDOW (seconds, default 60). Defaults to 600 req/min (10 req/s).
-        self.rate_limit = int(os.environ.get("MEMORY_API_RATE_LIMIT", "600") or "600")
+        default_rate_limit = cfg_api.rate_limit if cfg_api is not None else 600
+        env_rate_limit = os.environ.get("MEMORY_API_RATE_LIMIT")
+        self.rate_limit = int(env_rate_limit) if env_rate_limit is not None and env_rate_limit.strip() else default_rate_limit
         self.rate_window = int(os.environ.get("MEMORY_API_RATE_WINDOW", "60") or "60")
         self._rate_buckets: Dict[str, list[float]] = {}
         self._rate_lock = threading.Lock()

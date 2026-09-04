@@ -83,7 +83,9 @@ class MemoryClient:
         """
         if not content or not content.strip():
             raise ValidationError("Content must be non-empty")
-        if importance < 1 or importance > 5:
+        if isinstance(importance, bool) or not isinstance(importance, int):
+            raise ValidationError("Importance must be an integer between 1 and 5")
+        if not (1 <= importance <= 5):
             raise ValidationError("Importance must be between 1 and 5")
 
         from infra._lazy_imports import save_memory_auto
@@ -269,8 +271,11 @@ class MemoryClient:
         """Update fields of an existing memory, scoped to a tenant."""
         if tenant_id is None:
             tenant_id = _resolve_tenant()
-        if importance is not None and not (1 <= int(importance) <= 5):
-            raise ValidationError("Importance must be between 1 and 5")
+        if importance is not None:
+            if isinstance(importance, bool) or not isinstance(importance, int):
+                raise ValidationError("Importance must be an integer between 1 and 5")
+            if not (1 <= importance <= 5):
+                raise ValidationError("Importance must be between 1 and 5")
 
         updates: list[str] = []
         params: list[Any] = []

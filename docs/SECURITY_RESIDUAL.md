@@ -17,11 +17,11 @@ This document formalizes the accepted security residuals, operational risk bound
 ## 2. Migration Guide & Operational Notes
 
 ### A. Multi-Agent Sync Daemons (A9)
-- **Change:** As of the SEC-1 / A9 hardening, the sync server on `127.0.0.1:9877` (and peers on 9878/9880) enforces Bearer token authentication by default on loopback.
-- **Impact:** Unauthenticated scripts or background sync daemons will receive `401 Unauthorized` responses.
+- **Change:** As of the SEC-1 / A9 hardening, the sync server on `127.0.0.1:9877` (and peers on 9878/9880) enforces Bearer token authentication by default across all interfaces, including loopback.
+- **Impact:** Mutating requests without valid authentication are rejected: `401 Unauthorized` when the `Authorization: Bearer <token>` header is missing or no token is configured on a non-loopback listener, and `403 Forbidden` when an invalid token is provided.
 - **Migration:**
   - *Recommended:* Configure `MEMORY_SYNC_TOKEN` or `MEMORY_API_TOKEN` in the environment of all sync clients and send `Authorization: Bearer <token>`.
-  - *Opt-out (local dev only):* Set `MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1` on the sync listener to restore legacy unauthenticated loopback access.
+  - *Opt-out (local dev only):* Set `MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK=1` (or `MEMORY_SYNC_TOKEN_REQUIRED=0`) on the sync listener to restore legacy unauthenticated loopback access. **Nuance:** This opt-out strictly applies to loopback interfaces (`127.0.0.1`, `::1`); remote/non-loopback interfaces always refuse unauthenticated startup and reject requests regardless of flags.
 
 ### B. REST API Rate Limit Restoration (A10)
 - **Change:** A default rate limit of 600 requests per minute (~10 req/s) is now active per client IP/principal.
@@ -32,7 +32,9 @@ This document formalizes the accepted security residuals, operational risk bound
 
 ### C. CQRS Write Journal Backlog Exceptions (A10)
 - **Change:** With `write_journal_fallback_sync = false` (the default), writes reject when the async queue is full rather than silently falling back to synchronous database locking.
-- **Impact:** Callers will receive a structured error / `RuntimeError("Journal buffer full")` if write volume exceeds queue drainage capacity.
+- **Impact:** Callers will receive a structured error / `RuntimeError` if write volume exceeds queue drainage capacity:
+  - Backlog threshold exceeded: `RuntimeError("write_journal backlog at {pending} pending entries (threshold={JOURNAL_PENDING_THRESHOLD}). Worker may be down — check background_worker and drain journal.db, or raise MEMORY_WRITE_JOURNAL_MAX_PENDING.")`
+  - Journal file size exceeded: `RuntimeError("write_journal is full: size {current} bytes exceeds JOURNAL_MAX_SIZE_BYTES ({JOURNAL_MAX_SIZE_BYTES}). Refusing new enqueue. Drain pending entries via the reconciliation daemon, raise JOURNAL_MAX_SIZE_BYTES, or rebuild the journal DB.")`
 - **Operational Handling:**
   - Client applications and dashboards should catch this condition, apply backpressure, and retry with exponential backoff.
   - If immediate persistence availability is preferred over queue ordering, enable synchronous fallback in `memory.toml`:

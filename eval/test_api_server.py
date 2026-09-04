@@ -616,6 +616,24 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(get_data.get("importance"), 4)
 
+        # 3b. Boolean importance rejected (True is not a valid integer importance)
+        status, bool_err = self._http_request(
+            "/api/v1/memories",
+            "POST",
+            body={"content": "Importance test bool", "importance": True},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(bool_err.get("code"), "INVALID_PARAMS")
+
+        # 3c. Patch with boolean importance rejected
+        status, patch_bool_err = self._http_request(
+            f"/api/v1/memories/{note_id}",
+            "PATCH",
+            body={"importance": True},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(patch_bool_err.get("code"), "INVALID_PARAMS")
+
         # 4. Patch with invalid importance rejected
         status, patch_err = self._http_request(
             f"/api/v1/memories/{note_id}",
@@ -637,6 +655,25 @@ class TestAPIServer(unittest.TestCase):
         status, get_patched = self._http_request(f"/api/v1/memories/{note_id}", "GET")
         self.assertEqual(status, 200)
         self.assertEqual(get_patched.get("importance"), 5)
+
+    def test_memory_client_importance_validation_rejects_bool_and_non_int(self):
+        from agentic_memory.client import MemoryClient
+        from agentic_memory.exceptions import ValidationError
+        client = MemoryClient(db_path=self.db_path)
+        with self.assertRaises(ValidationError):
+            client.save("Content", importance=True)  # type: ignore
+        with self.assertRaises(ValidationError):
+            client.save("Content", importance=False)  # type: ignore
+        with self.assertRaises(ValidationError):
+            client.save("Content", importance=3.5)  # type: ignore
+
+        note_id = client.save("Valid note for update test", importance=3)
+        with self.assertRaises(ValidationError):
+            client.update(note_id, importance=True)  # type: ignore
+        with self.assertRaises(ValidationError):
+            client.update(note_id, importance=False)  # type: ignore
+        with self.assertRaises(ValidationError):
+            client.update(note_id, importance=4.2)  # type: ignore
 
     def test_rate_limit_429_and_disable(self):
         # Save original rate limit
