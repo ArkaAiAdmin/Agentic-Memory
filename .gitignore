@@ -5,6 +5,7 @@
 __pycache__/
 agentic_memory.egg-info/
 dist/
+# Explicitly track ts-sdk/dist to prevent distribution drift across clones (Option a)
 !ts-sdk/dist/
 build/
 uv.lock

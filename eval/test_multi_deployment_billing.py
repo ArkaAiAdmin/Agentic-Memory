@@ -321,16 +321,24 @@ def test_signup_provisions_memory_db(test_dirs):
     with tempfile.TemporaryDirectory() as td:
         mem_db = Path(td) / "memory.db"
         store.create_customer("cust_signup", "signup@example.com", "Test User")
+        # Follow-semantics rationale: dynamically follows APIServer.__init__ port default (9879).
+        # We assert isinstance(default_port, int) so a missing or non-int default breaks loudly,
+        # and assert stored api_base matches the evaluated port in dep.
         default_port = inspect.signature(APIServer.__init__).parameters["port"].default
+        assert isinstance(default_port, int), f"APIServer default port must be an int, got {default_port!r}"
+        assert default_port > 0, f"APIServer default port must be positive, got {default_port}"
+        expected_api_base = f"http://127.0.0.1:{default_port}"
         store.create_deployment(
             "dep_signup", "cust_signup", "tenant_signup",
-            db_path=str(mem_db), api_base=f"http://127.0.0.1:{default_port}",
+            db_path=str(mem_db), api_base=expected_api_base,
         )
 
         dep = store.get_deployment("dep_signup")
         assert dep is not None
         assert dep["customer_id"] == "cust_signup"
         assert dep["tenant_id"] == "tenant_signup"
+        assert dep["api_base"] == expected_api_base
+        assert f":{default_port}" in dep["api_base"]
 
         # Verify deployment is listed
         deps = store.list_deployments("cust_signup")
