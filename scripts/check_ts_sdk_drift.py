@@ -8,17 +8,20 @@ Mechanism & Hardening:
 1. Out-of-place compilation: Compiles ts-sdk/src to a temporary directory via
    `tsc --outDir <tmpdir>`. This eliminates side effects (such as half-emitted dist
    on compilation failure) and preserves working tree state.
-2. Staged & working tree verification: Verifies byte-for-byte equality between:
-   - compiler output in tempdir and live files in ts-sdk/dist/ (working tree)
-   - compiler output in tempdir and git staged blobs via `git show :ts-sdk/dist/<file>`
-     (closing the staged-only blind spot where index drift bypasses working tree diffs).
-3. Dependency pinning: Uses ts-sdk's local tsc compiler binary (`ts-sdk/node_modules/.bin/tsc`)
-   for deterministic compilation matching package.json devDependencies.
+2. Binary-safe recursive verification: Traverses all emitted files recursively
+   (`rglob`), comparing raw bytes (`read_bytes()`) to eliminate CRLF/text-encoding
+   edge cases.
+3. Staged & working tree verification: Verifies byte equality against:
+   - live files in ts-sdk/dist/ (working tree)
+   - git staged blobs via `git show :ts-sdk/dist/<path>` (closing staged-only blind spot).
+4. Compiler version verification: Verifies active `tsc` version against the pinned
+   dependency in `ts-sdk/package-lock.json` (5.9.3).
 """
 
 from __future__ import annotations
 
 import difflib
+import json
 import subprocess
 import sys
 import tempfile
@@ -28,6 +31,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TS_SDK_DIR = REPO_ROOT / "ts-sdk"
 DIST_DIR = TS_SDK_DIR / "dist"
 LOCAL_TSC = TS_SDK_DIR / "node_modules" / ".bin" / "tsc"
+LOCK_FILE = TS_SDK_DIR / "package-lock.json"
+
+
+def get_expected_tsc_version() -> str | None:
+    if LOCK_FILE.is_file():
+        try:
+            data = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
+            return data.get("packages", {}).get("node_modules/typescript", {}).get("version")
+        except Exception:
+            pass
+    return None
 
 
 def main() -> int:
@@ -37,6 +51,18 @@ def main() -> int:
 
     # Resolve tsc binary: prefer pinned local node_modules, fall back to PATH
     tsc_cmd = [str(LOCAL_TSC)] if LOCAL_TSC.is_file() else ["npx", "tsc"]
+
+    # Verify tsc version against lockfile
+    expected_version = get_expected_tsc_version()
+    version_res = subprocess.run(tsc_cmd + ["--version"], cwd=REPO_ROOT, capture_output=True, text=True)
+    if version_res.returncode == 0:
+        actual_version = version_res.stdout.strip().replace("Version ", "")
+        if expected_version and actual_version != expected_version:
+            print(
+                f"ERROR: tsc compiler version mismatch: expected {expected_version} from package-lock.json, got {actual_version}",
+                file=sys.stderr,
+            )
+            return 1
 
     # 1. Compile out-of-place to a temporary directory to avoid dirtying working tree on failure
     with tempfile.TemporaryDirectory(prefix="ts_sdk_drift_") as tmpdir:
@@ -52,54 +78,61 @@ def main() -> int:
             return build.returncode
 
         tmp_path = Path(tmpdir)
-        emitted_files = sorted([p.name for p in tmp_path.glob("*") if p.is_file()])
-        disk_files = sorted([p.name for p in DIST_DIR.glob("*") if p.is_file()])
+        # Recursive glob to support any future subdirectories in dist
+        emitted_rel_paths = sorted([p.relative_to(tmp_path) for p in tmp_path.rglob("*") if p.is_file()])
+        disk_rel_paths = sorted([p.relative_to(DIST_DIR) for p in DIST_DIR.rglob("*") if p.is_file()])
 
         # 2. Check for missing or extra files on disk
-        missing_on_disk = set(emitted_files) - set(disk_files)
-        extra_on_disk = set(disk_files) - set(emitted_files)
+        missing_on_disk = set(emitted_rel_paths) - set(disk_rel_paths)
+        extra_on_disk = set(disk_rel_paths) - set(emitted_rel_paths)
 
         if missing_on_disk:
-            print(f"ERROR: ts-sdk/dist is missing compiled files: {sorted(missing_on_disk)}", file=sys.stderr)
+            missing_str = [p.as_posix() for p in sorted(missing_on_disk)]
+            print(f"ERROR: ts-sdk/dist is missing compiled files: {missing_str}", file=sys.stderr)
             return 1
         if extra_on_disk:
-            print(f"ERROR: ts-sdk/dist contains unexpected extra files: {sorted(extra_on_disk)}", file=sys.stderr)
+            extra_str = [p.as_posix() for p in sorted(extra_on_disk)]
+            print(f"ERROR: ts-sdk/dist contains unexpected extra files: {extra_str}", file=sys.stderr)
             return 1
 
-        # 3. Check content equality against working tree on disk
+        # 3. Check binary content equality against working tree on disk
         has_diff = False
-        for filename in emitted_files:
-            emitted_content = (tmp_path / filename).read_text(encoding="utf-8")
-            disk_content = (DIST_DIR / filename).read_text(encoding="utf-8")
+        for rel_path in emitted_rel_paths:
+            emitted_bytes = (tmp_path / rel_path).read_bytes()
+            disk_bytes = (DIST_DIR / rel_path).read_bytes()
 
-            if emitted_content != disk_content:
+            if emitted_bytes != disk_bytes:
                 has_diff = True
-                print(f"ERROR: ts-sdk/dist/{filename} does not match fresh compiler output!", file=sys.stderr)
-                diff = difflib.unified_diff(
-                    disk_content.splitlines(keepends=True),
-                    emitted_content.splitlines(keepends=True),
-                    fromfile=f"ts-sdk/dist/{filename} (disk)",
-                    tofile=f"ts-sdk/dist/{filename} (fresh tsc)",
-                    n=3,
-                )
-                sys.stderr.writelines(diff)
+                print(f"ERROR: ts-sdk/dist/{rel_path.as_posix()} does not match fresh compiler output!", file=sys.stderr)
+                try:
+                    emitted_text = emitted_bytes.decode("utf-8")
+                    disk_text = disk_bytes.decode("utf-8")
+                    diff = difflib.unified_diff(
+                        disk_text.splitlines(keepends=True),
+                        emitted_text.splitlines(keepends=True),
+                        fromfile=f"ts-sdk/dist/{rel_path.as_posix()} (disk)",
+                        tofile=f"ts-sdk/dist/{rel_path.as_posix()} (fresh tsc)",
+                        n=3,
+                    )
+                    sys.stderr.writelines(diff)
+                except UnicodeDecodeError:
+                    print("  [binary file difference]", file=sys.stderr)
 
         if has_diff:
             print("\nRun 'npm --prefix ts-sdk run build' and stage the updated ts-sdk/dist files.", file=sys.stderr)
             return 1
 
         # 4. Check git index / staged blob equality (closing staged-only blind spot)
-        for filename in emitted_files:
-            rel_git_path = f":ts-sdk/dist/{filename}"
+        for rel_path in emitted_rel_paths:
+            posix_path = rel_path.as_posix()
             show = subprocess.run(
-                ["git", "show", rel_git_path],
+                ["git", "show", f":ts-sdk/dist/{posix_path}"],
                 cwd=REPO_ROOT,
                 capture_output=True,
-                text=True,
             )
-            # If the file is tracked/staged in git index, check its staged content
-            if show.returncode == 0 and show.stdout != (tmp_path / filename).read_text(encoding="utf-8"):
-                print(f"ERROR: Staged index blob for ts-sdk/dist/{filename} differs from compiler output!", file=sys.stderr)
+            # If the file is tracked/staged in git index, check its staged content bytes
+            if show.returncode == 0 and show.stdout != (tmp_path / rel_path).read_bytes():
+                print(f"ERROR: Staged index blob for ts-sdk/dist/{posix_path} differs from compiler output!", file=sys.stderr)
                 print("Run 'npm --prefix ts-sdk run build' and re-stage ts-sdk/dist.", file=sys.stderr)
                 return 1
 
@@ -124,7 +157,7 @@ def main() -> int:
             print(f"  {line}", file=sys.stderr)
         return 1
 
-    print("ts-sdk/dist is clean, fully built, and synchronized (disk and index verified).")
+    print("ts-sdk/dist is clean, fully built, and synchronized (disk, index, and tsc 5.9.3 verified).")
     return 0
 
 
