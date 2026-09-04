@@ -790,8 +790,8 @@ class TestAPIServer(unittest.TestCase):
         self.assertTrue(client.update(nid))
         self.assertFalse(client.update(nid, tenant_id="unowned_tenant"))
 
-    def test_config_precedence_api_server(self):
-        from unittest.mock import patch
+    def test_config_and_env_precedence_api_server(self):
+        from unittest.mock import patch, MagicMock
         from infra.api_server import APIServer
         from infra.config import get_config
 
@@ -819,6 +819,142 @@ class TestAPIServer(unittest.TestCase):
                 self.assertEqual(server.rate_limit, cfg.api.rate_limit)
             finally:
                 server.server_close()
+
+        # Rate window default (60)
+        with patch.dict(os.environ, {"MEMORY_API_RATE_WINDOW": ""}, clear=False):
+            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
+            try:
+                self.assertEqual(server.rate_window, 60)
+            finally:
+                server.server_close()
+
+        # Custom rate window
+        with patch.dict(os.environ, {"MEMORY_API_RATE_WINDOW": "120"}, clear=False):
+            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
+            try:
+                self.assertEqual(server.rate_window, 120)
+            finally:
+                server.server_close()
+
+        # Invalid rate window falls back safely to 60 without raising
+        with patch.dict(os.environ, {"MEMORY_API_RATE_WINDOW": "invalid_window"}, clear=False):
+            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent")
+            try:
+                self.assertEqual(server.rate_window, 60)
+            finally:
+                server.server_close()
+
+        # Strict token: weak token with MEMORY_API_STRICT_TOKEN=1 raises ValueError
+        with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": "1"}, clear=False):
+            with self.assertRaises(ValueError):
+                APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
+
+        # Weak token with MEMORY_API_STRICT_TOKEN=0 warns instead of raising
+        with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": "0"}, clear=False):
+            server = APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
+            try:
+                self.assertEqual(server.token, "short")
+            finally:
+                server.server_close()
+
+        # Weak token with strict_token=True in config raises ValueError when env unset
+        with patch.dict(os.environ, {"MEMORY_API_STRICT_TOKEN": ""}, clear=False):
+            with patch("infra.config.get_config") as mock_get_config:
+                mock_cfg = MagicMock()
+                mock_cfg.api.strict_token = True
+                mock_cfg.api.rate_limit = 600
+                mock_get_config.return_value = mock_cfg
+                with self.assertRaises(ValueError):
+                    APIServer(db_path=self.db_path, port=0, agent_id="test-agent", token="short")
+
+    def test_categories_tenant_isolation(self):
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute("DELETE FROM memories WHERE id LIKE 'mem-cat-%'")
+            conn.execute(
+                "INSERT INTO memories (id, content, category, tenant_id) VALUES (?, ?, ?, ?)",
+                ("mem-cat-1", "Alpha memory", "cat_alpha", "tenant_alpha"),
+            )
+            conn.execute(
+                "INSERT INTO memories (id, content, category, tenant_id) VALUES (?, ?, ?, ?)",
+                ("mem-cat-2", "Beta memory", "cat_beta", "tenant_beta"),
+            )
+            conn.execute(
+                "INSERT INTO memories (id, content, category, tenant_id, deleted_at) VALUES (?, ?, ?, ?, ?)",
+                ("mem-cat-3", "Deleted alpha memory", "cat_deleted", "tenant_alpha", "2026-09-01T00:00:00Z"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        status, data_alpha = self._http_request("/api/v1/memories/categories", headers={"X-Tenant-ID": "tenant_alpha"})
+        self.assertEqual(status, 200)
+        categories_alpha = data_alpha.get("categories", [])
+        self.assertIn("cat_alpha", categories_alpha)
+        self.assertNotIn("cat_beta", categories_alpha)
+        self.assertNotIn("cat_deleted", categories_alpha)
+
+        status, data_beta = self._http_request("/api/v1/memories/categories", headers={"X-Tenant-ID": "tenant_beta"})
+        self.assertEqual(status, 200)
+        categories_beta = data_beta.get("categories", [])
+        self.assertIn("cat_beta", categories_beta)
+        self.assertNotIn("cat_alpha", categories_beta)
+
+    def test_tools_call_tenant_injection(self):
+        from unittest.mock import patch
+        import mcp_surface.mcp_tools as tools
+        import agent_context
+
+        # Seed cross-tenant admin role for test-agent so it can operate across tenants
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute("INSERT OR IGNORE INTO roles (id, name, tenant_id) VALUES (999, 'memory:admin', 'default')")
+            conn.execute("INSERT OR REPLACE INTO role_bindings (principal_id, role_id) VALUES ('test-agent', 999)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        received_kwargs = {}
+        captured_agent = []
+
+        def dummy_search(*args, **kwargs):
+            received_kwargs.update(kwargs)
+            captured_agent.append(agent_context.get_agent().agent_id)
+            return json.dumps({"results": []})
+
+        with patch.object(tools, "memory_search", dummy_search):
+            # 1. Caller supplies a spoofed tenant_id; server overrides with authenticated tenant
+            status, data = self._http_request(
+                "/api/v1/tools/call",
+                method="POST",
+                body={
+                    "tool": "memory_search",
+                    "arguments": {
+                        "query": "test query",
+                        "tenant_id": "malicious-spoofed-tenant",
+                    },
+                },
+                headers={"X-Tenant-ID": "authenticated-tenant-42"},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(received_kwargs.get("tenant_id"), "authenticated-tenant-42")
+            self.assertTrue(len(captured_agent) > 0 and captured_agent[-1] is not None)
+
+            # 2. Blank X-Tenant-ID collapses to "default"
+            received_kwargs.clear()
+            status, data = self._http_request(
+                "/api/v1/tools/call",
+                method="POST",
+                body={
+                    "tool": "memory_search",
+                    "arguments": {
+                        "query": "test query",
+                    },
+                },
+                headers={"X-Tenant-ID": ""},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(received_kwargs.get("tenant_id"), "default")
 
 
 if __name__ == "__main__":

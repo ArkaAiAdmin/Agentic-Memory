@@ -43,6 +43,10 @@ This document formalizes the accepted security residuals, operational risk bound
     write_journal_fallback_sync = true
     ```
 
+### D. Tenant Identity Resolution & Empty-String Collapse
+- **Behavior:** In `infra/api_server.py`, `_resolve_tenant_id()` authoritative resolution defaults to `"default"` whenever no tenant is associated with the authenticated principal or claims. Furthermore, blank or empty-string tenant identities (`""`) collapse to `"default"` by design (`or "default"`).
+- **Rationale:** This prevents the creation of orphaned, unindexed, or inaccessible zero-length tenant partitions in the database, while maintaining seamless backwards compatibility for single-tenant local configurations.
+
 ---
 
 ## 3. Desktop IDE Harness Residuals (B1–B10 Cross-Reference)

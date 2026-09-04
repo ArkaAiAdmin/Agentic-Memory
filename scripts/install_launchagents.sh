@@ -6,9 +6,11 @@
 #   ./scripts/install_launchagents.sh       # load both
 #   ./scripts/install_launchagents.sh stop  # unload both
 #
-# The old com.agentic-memory.rest-api job (port 9879) is retired: it
-# contended with the harness kernel for the memory.db flock. Its plist is
-# kept on disk as com.agentic-memory.rest-api.plist.disabled.
+# The old com.agentic-memory.rest-api launchd job instance is retired to prevent
+# supervisor contention with the harness kernel for the memory.db flock (this retires
+# the persistent background service instance, not the port itself; 9879 remains the
+# standalone REST/WS API server port). Its plist is kept on disk as
+# com.agentic-memory.rest-api.plist.disabled.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

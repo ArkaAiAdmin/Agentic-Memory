@@ -7,7 +7,7 @@ describe('MemoryClient', () => {
   let client: MemoryClient;
 
   beforeEach(() => {
-    client = new MemoryClient({ baseUrl: 'http://127.0.0.1:9878', token: 'test-token' });
+    client = new MemoryClient({ baseUrl: 'http://127.0.0.1:9879', token: 'test-token' });
     global.fetch = vi.fn() as any;
   });
 
@@ -20,7 +20,7 @@ describe('MemoryClient', () => {
 
     const noteId = await client.add('User prefers spaces', { tags: ['pref'], category: 'preferences' });
     expect(noteId).toBe('sdk/test-123');
-    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:9878/api/v1/memories', {
+    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:9879/api/v1/memories', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -92,7 +92,7 @@ describe('AgentMemory namespace isolation', () => {
   let agentMemory: AgentMemory;
 
   beforeEach(() => {
-    agentMemory = new AgentMemory({ agentId: 'alpha-agent', baseUrl: 'http://127.0.0.1:9878', token: 'test' });
+    agentMemory = new AgentMemory({ agentId: 'alpha-agent', baseUrl: 'http://127.0.0.1:9879', token: 'test' });
     global.fetch = vi.fn() as any;
   });
 
@@ -145,7 +145,7 @@ describe('StreamingClient WebSocket', () => {
       close: vi.fn(),
     };
     (global as any).WebSocket = vi.fn().mockImplementation(function () { return mockWS; });
-    client = new StreamingClient({ baseUrl: 'http://127.0.0.1:9878', token: 'test-token' });
+    client = new StreamingClient({ baseUrl: 'http://127.0.0.1:9879', token: 'test-token' });
   });
 
   it('should connect and receive events', () => {

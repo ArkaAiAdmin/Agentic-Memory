@@ -263,19 +263,26 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if principal:
                 self._principal_id = principal.id
                 self._principal = principal
-                self._tenant_id = getattr(principal, "tenant_id", None) or "default"
+                self._tenant_id = getattr(principal, "tenant_id", None)
         except Exception:
             pass
         if not self._principal_id:
             self._principal_id = getattr(self.server, "agent_id", "") or os.environ.get("MEMORY_AGENT_ID", "ami")
-            self._tenant_id = "default"
+            self._tenant_id = None
         return True
 
     def _resolve_tenant_id(self) -> str:
-        """Resolve the authoritative tenant ID for the current authenticated request."""
+        """Resolve the authoritative tenant ID for the current authenticated request.
+
+        Note on empty-string collapse: If a principal or header provides an empty
+        string (""), it collapses to "default" via `or "default"`. This is intentional:
+        unspecified or blank tenant identities map to the single-tenant default namespace,
+        preventing orphaned or unindexed zero-length tenant partitions.
+        """
         return (
             getattr(self, "_tenant_id", None)
             or getattr(getattr(self, "_principal", None), "tenant_id", None)
+            or (self.headers.get("X-Tenant-ID") if getattr(self, "headers", None) else None)
             or "default"
         )
 
@@ -1476,8 +1483,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
+                tenant_id = self._resolve_tenant_id()
                 rows = conn.execute(
-                    "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL ORDER BY category"
+                    "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL AND tenant_id = ? AND deleted_at IS NULL ORDER BY category",
+                    (tenant_id,),
                 ).fetchall()
                 cats = [r[0] for r in rows if r[0]]
                 self._write_json({"categories": cats})
@@ -1494,12 +1503,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         check. Returns True when the caller is authorized to mutate RBAC/ACL
         state, False otherwise (and writes a 403 response)."""
         principal_id = getattr(self, "_principal_id", None)
-        tenant_id = "default"
-        try:
-            if getattr(self, "_principal", None) is not None:
-                tenant_id = getattr(self._principal, "tenant_id", "default") or "default"
-        except Exception:
-            pass
+        tenant_id = self._resolve_tenant_id()
         try:
             from infra.authorizer import mcp_authorize
 
@@ -2978,6 +2982,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
             principal_id = getattr(self, "_principal_id", None)
             tenant_id = self._resolve_tenant_id()
+            if "tenant_id" in sig.parameters or has_var_keyword:
+                valid_args["tenant_id"] = tenant_id
+
             action = self._classify_tool_action(tool_name, valid_args)
             from infra.authorizer import mcp_authorize, log_authorization_decision
             allowed = mcp_authorize(
@@ -2998,7 +3005,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error(f"Principal '{principal_id or 'anonymous'}' not authorized for '{action}' on 'memory'", 403)
                 return
 
-            result = tool_fn(**valid_args)
+            from agent_context import temporary_agent_context
+            effective_agent_id = principal_id or os.environ.get("MEMORY_AGENT_ID") or "ami"
+            with temporary_agent_context(effective_agent_id, principal_id=principal_id):
+                result = tool_fn(**valid_args)
             if isinstance(result, str):
                 if result.startswith("Error [AUTHORIZATION_DENIED]"):
                     self._error(result, 403)
@@ -3183,7 +3193,7 @@ class APIServer(ThreadingHTTPServer):
         db_path: str | Path,
         agent_id: str,
         host: str = "127.0.0.1",
-        port: int = 9878,
+        port: int = 9879,
         token: str = "",
         insecure_loopback: bool = False,
     ):

@@ -56,7 +56,7 @@ class MemoryClient {
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `baseUrl` | `string` | `"http://127.0.0.1:9878"` | Memory server URL |
+| `baseUrl` | `string` | `"http://127.0.0.1:9879"` | Memory server URL |
 | `token` | `string` | — | API auth token (required; server is secure by default) |
 
 **Example:**
@@ -255,7 +255,7 @@ console.log(`${s.memories} memories, ${s.facts} facts`);
 
 ```typescript
 interface MemoryClientOptions {
-  baseUrl?: string;    // Default: http://127.0.0.1:9878
+  baseUrl?: string;    // Default: http://127.0.0.1:9879
   token?: string;      // API auth token
 }
 ```
@@ -512,7 +512,7 @@ The TypeScript SDK connects to a running memory server. Configuration is passed 
 
 ```typescript
 const client = new MemoryClient({
-  baseUrl: 'http://127.0.0.1:9878',  // Default
+  baseUrl: 'http://127.0.0.1:9879',  // Default
   token: 'your-api-token',            // Optional auth
 });
 ```
@@ -528,7 +528,7 @@ The SDK supports real-time updates via WebSocket:
 ```typescript
 import { MemoryClient } from '@agentic-memory/sdk';
 
-const client = new MemoryClient({ baseUrl: 'http://localhost:9878' });
+const client = new MemoryClient({ baseUrl: 'http://localhost:9879' });
 
 // Listen for real-time events
 client.onMemorySaved((memory) => {

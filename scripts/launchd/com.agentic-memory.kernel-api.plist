@@ -17,8 +17,9 @@
           token from memory/.api_token (same file the harness uses), sets
           the agent identity env (ami / sync port 9880), and falls back to
           memory.toml [api] token if .api_token is missing.
-      Replace the old com.agentic-memory.rest-api / :9879 job, which
-      contended with the harness kernel for the memory.db flock.
+      Replaces the old com.agentic-memory.rest-api supervisor job instance (retired
+      to avoid flock contention with the harness kernel, not the port itself; 9879
+      remains the standalone REST/WS API server port).
     -->
 
     <key>ProgramArguments</key>

@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-5,865\+-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-5,867\+-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v79-orange.svg)](docs/reference/schema.md)
 [![MCP Tools](https://img.shields.io/badge/MCP-19%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
@@ -77,8 +77,8 @@ designer.save("Brand colors are #FF5733 and #33FF57")
 ### REST API
 
 ```bash
-agentic-memory api --port 9878
-curl http://localhost:9878/api/v1/search?q=dark+mode
+agentic-memory api --port 9879
+curl http://localhost:9879/api/v1/search?q=dark+mode
 ```
 
 ---
@@ -218,11 +218,11 @@ const results = await client.search('context');
 ### REST API
 
 ```bash
-agentic-memory api --port 9878
+agentic-memory api --port 9879
 ```
 
 ```bash
-curl -X POST http://localhost:9878/api/v1/memories \
+curl -X POST http://localhost:9879/api/v1/memories \
   -H "Content-Type: application/json" \
   -d '{"content": "Important context"}'
 ```

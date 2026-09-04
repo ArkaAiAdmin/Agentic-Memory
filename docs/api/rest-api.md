@@ -23,12 +23,12 @@ The REST API lets any HTTP client — `curl`, Postman, browser JS, scripts — i
 | POST | `/api/v1/maintenance/integrity` | Run integrity check |
 | POST | `/api/v1/compliance/gdpr/erase` | GDPR right-to-be-forgotten |
 | GET | `/health` | Health check |
-| WS | `ws://localhost:9878/ws` | Real-time events |
+| WS | `ws://localhost:9879/ws` | Real-time events |
 
 ## Base URL
 
 ```
-http://localhost:9878
+http://localhost:9879
 ```
 
 ## Authentication
@@ -39,7 +39,7 @@ All endpoints require a Bearer token (`Authorization: Bearer <token>`). The serv
 export MEMORY_API_TOKEN=your-token-here
 
 # Include in every request
-curl -H "Authorization: Bearer $MEMORY_API_TOKEN" http://localhost:9878/api/v1/memories
+curl -H "Authorization: Bearer $MEMORY_API_TOKEN" http://localhost:9879/api/v1/memories
 ```
 
 ---
@@ -56,7 +56,7 @@ No authentication required.
 
 **curl:**
 ```bash
-curl http://localhost:9878/health
+curl http://localhost:9879/health
 ```
 
 **Response (200):**
@@ -92,7 +92,7 @@ Content-Type: application/json
 
 **curl:**
 ```bash
-curl -X POST http://localhost:9878/api/v1/memories \
+curl -X POST http://localhost:9879/api/v1/memories \
   -H "Authorization: Bearer $MEMORY_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -140,7 +140,7 @@ GET /api/v1/memories/search?query=...&limit=10&rerank=true
 
 **curl:**
 ```bash
-curl "http://localhost:9878/api/v1/memories/search?query=dark+mode&limit=5&rerank=true" \
+curl "http://localhost:9879/api/v1/memories/search?query=dark+mode&limit=5&rerank=true" \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -190,7 +190,7 @@ Use for complex queries with body parameters instead of query strings.
 
 **curl:**
 ```bash
-curl -X POST http://localhost:9878/api/v1/memories/search \
+curl -X POST http://localhost:9879/api/v1/memories/search \
   -H "Authorization: Bearer $MEMORY_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query": "dark mode", "limit": 10, "rerank": true, "tags": ["ui"]}'
@@ -222,7 +222,7 @@ GET /api/v1/memories/{id}
 
 **curl:**
 ```bash
-curl http://localhost:9878/api/v1/memories/preferences/user-prefers-dark-mode \
+curl http://localhost:9879/api/v1/memories/preferences/user-prefers-dark-mode \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -264,7 +264,7 @@ GET /api/v1/memories?limit=50&offset=0
 
 **curl:**
 ```bash
-curl "http://localhost:9878/api/v1/memories?limit=10&offset=0" \
+curl "http://localhost:9879/api/v1/memories?limit=10&offset=0" \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -304,7 +304,7 @@ Performs a soft-delete by default. The note is recoverable for 30 days.
 
 **curl:**
 ```bash
-curl -X DELETE http://localhost:9878/api/v1/memories/preferences/user-prefers-dark-mode \
+curl -X DELETE http://localhost:9879/api/v1/memories/preferences/user-prefers-dark-mode \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -334,7 +334,7 @@ Deletes all memories created via the SDK (source_file LIKE `sdk-%`).
 
 **curl:**
 ```bash
-curl -X POST http://localhost:9878/api/v1/memories/clear \
+curl -X POST http://localhost:9879/api/v1/memories/clear \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -355,7 +355,7 @@ GET /api/v1/memories/stats
 
 **curl:**
 ```bash
-curl http://localhost:9878/api/v1/memories/stats \
+curl http://localhost:9879/api/v1/memories/stats \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -387,7 +387,7 @@ GET /api/v1/kg/nodes?limit=100
 
 **curl:**
 ```bash
-curl "http://localhost:9878/api/v1/kg/nodes?limit=50" \
+curl "http://localhost:9879/api/v1/kg/nodes?limit=50" \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -421,7 +421,7 @@ GET /api/v1/kg/edges?limit=100
 
 **curl:**
 ```bash
-curl "http://localhost:9878/api/v1/kg/edges?limit=50" \
+curl "http://localhost:9879/api/v1/kg/edges?limit=50" \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -452,7 +452,7 @@ Rebuilds the FTS5 full-text search index from scratch.
 
 **curl:**
 ```bash
-curl -X POST http://localhost:9878/api/v1/maintenance/rebuild \
+curl -X POST http://localhost:9879/api/v1/maintenance/rebuild \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -481,7 +481,7 @@ Compacts the database (VACUUM + index optimization).
 
 **curl:**
 ```bash
-curl -X POST http://localhost:9878/api/v1/maintenance/compact \
+curl -X POST http://localhost:9879/api/v1/maintenance/compact \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -505,7 +505,7 @@ Runs a database integrity check.
 
 **curl:**
 ```bash
-curl -X POST http://localhost:9878/api/v1/maintenance/integrity \
+curl -X POST http://localhost:9879/api/v1/maintenance/integrity \
   -H "Authorization: Bearer $MEMORY_API_TOKEN"
 ```
 
@@ -544,7 +544,7 @@ GDPR Right-to-Be-Forgotten. The target tenant is resolved from the authenticated
 
 **curl:**
 ```bash
-curl -X POST http://localhost:9878/api/v1/compliance/gdpr/erase \
+curl -X POST http://localhost:9879/api/v1/compliance/gdpr/erase \
   -H "Authorization: Bearer $MEMORY_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"data_subject_sub": "user-12345"}'
@@ -570,7 +570,7 @@ curl -X POST http://localhost:9878/api/v1/compliance/gdpr/erase \
 
 ## WebSocket Events
 
-Connect to `ws://localhost:9878/ws` for real-time events:
+Connect to `ws://localhost:9879/ws` for real-time events:
 
 ```bash
 # Connect — token via RFC 6455 Sec-WebSocket-Protocol subprotocol
@@ -579,14 +579,14 @@ curl -i -N \
   -H "Upgrade: websocket" \
   -H "Connection: Upgrade" \
   -H "Sec-WebSocket-Protocol: $MEMORY_API_TOKEN" \
-  "http://localhost:9878/ws"
+  "http://localhost:9879/ws"
 
 # Or via Authorization header (programmatic clients)
 curl -i -N \
   -H "Upgrade: websocket" \
   -H "Connection: Upgrade" \
   -H "Authorization: Bearer $MEMORY_API_TOKEN" \
-  "http://localhost:9878/ws"
+  "http://localhost:9879/ws"
 ```
 
 Auth-in-URL (`?token=`) is **not** supported for WebSocket — credentials must
@@ -659,7 +659,7 @@ The API server reads these environment variables:
 | `MEMORY_API_CORS_ORIGINS` | `*` | Allowed CORS origins (comma-separated) |
 | `MEMORY_DB_PATH` | `./memory.db` | Database path |
 | `API_LISTEN_HOST` | `127.0.0.1` | Bind address |
-| `API_LISTEN_PORT` | `9878` | Bind port |
+| `API_LISTEN_PORT` | `9879` | Bind port |
 
 ## CORS
 
@@ -713,7 +713,7 @@ export MEMORY_API_RATE_LIMIT=600  # requests per minute per IP/principal (defaul
 
 **Cause**: The server requires a token but the client isn't sending it.
 
-**Fix**: Include the header: `curl -H "Authorization: Bearer $MEMORY_API_TOKEN" http://localhost:9878/api/v1/memories`.
+**Fix**: Include the header: `curl -H "Authorization: Bearer $MEMORY_API_TOKEN" http://localhost:9879/api/v1/memories`.
 
 ### CORS errors from browser JavaScript
 
@@ -725,7 +725,7 @@ export MEMORY_API_RATE_LIMIT=600  # requests per minute per IP/principal (defaul
 
 **Cause**: FTS5 or vector index out of sync.
 
-**Fix**: `curl -X POST http://localhost:9878/api/v1/maintenance/rebuild -H "Authorization: Bearer $MEMORY_API_TOKEN"`
+**Fix**: `curl -X POST http://localhost:9879/api/v1/maintenance/rebuild -H "Authorization: Bearer $MEMORY_API_TOKEN"`
 
 ---
 

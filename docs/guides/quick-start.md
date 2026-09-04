@@ -66,17 +66,17 @@ The MCP server exposes 17 tools that work with Claude, GPT, Gemini, and any MCP-
 
 ```bash
 # Start the REST server
-agentic-memory api --port 9878
+agentic-memory api --port 9879
 ```
 
 ```bash
 # Save a memory
-curl -X POST http://localhost:9878/api/v1/memories \
+curl -X POST http://localhost:9879/api/v1/memories \
   -H "Content-Type: application/json" \
   -d '{"content": "User prefers dark mode"}'
 
 # Search
-curl "http://localhost:9878/api/v1/search?q=dark+mode&limit=5"
+curl "http://localhost:9879/api/v1/search?q=dark+mode&limit=5"
 ```
 
 ## Option 4: TypeScript SDK
@@ -88,7 +88,7 @@ npm install @agentic-memory/sdk
 ```typescript
 import { MemoryClient } from '@agentic-memory/sdk';
 
-const client = new MemoryClient({ baseUrl: 'http://localhost:9878' });
+const client = new MemoryClient({ baseUrl: 'http://localhost:9879' });
 
 // Save
 const id = await client.add('User prefers dark mode');
