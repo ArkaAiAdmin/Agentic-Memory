@@ -81,11 +81,16 @@ def build_wheel() -> None:
         else:
             (staging / "README.md").write_text("# Agentic Memory\n")
 
-        setup_content = """from setuptools import setup, find_packages
+        import tomllib
+        with open(root / "pyproject.toml", "rb") as f:
+            pyproject_data = tomllib.load(f)
+        version = pyproject_data.get("project", {}).get("version", "1.1.0")
+
+        setup_content = f"""from setuptools import setup, find_packages
 
 setup(
     name="agentic-memory",
-    version="1.1.0",
+    version="{version}",
     description="Local-first persistent memory for AI agents — markdown-native, MCP server with temporal KG, CRDT sync, hybrid search. Apache 2.0.",
     packages=find_packages(include=["agentic_memory", "agentic_memory.*"]),
     package_data={"agentic_memory": ["*.toml", "*.json", "*.yaml", "*.yml", "*.sql", "*.sh"]},
@@ -150,8 +155,9 @@ setup(
         with zipfile.ZipFile(w, "r") as zf:
             top_levels = set(p.split("/")[0] for p in zf.namelist())
             print(f"    Top-level items in wheel: {sorted(top_levels)}")
-            assert top_levels.issubset({"agentic_memory", "agentic_memory-1.1.0.dist-info"}), (
-                f"Wheel pollutes site-packages with: {top_levels - {'agentic_memory', 'agentic_memory-1.1.0.dist-info'}}"
+            dist_info_name = f"agentic_memory-{version}.dist-info"
+            assert top_levels.issubset({"agentic_memory", dist_info_name}), (
+                f"Wheel pollutes site-packages with: {top_levels - {'agentic_memory', dist_info_name}}"
             )
     print("[✓] Verification passed: Zero site-packages pollution!")
 

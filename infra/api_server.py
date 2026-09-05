@@ -1763,10 +1763,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_get_beliefs(self, query_params: dict) -> None:
         try:
-            try:
-                min_confidence = float(query_params.get("min_confidence", ["0.0"])[0])
-            except (ValueError, TypeError, IndexError):
-                min_confidence = 0.0
+            min_confidence_val = None
+            if "min_confidence" in query_params:
+                try:
+                    min_confidence_val = float(query_params["min_confidence"][0])
+                except (ValueError, TypeError, IndexError):
+                    min_confidence_val = None
             try:
                 limit = int(query_params.get("limit", ["50"])[0])
                 limit = max(1, min(limit, 500))
@@ -1780,12 +1782,20 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             from belief.belief_lifecycle import get_active_beliefs
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
+                # Mirror MCP memory_review_beliefs semantics:
+                # min_confidence acts as a ceiling (< min_confidence) to retrieve beliefs needing review.
+                # When omitted or None, all active beliefs are returned.
                 raw_beliefs = get_active_beliefs(
                     conn,
-                    min_confidence=min_confidence,
+                    min_confidence=0.0,
                     belief_status=belief_status,
-                    limit=limit,
+                    limit=limit * 2 if min_confidence_val is not None else limit,
                 )
+                if min_confidence_val is not None:
+                    raw_beliefs = [
+                        b for b in raw_beliefs
+                        if b.get("confidence", 1.0) < min_confidence_val
+                    ][:limit]
                 beliefs = [
                     {
                         "id": str(b["id"]),

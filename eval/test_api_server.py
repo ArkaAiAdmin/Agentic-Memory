@@ -1134,11 +1134,37 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(ps_found[0]["note_id"], created_id)
 
     def test_get_beliefs_endpoint(self):
+        from infra.db import open_db
+        from belief.belief_lifecycle import ensure_belief_assertion
+        with open_db(self.db_path, write=True) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO kg_facts (id, subject, predicate, object, confidence) "
+                "VALUES (88801, 'HighConfSubject', 'relates_to', 'TargetA', 0.95)"
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO kg_facts (id, subject, predicate, object, confidence) "
+                "VALUES (88802, 'LowConfSubject', 'relates_to', 'TargetB', 0.35)"
+            )
+            ensure_belief_assertion(conn, 88801, belief_status="active", confidence=0.95)
+            ensure_belief_assertion(conn, 88802, belief_status="active", confidence=0.35)
+
+        # 1. No filter returns all active beliefs
         status, data = self._http_request("/api/v1/beliefs", "GET")
         self.assertEqual(status, 200)
         self.assertIn("beliefs", data)
         self.assertIn("count", data)
         self.assertIsInstance(data["beliefs"], list)
+        contents = [b["content"] for b in data["beliefs"]]
+        self.assertTrue(any("HighConfSubject" in c for c in contents))
+        self.assertTrue(any("LowConfSubject" in c for c in contents))
+
+        # 2. min_confidence acts as ceiling (< min_confidence) to retrieve beliefs needing review (MCP parity)
+        status_filtered, data_filtered = self._http_request("/api/v1/beliefs?min_confidence=0.5", "GET")
+        self.assertEqual(status_filtered, 200)
+        filtered_contents = [b["content"] for b in data_filtered["beliefs"]]
+        self.assertTrue(all(b["confidence"] < 0.5 for b in data_filtered["beliefs"]))
+        self.assertTrue(any("LowConfSubject" in c for c in filtered_contents))
+        self.assertFalse(any("HighConfSubject" in c for c in filtered_contents))
 
     def test_kg_nodes_query_filter_and_explore(self):
         from infra.db import open_db
