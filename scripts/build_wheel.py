@@ -86,11 +86,11 @@ def build_wheel() -> None:
             pyproject_data = tomllib.load(f)
         version = pyproject_data["project"]["version"]
 
-        setup_content = f"""from setuptools import setup, find_packages
+        setup_content = """from setuptools import setup, find_packages
 
 setup(
     name="agentic-memory",
-    version="{version}",
+    version="__VERSION__",
     description="Local-first persistent memory for AI agents — markdown-native, MCP server with temporal KG, CRDT sync, hybrid search. Apache 2.0.",
     packages=find_packages(include=["agentic_memory", "agentic_memory.*"]),
     package_data={"agentic_memory": ["*.toml", "*.json", "*.yaml", "*.yml", "*.sql", "*.sh"]},
@@ -128,7 +128,7 @@ setup(
         ],
     },
 )
-"""
+""".replace("__VERSION__", version)
         (staging / "setup.py").write_text(setup_content)
 
         # 6. Run build in staging directory
