@@ -74,6 +74,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         logger.debug("api_server: " + format, *args)
 
     def _error(self, message: str, status_code: int) -> None:
+        if status_code >= 400:
+            logger.warning(
+                "api_server error [%d] %s: %s",
+                status_code,
+                getattr(self, "path", ""),
+                message,
+            )
         self._write_json({"error": message}, status_code)
 
     def _cors_headers(self, origin: str) -> list[tuple[str, str]]:
@@ -3094,7 +3101,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(str(e), 400)
             return
         try:
-            tool_name = req.get("tool", "")
+            tool_name = req.get("tool") or req.get("name") or ""
             args = req.get("arguments") or req.get("args") or {}
             if not tool_name or not tool_name.startswith("memory_"):
                 self._error("Invalid or missing tool name", 400)

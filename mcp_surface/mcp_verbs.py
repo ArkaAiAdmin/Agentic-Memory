@@ -827,6 +827,38 @@ def memory_note(
                 )
             return str(ok) if ok else str(err)
         elif action == "patch":
+            metadata_to_patch = kwargs.get("metadata")
+            if metadata_to_patch and isinstance(metadata_to_patch, dict) and not additions and not deletions:
+                from infra.db import open_db
+                from infra.db_path_flock import db_path_flock
+                db_path = _resolve_db_path()
+                with db_path_flock(db_path):
+                    with open_db(db_path, timeout=10.0, tenant_id=resolved_tenant) as db:
+                        row = db.execute(
+                            "SELECT metadata FROM memories WHERE id = ? AND deleted_at IS NULL",
+                            (note_id,),
+                        ).fetchone()
+                        if not row:
+                            return _err(ErrorCode.NOT_FOUND, f"note '{note_id}' not found or deleted")
+                        curr_meta = {}
+                        try:
+                            curr_meta = json.loads(row[0] or "{}") if row[0] else {}
+                        except Exception:
+                            curr_meta = {}
+                        curr_meta.update(metadata_to_patch)
+                        db.execute(
+                            "UPDATE memories SET metadata = ? WHERE id = ?",
+                            (json.dumps(curr_meta), note_id),
+                        )
+                        db.commit()
+                        if rationale:
+                            try:
+                                from save_pipeline import _record_revision_log
+                                _record_revision_log(db, note_id, "patch_metadata", rationale=rationale)
+                            except Exception:
+                                pass
+                        return json.dumps({"ok": True, "note_id": note_id, "metadata": curr_meta})
+
             if not rationale:
                 return _err(ErrorCode.INVALID_PARAMS, "rationale is required for patch")
             from save_pipeline import patch_memory

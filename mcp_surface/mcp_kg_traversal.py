@@ -86,13 +86,13 @@ def memory_graph_shortest_path(
 @with_audit("memory_graph_traverse")
 def memory_graph_traverse(
     start: str,
-    edge_patterns: Union[str, List[str]],
+    edge_patterns: Union[str, List[str]] = "*",
     tenant_id: str = "default",
     **kwargs,
 ) -> str:
     """Crawl the Knowledge Graph starting from a node, following a sequence of relation types.
 
-    edge_patterns: Comma-separated string or list of relation type strings (e.g. "defines,imports").
+    edge_patterns: Comma-separated string or list of relation type strings (e.g. "defines,imports", default "*").
     Requires MEMORY_KNOWLEDGE_GRAPH=1.
     """
     from knowledge_graph import KG_ENABLED
@@ -105,7 +105,9 @@ def memory_graph_traverse(
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
 
-    # Parse edge patterns
+    # Parse edge patterns (default to wildcard '*' if empty)
+    if not edge_patterns:
+        edge_patterns = "*"
     if isinstance(edge_patterns, str):
         if len(edge_patterns) > 500:
             return _err(ErrorCode.INVALID_PARAMS, "edge_patterns string exceeds maximum length of 500 characters")
