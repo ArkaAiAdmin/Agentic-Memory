@@ -16,7 +16,13 @@ from mcp_surface.mcp_instance import mcp
 
 @mcp.tool()
 @with_audit("memory_graph_shortest_path")
-def memory_graph_shortest_path(source: str, target: str, max_depth: int = 5) -> str:
+def memory_graph_shortest_path(
+    source: str,
+    target: str,
+    max_depth: int = 5,
+    tenant_id: str = "default",
+    **kwargs,
+) -> str:
     """Compute the shortest path of relations and entities between two nodes in the Knowledge Graph.
 
     Requires MEMORY_KNOWLEDGE_GRAPH=1.
@@ -37,11 +43,25 @@ def memory_graph_shortest_path(source: str, target: str, max_depth: int = 5) -> 
         max_depth = 5
 
     try:
+        import os
         from infra.db import open_db
         from kg.kg_traversal import find_shortest_path
 
-        with open_db(db_path, timeout=5.0, write=False) as conn:
-            path = find_shortest_path(conn, source, target, max_depth=max_depth)
+        resolved_tenant = None
+        if tenant_id and tenant_id != "default":
+            resolved_tenant = tenant_id
+        if not resolved_tenant:
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                resolved_tenant = getattr(_ctx, "tenant_id", None)
+            except Exception:
+                pass
+        if not resolved_tenant:
+            resolved_tenant = tenant_id or os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+
+        with open_db(db_path, timeout=5.0, write=False, tenant_id=resolved_tenant) as conn:
+            path = find_shortest_path(conn, source, target, max_depth=max_depth, tenant_id=resolved_tenant)
 
         if not path:
             return f"No path found between '{source}' and '{target}' within depth {max_depth}."
@@ -64,7 +84,12 @@ def memory_graph_shortest_path(source: str, target: str, max_depth: int = 5) -> 
 
 @mcp.tool()
 @with_audit("memory_graph_traverse")
-def memory_graph_traverse(start: str, edge_patterns: Union[str, List[str]]) -> str:
+def memory_graph_traverse(
+    start: str,
+    edge_patterns: Union[str, List[str]],
+    tenant_id: str = "default",
+    **kwargs,
+) -> str:
     """Crawl the Knowledge Graph starting from a node, following a sequence of relation types.
 
     edge_patterns: Comma-separated string or list of relation type strings (e.g. "defines,imports").
@@ -98,11 +123,25 @@ def memory_graph_traverse(start: str, edge_patterns: Union[str, List[str]]) -> s
     patterns = patterns[:10]  # Bound traversal sequence depth to 10 steps
 
     try:
+        import os
         from infra.db import open_db
         from kg.kg_traversal import traverse_graph
 
-        with open_db(db_path, timeout=5.0, write=False) as conn:
-            paths = traverse_graph(conn, start, patterns)
+        resolved_tenant = None
+        if tenant_id and tenant_id != "default":
+            resolved_tenant = tenant_id
+        if not resolved_tenant:
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                resolved_tenant = getattr(_ctx, "tenant_id", None)
+            except Exception:
+                pass
+        if not resolved_tenant:
+            resolved_tenant = tenant_id or os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+
+        with open_db(db_path, timeout=5.0, write=False, tenant_id=resolved_tenant) as conn:
+            paths = traverse_graph(conn, start, patterns, tenant_id=resolved_tenant)
 
         if not paths:
             rel_path_str = " -> ".join(patterns)

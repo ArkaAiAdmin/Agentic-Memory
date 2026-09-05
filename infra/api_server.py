@@ -1858,21 +1858,22 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not q:
                 q = query_params.get("q", [""])[0].strip()
 
+            tenant_id = self._resolve_tenant_id()
             from infra._lazy_imports import connection_pool, safe_close_db
-            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
             try:
                 params: tuple[Any, ...]
                 if q:
                     escaped_q = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                     sql = (
                         "SELECT id, name, entity_type FROM kg_entities "
-                        "WHERE name LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                        "WHERE name LIKE ? ESCAPE '\\' COLLATE NOCASE AND tenant_id = ? "
                         "LIMIT ?"
                     )
-                    params = (f"%{escaped_q}%", limit)
+                    params = (f"%{escaped_q}%", tenant_id, limit)
                 else:
-                    sql = "SELECT id, name, entity_type FROM kg_entities LIMIT ?"
-                    params = (limit,)
+                    sql = "SELECT id, name, entity_type FROM kg_entities WHERE tenant_id = ? LIMIT ?"
+                    params = (tenant_id, limit)
                 rows = conn.execute(sql, params).fetchall()
                 nodes = [
                     {
@@ -1898,12 +1899,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 limit = max(1, min(raw_limit, 500))
             except (ValueError, TypeError):
                 limit = 100
+            tenant_id = self._resolve_tenant_id()
             from infra._lazy_imports import connection_pool, safe_close_db
-            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
             try:
                 rows = conn.execute(
-                    "SELECT source_id, target_id, relation, weight FROM kg_edges LIMIT ?",
-                    (limit,),
+                    "SELECT source_id, target_id, relation, weight FROM kg_edges WHERE tenant_id = ? LIMIT ?",
+                    (tenant_id, limit),
                 ).fetchall()
                 edges = [
                     {
@@ -2948,33 +2950,38 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 max_depth = 2
 
+            tenant_id = self._resolve_tenant_id()
+            from agent_context import temporary_agent_context
+            effective_agent_id = getattr(self, "_principal_id", None) or os.environ.get("MEMORY_AGENT_ID") or "ami"
+
             from mcp_surface.mcp_kg import memory_facts_list, memory_graph_stats
             from mcp_surface.mcp_kg_traversal import memory_graph_traverse
             from mcp_surface.mcp_kg import memory_graph_search
 
-            if action == "explore":
-                facts = memory_facts_list(limit=20)
-                stats = memory_graph_stats()
-                result_text = f"## KG Facts\n{facts}\n\n## Stats\n{stats}"
-            elif action == "search" and query:
-                result_text = memory_graph_search(query=query, limit=10, max_hops=max_depth)
-            elif action == "traverse" and start:
-                result_text = memory_graph_traverse(start=start, edge_patterns=edge_patterns)
-            elif action == "stats":
-                result_text = memory_graph_stats()
-            else:
-                self._error("Invalid KG explore parameters", 400)
-                return
+            with temporary_agent_context(effective_agent_id, principal_id=getattr(self, "_principal_id", None), tenant_id=tenant_id):
+                if action == "explore":
+                    facts = memory_facts_list(limit=20, tenant_id=tenant_id)
+                    stats = memory_graph_stats(tenant_id=tenant_id)
+                    result_text = f"## KG Facts\n{facts}\n\n## Stats\n{stats}"
+                elif action == "search" and query:
+                    result_text = memory_graph_search(query=query, limit=10, max_hops=max_depth, tenant_id=tenant_id)
+                elif action == "traverse" and start:
+                    result_text = memory_graph_traverse(start=start, edge_patterns=edge_patterns, tenant_id=tenant_id)
+                elif action == "stats":
+                    result_text = memory_graph_stats(tenant_id=tenant_id)
+                else:
+                    self._error("Invalid KG explore parameters", 400)
+                    return
 
             from infra._lazy_imports import connection_pool, safe_close_db
-            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
             try:
-                entity_rows = conn.execute("SELECT id, name, entity_type FROM kg_entities LIMIT 100").fetchall()
+                entity_rows = conn.execute("SELECT id, name, entity_type FROM kg_entities WHERE tenant_id = ? LIMIT 100", (tenant_id,)).fetchall()
                 nodes = [{"id": str(r[0]), "name": r[1], "type": r[2] or "entity", "facts": []} for r in entity_rows]
-                edge_rows = conn.execute("SELECT source_id, target_id, relation, weight FROM kg_edges LIMIT 100").fetchall()
+                edge_rows = conn.execute("SELECT source_id, target_id, relation, weight FROM kg_edges WHERE tenant_id = ? LIMIT 100", (tenant_id,)).fetchall()
                 edges = [{"source": str(r[0]), "target": str(r[1]), "predicate": r[2], "confidence": r[3]} for r in edge_rows]
-                entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
-                edge_count = conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone()[0]
+                entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities WHERE tenant_id = ?", (tenant_id,)).fetchone()[0]
+                edge_count = conn.execute("SELECT COUNT(*) FROM kg_edges WHERE tenant_id = ?", (tenant_id,)).fetchone()[0]
                 stats_dict = {"node_count": entity_count, "edge_count": edge_count}
             finally:
                 safe_close_db(conn)
@@ -3137,7 +3144,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
             from agent_context import temporary_agent_context
             effective_agent_id = principal_id or os.environ.get("MEMORY_AGENT_ID") or "ami"
-            with temporary_agent_context(effective_agent_id, principal_id=principal_id):
+            with temporary_agent_context(effective_agent_id, principal_id=principal_id, tenant_id=tenant_id):
                 result = tool_fn(**valid_args)
             if isinstance(result, str):
                 if result.startswith("Error [AUTHORIZATION_DENIED]"):

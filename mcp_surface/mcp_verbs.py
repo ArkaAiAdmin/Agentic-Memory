@@ -421,6 +421,8 @@ def memory_review_beliefs(
     belief_status: str = "active",
     older_than_days: float | None = None,
     limit: int = 20,
+    tenant_id: str = "default",
+    **kwargs: Any,
 ) -> str:
     """Review beliefs that may need agent attention — low confidence, old, or stale.
 
@@ -432,6 +434,7 @@ def memory_review_beliefs(
         belief_status: Filter by status (default "active").
         older_than_days: Only return beliefs last reviewed more than this many days ago (default 30.0).
         limit: Max results (default 20, clamped to 1..500).
+        tenant_id: Tenant identity for tenant-scoped belief review (default "default").
     """
     auth_err = _check_authorization("search", "memory")
     if auth_err:
@@ -446,16 +449,19 @@ def memory_review_beliefs(
         # Sentinel: None defaults to 30.0; <= 0 disables staleness filter
         effective_older_than_days: float | None = 30.0 if older_than_days is None else (older_than_days if older_than_days > 0 else None)
 
-        # Resolve tenant from agent context or env
+        # Resolve tenant from argument, agent context or env
         resolved_tenant = None
-        try:
-            from agent_context import get_agent
-            _ctx = get_agent()
-            resolved_tenant = getattr(_ctx, "tenant_id", None)
-        except Exception:
-            pass
+        if tenant_id and tenant_id != "default":
+            resolved_tenant = tenant_id
         if not resolved_tenant:
-            resolved_tenant = os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                resolved_tenant = getattr(_ctx, "tenant_id", None)
+            except Exception:
+                pass
+        if not resolved_tenant:
+            resolved_tenant = tenant_id or os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
 
         db_path = _resolve_db_path()
         with open_db(db_path, timeout=10.0, write=False, tenant_id=resolved_tenant) as db:
@@ -698,6 +704,8 @@ def memory_note(
     rationale: str = "",
     additions: list[str] | None = None,
     deletions: list[str] | None = None,
+    tenant_id: str = "default",
+    **kwargs: Any,
 ) -> str:
     """CRUD operations on a specific memory note.
 
@@ -714,6 +722,7 @@ def memory_note(
         rationale: Reason for the action (required for supersede, patch, revert_supersede; recommended for delete).
         additions: Text segments to insert (for patch action).
         deletions: Text segments to remove by content match (for patch action).
+        tenant_id: Tenant identity for tenant-scoped operations (default "default").
     """
     # Map note actions to RBAC actions
     _note_action_map = {
@@ -730,6 +739,20 @@ def memory_note(
     if auth_err:
         return auth_err
     try:
+        # Resolve tenant from argument, agent context or env
+        resolved_tenant = None
+        if tenant_id and tenant_id != "default":
+            resolved_tenant = tenant_id
+        if not resolved_tenant:
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                resolved_tenant = getattr(_ctx, "tenant_id", None)
+            except Exception:
+                pass
+        if not resolved_tenant:
+            resolved_tenant = tenant_id or os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+
         if action in ("patch", "supersede", "revert_supersede"):
             from config import get_config
 
@@ -743,7 +766,7 @@ def memory_note(
             from search.orchestrator import search_memories
 
             result = search_memories(
-                db_path=_resolve_db_path(), query=note_id, limit=1
+                db_path=_resolve_db_path(), query=note_id, limit=1, tenant_id=resolved_tenant
             )
             return str(result.get("output", str(result)))
         elif action == "delete":
@@ -755,7 +778,7 @@ def memory_note(
                     from save_pipeline import _record_revision_log
                     from infra.db import open_db
 
-                    with open_db(_resolve_db_path(), timeout=10.0) as db:
+                    with open_db(_resolve_db_path(), timeout=10.0, tenant_id=resolved_tenant) as db:
                         _record_revision_log(db, note_id, "delete", rationale=rationale)
                 except Exception as e:
                     logger.warning("Unhandled exception in memory_note: %s", e)
@@ -782,6 +805,7 @@ def memory_note(
                     tags=tags or [],
                     importance=clamped_importance,
                     is_global=False,
+                    tenant_id=resolved_tenant,
                 )
                 return str(result)
             except SaveValidationError as e:

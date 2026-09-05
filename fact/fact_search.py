@@ -217,9 +217,29 @@ def facts_list(
     epistemic_source: str | None = None,
     fact_type: str | None = None,
     include_superseded: bool = False,
+    tenant_id: str | None = None,
 ) -> list[dict]:
+    resolved_tenant = tenant_id
+    if not resolved_tenant:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            resolved_tenant = getattr(_ctx, "tenant_id", None)
+        except Exception:
+            pass
+    if not resolved_tenant and conn is not None:
+        try:
+            val = conn.execute("SELECT tenant_id()").fetchone()[0]
+            if val:
+                resolved_tenant = str(val)
+        except Exception:
+            pass
+
     conditions = ["confidence >= ?"]
     params: list = [min_confidence]
+    if resolved_tenant:
+        conditions.append("tenant_id = ?")
+        params.append(resolved_tenant)
     if not include_superseded:
         try:
             cols = _get_kg_facts_cols(conn)
@@ -328,16 +348,17 @@ def facts_search_db(
 
 
 def facts_list_db(
-    db_path: str | Path, limit: int = 20, min_confidence: float = 0.0
+    db_path: str | Path, limit: int = 20, min_confidence: float = 0.0,
+    tenant_id: str | None = None,
 ) -> list[dict]:
     """facts_list with connection lifecycle managed."""
     from infra.memory_common import connection_pool, safe_close_db
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
     conn.execute("PRAGMA busy_timeout = 30000;")
     ensure_facts_schema(conn)
     try:
-        return facts_list(conn, limit=limit, min_confidence=min_confidence)
+        return facts_list(conn, limit=limit, min_confidence=min_confidence, tenant_id=tenant_id)
     finally:
         safe_close_db(conn)
 

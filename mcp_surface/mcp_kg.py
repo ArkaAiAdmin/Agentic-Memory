@@ -94,7 +94,13 @@ def _check_authorization(action: str, resource: str = "memory") -> str | None:
 
 @mcp.tool()
 @with_audit("memory_graph_search")
-def memory_graph_search(query: str, limit: int = 10, max_hops: int = 2) -> str:
+def memory_graph_search(
+    query: str,
+    limit: int = 10,
+    max_hops: int = 2,
+    tenant_id: str = "default",
+    **kwargs,
+) -> str:
     """Search the knowledge graph for entities matching the query.
 
     Returns entities with their relations, ranked by mention count.
@@ -112,11 +118,25 @@ def memory_graph_search(query: str, limit: int = 10, max_hops: int = 2) -> str:
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
     try:
+        import os
         from knowledge_graph import graph_search_db
+
+        resolved_tenant = None
+        if tenant_id and tenant_id != "default":
+            resolved_tenant = tenant_id
+        if not resolved_tenant:
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                resolved_tenant = getattr(_ctx, "tenant_id", None)
+            except Exception:
+                pass
+        if not resolved_tenant:
+            resolved_tenant = tenant_id or os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
 
         limit = max(1, min(int(limit), 100))
         max_hops = max(1, min(int(max_hops), 5))
-        result = graph_search_db(db_path, query, limit=limit, max_hops=max_hops)
+        result = graph_search_db(db_path, query, limit=limit, max_hops=max_hops, tenant_id=resolved_tenant)
         if not result["entities"]:
             return f"No graph results for '{query}'."
         lines = [
@@ -141,7 +161,7 @@ def memory_graph_search(query: str, limit: int = 10, max_hops: int = 2) -> str:
 
 @mcp.tool()
 @with_audit("memory_graph_stats")
-def memory_graph_stats() -> str:
+def memory_graph_stats(tenant_id: str = "default", **kwargs) -> str:
     """Return statistics about the knowledge graph: entity/edge counts, type distribution, most connected entities."""
     from knowledge_graph import KG_ENABLED
 
@@ -155,9 +175,23 @@ def memory_graph_stats() -> str:
     if auth_err:
         return auth_err
     try:
+        import os
         from knowledge_graph import graph_stats_db
 
-        stats = graph_stats_db(db_path)
+        resolved_tenant = None
+        if tenant_id and tenant_id != "default":
+            resolved_tenant = tenant_id
+        if not resolved_tenant:
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                resolved_tenant = getattr(_ctx, "tenant_id", None)
+            except Exception:
+                pass
+        if not resolved_tenant:
+            resolved_tenant = tenant_id or os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+
+        stats = graph_stats_db(db_path, tenant_id=resolved_tenant)
         if not stats.get("enabled"):
             return "Knowledge graph disabled."
         lines = [
@@ -230,7 +264,12 @@ def memory_facts_search(query: str, limit: int = 10) -> str:
 
 @mcp.tool()
 @with_audit("memory_facts_list")
-def memory_facts_list(limit: int = 20, min_confidence: float = 0.0) -> str:
+def memory_facts_list(
+    limit: int = 20,
+    min_confidence: float = 0.0,
+    tenant_id: str = "default",
+    **kwargs,
+) -> str:
     """List all extracted facts above a confidence threshold, ordered by confidence.
 
     Requires MEMORY_KNOWLEDGE_GRAPH=1.
@@ -247,11 +286,25 @@ def memory_facts_list(limit: int = 20, min_confidence: float = 0.0) -> str:
     if auth_err:
         return auth_err
     try:
+        import os
         from fact import facts_list_db
+
+        resolved_tenant = None
+        if tenant_id and tenant_id != "default":
+            resolved_tenant = tenant_id
+        if not resolved_tenant:
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                resolved_tenant = getattr(_ctx, "tenant_id", None)
+            except Exception:
+                pass
+        if not resolved_tenant:
+            resolved_tenant = tenant_id or os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
 
         limit = max(1, min(int(limit), 100))
         min_confidence = max(0.0, min(float(min_confidence), 1.0))
-        results = facts_list_db(db_path, limit=limit, min_confidence=min_confidence)
+        results = facts_list_db(db_path, limit=limit, min_confidence=min_confidence, tenant_id=resolved_tenant)
         if not results:
             return "No facts extracted yet."
         lines = [f"**All Facts** ({len(results)} shown):"]

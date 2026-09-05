@@ -93,7 +93,7 @@ def clear_graph_cache() -> None:
         _graph_cache.clear()
 
 
-def _match_query_entities(conn, query_lower: str, limit: int) -> list:
+def _match_query_entities(conn, query_lower: str, limit: int, tenant_id: str | None = None) -> list:
     """Find matching entities in the knowledge graph.
 
     Tries FTS5 first (with OR-based matching for multi-word queries);
@@ -111,35 +111,66 @@ def _match_query_entities(conn, query_lower: str, limit: int) -> list:
                 fts_query = f'"{clean_tokens[0]}"'
             else:
                 fts_query = " OR ".join(f'"{t}"' for t in clean_tokens)
-            entities = conn.execute(
-                "SELECT ge.id, ge.name, ge.entity_type, ge.mentions "
-                "FROM kg_entities_fts "
-                "JOIN kg_entities ge ON ge.rowid = kg_entities_fts.rowid "
-                "WHERE kg_entities_fts MATCH ? "
-                "LIMIT ?",
-                (fts_query, limit * 3),
-            ).fetchall()
+            if tenant_id:
+                entities = conn.execute(
+                    "SELECT ge.id, ge.name, ge.entity_type, ge.mentions "
+                    "FROM kg_entities_fts "
+                    "JOIN kg_entities ge ON ge.rowid = kg_entities_fts.rowid "
+                    "WHERE kg_entities_fts MATCH ? AND ge.tenant_id = ? "
+                    "LIMIT ?",
+                    (fts_query, tenant_id, limit * 3),
+                ).fetchall()
+            else:
+                entities = conn.execute(
+                    "SELECT ge.id, ge.name, ge.entity_type, ge.mentions "
+                    "FROM kg_entities_fts "
+                    "JOIN kg_entities ge ON ge.rowid = kg_entities_fts.rowid "
+                    "WHERE kg_entities_fts MATCH ? "
+                    "LIMIT ?",
+                    (fts_query, limit * 3),
+                ).fetchall()
     except Exception:
         logger.warning("FTS5 query failed for entity search, falling back to LIKE scan")
 
     if not entities:
-        entities = conn.execute(
-            "SELECT id, name, entity_type, mentions FROM kg_entities "
-            "WHERE name = ? LIMIT ?",
-            (query_lower, limit * 3),
-        ).fetchall()
+        if tenant_id:
+            entities = conn.execute(
+                "SELECT id, name, entity_type, mentions FROM kg_entities "
+                "WHERE name = ? AND tenant_id = ? LIMIT ?",
+                (query_lower, tenant_id, limit * 3),
+            ).fetchall()
+        else:
+            entities = conn.execute(
+                "SELECT id, name, entity_type, mentions FROM kg_entities "
+                "WHERE name = ? LIMIT ?",
+                (query_lower, limit * 3),
+            ).fetchall()
     if not entities:
-        entities = conn.execute(
-            "SELECT id, name, entity_type, mentions FROM kg_entities "
-            "WHERE name LIKE ? LIMIT ?",
-            (f"{query_lower}%", limit * 3),
-        ).fetchall()
+        if tenant_id:
+            entities = conn.execute(
+                "SELECT id, name, entity_type, mentions FROM kg_entities "
+                "WHERE name LIKE ? AND tenant_id = ? LIMIT ?",
+                (f"{query_lower}%", tenant_id, limit * 3),
+            ).fetchall()
+        else:
+            entities = conn.execute(
+                "SELECT id, name, entity_type, mentions FROM kg_entities "
+                "WHERE name LIKE ? LIMIT ?",
+                (f"{query_lower}%", limit * 3),
+            ).fetchall()
     if not entities:
-        entities = conn.execute(
-            "SELECT id, name, entity_type, mentions FROM kg_entities "
-            "WHERE name LIKE ? LIMIT ?",
-            (f"%{query_lower}%", limit * 3),
-        ).fetchall()
+        if tenant_id:
+            entities = conn.execute(
+                "SELECT id, name, entity_type, mentions FROM kg_entities "
+                "WHERE name LIKE ? AND tenant_id = ? LIMIT ?",
+                (f"%{query_lower}%", tenant_id, limit * 3),
+            ).fetchall()
+        else:
+            entities = conn.execute(
+                "SELECT id, name, entity_type, mentions FROM kg_entities "
+                "WHERE name LIKE ? LIMIT ?",
+                (f"%{query_lower}%", limit * 3),
+            ).fetchall()
     return entities
 
 
@@ -191,7 +222,8 @@ def _row_to_entity_dict(e) -> dict:
 
 
 def _assemble_1hop(
-    conn, entities: list, entity_ids: list, limit: int, as_of: str | None
+    conn, entities: list, entity_ids: list, limit: int, as_of: str | None,
+    tenant_id: str | None = None,
 ) -> tuple[list, list, set, dict]:
     """Fetch 1-hop edges for the matched entities. Returns
     ``(edge_list, endpoint_entities, hop1_ids, name_to_id)``.
@@ -213,6 +245,8 @@ def _assemble_1hop(
 
     placeholders = ",".join("?" * len(entity_ids))
     temporal_clause, temporal_params = _temporal_edge_clause(as_of)
+    tenant_clause = " AND e.tenant_id = ?" if tenant_id else ""
+    tenant_params = [tenant_id] if tenant_id else []
     edges = conn.execute(
         f"""SELECT e.id, s.name, s.entity_type, e.relation,
                    t.name, t.entity_type, e.weight
@@ -220,10 +254,11 @@ def _assemble_1hop(
            JOIN kg_entities s ON e.source_id = s.id
            JOIN kg_entities t ON e.target_id = t.id
            WHERE (e.source_id IN ({placeholders}) OR e.target_id IN ({placeholders}))
+           {tenant_clause}
            {temporal_clause}
            ORDER BY e.weight DESC
            LIMIT ?""",
-        entity_ids + entity_ids + temporal_params + [limit * 3],
+        entity_ids + entity_ids + tenant_params + temporal_params + [limit * 3],
     ).fetchall()
 
     # H5 fix: collect all endpoint names first, then batch lookup
@@ -239,10 +274,16 @@ def _assemble_1hop(
     # Batch lookup for endpoint entities (H5 fix: single query instead of N+1)
     if endpoint_names:
         ep_placeholders = ",".join("?" * len(endpoint_names))
-        ep_rows = conn.execute(
-            f"SELECT id, name, entity_type, mentions FROM kg_entities WHERE name IN ({ep_placeholders})",
-            list(endpoint_names),
-        ).fetchall()
+        if tenant_id:
+            ep_rows = conn.execute(
+                f"SELECT id, name, entity_type, mentions FROM kg_entities WHERE name IN ({ep_placeholders}) AND tenant_id = ?",
+                list(endpoint_names) + [tenant_id],
+            ).fetchall()
+        else:
+            ep_rows = conn.execute(
+                f"SELECT id, name, entity_type, mentions FROM kg_entities WHERE name IN ({ep_placeholders})",
+                list(endpoint_names),
+            ).fetchall()
         for ep_row in ep_rows:
             name_to_id[ep_row[1]] = ep_row[0]
             endpoint_entities.append(ep_row)
@@ -257,6 +298,7 @@ def _assemble_2hop(
     entity_map: dict,
     limit: int,
     as_of: str | None,
+    tenant_id: str | None = None,
 ) -> list:
     """Find 2-hop neighbors of the 1-hop entities and return their
     edges. Capped at 10 new 2-hop entity IDs and ``limit`` edges.
@@ -269,24 +311,35 @@ def _assemble_2hop(
     hop1_list = list(hop1_ids)
     placeholders = ",".join("?" * len(hop1_list))
     temporal_clause, temporal_params = _temporal_edge_clause(as_of)
+    tenant_clause = " AND e.tenant_id = ?" if tenant_id else ""
+    tenant_params = [tenant_id] if tenant_id else []
     hop2_raw = conn.execute(
         f"""SELECT DISTINCT
                 CASE WHEN e.source_id IN ({placeholders}) THEN e.target_id ELSE e.source_id END
             FROM kg_edges e
             WHERE (e.source_id IN ({placeholders}) OR e.target_id IN ({placeholders}))
+            {tenant_clause}
             {temporal_clause}""",
-        hop1_list + hop1_list + hop1_list + temporal_params,
+        hop1_list + hop1_list + tenant_params + temporal_params,
     ).fetchall()
     hop2_ids = [r[0] for r in hop2_raw if r[0] not in already_ids][:10]
     if not hop2_ids:
         return []
     placeholders2 = ",".join("?" * len(hop2_ids))
-    hop2_entities = conn.execute(
-        f"""SELECT id, name, entity_type, mentions
-            FROM kg_entities
-            WHERE id IN ({placeholders2})""",
-        hop2_ids,
-    ).fetchall()
+    if tenant_id:
+        hop2_entities = conn.execute(
+            f"""SELECT id, name, entity_type, mentions
+                FROM kg_entities
+                WHERE id IN ({placeholders2}) AND tenant_id = ?""",
+            hop2_ids + [tenant_id],
+        ).fetchall()
+    else:
+        hop2_entities = conn.execute(
+            f"""SELECT id, name, entity_type, mentions
+                FROM kg_entities
+                WHERE id IN ({placeholders2})""",
+            hop2_ids,
+        ).fetchall()
     for e in hop2_entities:
         if e[0] not in entity_map:
             entity_map[e[0]] = _row_to_entity_dict(e)
@@ -297,10 +350,11 @@ def _assemble_2hop(
             JOIN kg_entities s ON e.source_id = s.id
             JOIN kg_entities t ON e.target_id = t.id
             WHERE (e.source_id IN ({placeholders2}) OR e.target_id IN ({placeholders2}))
+            {tenant_clause}
             {temporal_clause}
             ORDER BY e.weight DESC
             LIMIT ?""",
-        hop2_ids + hop2_ids + temporal_params + [limit],
+        hop2_ids + hop2_ids + tenant_params + temporal_params + [limit],
     ).fetchall()
     return [_row_to_edge_dict(edge) for edge in hop2_edges]
 
@@ -311,6 +365,7 @@ def graph_search(
     limit: int = 10,
     max_hops: int = 2,
     as_of: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict:
     """Search the knowledge graph for entities matching the query.
 
@@ -330,14 +385,31 @@ def graph_search(
     if not sys.modules["knowledge_graph"].KG_ENABLED:
         return {"entities": [], "edges": []}
 
+    resolved_tenant = tenant_id
+    if not resolved_tenant:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            resolved_tenant = getattr(_ctx, "tenant_id", None)
+        except Exception:
+            pass
+    if not resolved_tenant and conn is not None:
+        try:
+            val = conn.execute("SELECT tenant_id()").fetchone()[0]
+            if val:
+                resolved_tenant = str(val)
+        except Exception:
+            pass
+    resolved_tenant = resolved_tenant or "default"
+
     query_lower = query.lower().strip()
     db_key = _conn_db_key(conn)
-    cache_key = (db_key, query_lower, limit, max_hops, as_of)
+    cache_key = (resolved_tenant, db_key, query_lower, limit, max_hops, as_of)
     cached = _graph_cache_get(cache_key)
     if cached is not None:
         return cached
 
-    entities = _match_query_entities(conn, query_lower, limit)
+    entities = _match_query_entities(conn, query_lower, limit, tenant_id=resolved_tenant)
     if not entities:
         return {"entities": [], "edges": []}
 
@@ -345,7 +417,7 @@ def graph_search(
     entity_map = {e[0]: _row_to_entity_dict(e) for e in entities}
 
     edge_list, endpoint_entities, hop1_ids, _name_to_id = _assemble_1hop(
-        conn, entities, entity_ids, limit, as_of
+        conn, entities, entity_ids, limit, as_of, tenant_id=resolved_tenant
     )
     # Merge in 1-hop endpoints so callers see neighbor entities.
     for ep in endpoint_entities:
@@ -353,7 +425,7 @@ def graph_search(
             entity_map[ep[0]] = _row_to_entity_dict(ep)
 
     if max_hops >= 2:
-        edge_list.extend(_assemble_2hop(conn, hop1_ids, entity_map, limit, as_of))
+        edge_list.extend(_assemble_2hop(conn, hop1_ids, entity_map, limit, as_of, tenant_id=resolved_tenant))
 
     # Deduplicate edges between 1-hop and 2-hop expansions
     seen_edge_ids: set[int] = set()
@@ -373,58 +445,112 @@ def graph_search(
 # ---------------------------------------------------------------------------
 
 
-def graph_stats(conn: AnyConnection) -> dict:
+def graph_stats(conn: AnyConnection, tenant_id: str | None = None) -> dict:
     """Return statistics about the knowledge graph."""
     import sys
 
     if not sys.modules["knowledge_graph"].KG_ENABLED:
         return {"enabled": False}
 
+    resolved_tenant = tenant_id
+    if not resolved_tenant:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            resolved_tenant = getattr(_ctx, "tenant_id", None)
+        except Exception:
+            pass
+    if not resolved_tenant and conn is not None:
+        try:
+            val = conn.execute("SELECT tenant_id()").fetchone()[0]
+            if val:
+                resolved_tenant = str(val)
+        except Exception:
+            pass
+
     try:
-        entity_count_row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
+        if resolved_tenant:
+            entity_count_row = conn.execute("SELECT COUNT(*) FROM kg_entities WHERE tenant_id = ?", (resolved_tenant,)).fetchone()
+            edge_count_row = conn.execute("SELECT COUNT(*) FROM kg_edges WHERE tenant_id = ?", (resolved_tenant,)).fetchone()
+        else:
+            entity_count_row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
+            edge_count_row = conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone()
         entity_count = int(entity_count_row[0]) if entity_count_row is not None else 0
-        edge_count_row = conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone()
         edge_count = int(edge_count_row[0]) if edge_count_row is not None else 0
 
         # Type distribution
         type_dist = {}
-        for row in conn.execute(
-            "SELECT entity_type, COUNT(*) FROM kg_entities GROUP BY entity_type"
-        ).fetchall():
+        if resolved_tenant:
+            t_rows = conn.execute(
+                "SELECT entity_type, COUNT(*) FROM kg_entities WHERE tenant_id = ? GROUP BY entity_type",
+                (resolved_tenant,),
+            ).fetchall()
+        else:
+            t_rows = conn.execute(
+                "SELECT entity_type, COUNT(*) FROM kg_entities GROUP BY entity_type"
+            ).fetchall()
+        for row in t_rows:
             type_dist[row[0]] = row[1]
 
         # Relation distribution
         rel_dist = {}
-        for row in conn.execute(
-            "SELECT relation, COUNT(*) FROM kg_edges GROUP BY relation"
-        ).fetchall():
+        if resolved_tenant:
+            r_rows = conn.execute(
+                "SELECT relation, COUNT(*) FROM kg_edges WHERE tenant_id = ? GROUP BY relation",
+                (resolved_tenant,),
+            ).fetchall()
+        else:
+            r_rows = conn.execute(
+                "SELECT relation, COUNT(*) FROM kg_edges GROUP BY relation"
+            ).fetchall()
+        for row in r_rows:
             rel_dist[row[0]] = row[1]
 
         # Most connected entities
-        top_entities = conn.execute(
-            """SELECT e.name, e.entity_type,
-                      COALESCE(src.cnt, 0) + COALESCE(tgt.cnt, 0) as connections
-               FROM kg_entities e
-               LEFT JOIN (
-                   SELECT source_id, COUNT(*) AS cnt
-                   FROM kg_edges GROUP BY source_id
-               ) src ON src.source_id = e.id
-               LEFT JOIN (
-                   SELECT target_id, COUNT(*) AS cnt
-                   FROM kg_edges GROUP BY target_id
-               ) tgt ON tgt.target_id = e.id
-               ORDER BY connections DESC
-               LIMIT 5"""
-        ).fetchall()
+        if resolved_tenant:
+            top_entities = conn.execute(
+                """SELECT e.name, e.entity_type,
+                          COALESCE(src.cnt, 0) + COALESCE(tgt.cnt, 0) as connections
+                   FROM kg_entities e
+                   LEFT JOIN (
+                       SELECT source_id, COUNT(*) AS cnt
+                       FROM kg_edges WHERE tenant_id = ? GROUP BY source_id
+                   ) src ON e.id = src.source_id
+                   LEFT JOIN (
+                       SELECT target_id, COUNT(*) AS cnt
+                       FROM kg_edges WHERE tenant_id = ? GROUP BY target_id
+                   ) tgt ON e.id = tgt.target_id
+                   WHERE e.tenant_id = ?
+                   ORDER BY connections DESC
+                   LIMIT 5""",
+                (resolved_tenant, resolved_tenant, resolved_tenant),
+            ).fetchall()
+        else:
+            top_entities = conn.execute(
+                """SELECT e.name, e.entity_type,
+                          COALESCE(src.cnt, 0) + COALESCE(tgt.cnt, 0) as connections
+                   FROM kg_entities e
+                   LEFT JOIN (
+                       SELECT source_id, COUNT(*) AS cnt
+                       FROM kg_edges GROUP BY source_id
+                   ) src ON e.id = src.source_id
+                   LEFT JOIN (
+                       SELECT target_id, COUNT(*) AS cnt
+                       FROM kg_edges GROUP BY target_id
+                   ) tgt ON e.id = tgt.target_id
+                   ORDER BY connections DESC
+                   LIMIT 5""",
+            ).fetchall()
 
         return {
             "enabled": True,
-            "entity_count": entity_count,
-            "edge_count": edge_count,
-            "type_distribution": type_dist,
-            "relation_distribution": rel_dist,
+            "entities": entity_count,
+            "edges": edge_count,
+            "entity_types": type_dist,
+            "relations": rel_dist,
             "most_connected": [
-                {"name": r[0], "type": r[1], "connections": r[2]} for r in top_entities
+                {"name": r[0], "type": r[1], "connections": r[2]}
+                for r in top_entities
             ],
         }
     except sqlite3.OperationalError:
@@ -437,29 +563,30 @@ def graph_stats(conn: AnyConnection) -> dict:
 
 
 def graph_search_db(
-    db_path: str | Path, query: str, limit: int = 10, max_hops: int = 2
+    db_path: str | Path, query: str, limit: int = 10, max_hops: int = 2,
+    tenant_id: str | None = None,
 ) -> dict:
     """graph_search with connection lifecycle managed."""
     from infra.memory_common import connection_pool, safe_close_db
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
     conn.execute("PRAGMA busy_timeout = 30000;")
     ensure_kg_schema(conn)
     try:
-        return graph_search(conn, query, limit=limit, max_hops=max_hops)
+        return graph_search(conn, query, limit=limit, max_hops=max_hops, tenant_id=tenant_id)
     finally:
         safe_close_db(conn)
 
 
-def graph_stats_db(db_path: str | Path) -> dict:
+def graph_stats_db(db_path: str | Path, tenant_id: str | None = None) -> dict:
     """graph_stats with connection lifecycle managed."""
     from infra.memory_common import connection_pool, safe_close_db
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
     conn.execute("PRAGMA busy_timeout = 30000;")
     ensure_kg_schema(conn)
     try:
-        return graph_stats(conn)
+        return graph_stats(conn, tenant_id=tenant_id)
     finally:
         safe_close_db(conn)
 

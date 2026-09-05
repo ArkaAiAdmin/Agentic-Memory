@@ -48,10 +48,15 @@ class AgentContext:
     parent_agent: Optional[str] = None
     namespace: str = ""
     principal_id: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 @contextmanager
-def temporary_agent_context(agent_id: str, principal_id: Optional[str] = None):
+def temporary_agent_context(
+    agent_id: str,
+    principal_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+):
     """Temporarily bind the thread-local agent context to *agent_id*.
 
     Restores the previous context on exit.  Use this when an
@@ -61,7 +66,7 @@ def temporary_agent_context(agent_id: str, principal_id: Optional[str] = None):
     """
     prev = getattr(_AGENT_CONTEXT, "current", None)
     try:
-        if prev and prev.agent_id == agent_id:
+        if prev and prev.agent_id == agent_id and (tenant_id is None or prev.tenant_id == tenant_id):
             yield prev
             return
         ctx = AgentContext(
@@ -69,6 +74,7 @@ def temporary_agent_context(agent_id: str, principal_id: Optional[str] = None):
             display_name=agent_id,
             namespace=agent_id,
             principal_id=principal_id or agent_id,
+            tenant_id=tenant_id,
         )
         _AGENT_CONTEXT.current = ctx
         yield ctx
@@ -88,6 +94,7 @@ def init_agent(
     parent_agent: Optional[str] = None,
     namespace: str = "",
     principal_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> AgentContext:
     """Register and activate an agent context.
 
@@ -105,6 +112,7 @@ def init_agent(
         principal_id: RBAC principal ID (optional, defaults to agent_id).
         parent_agent: ID of the agent that spawned this one (optional).
         namespace: Override the default namespace derived from agent_id.
+        tenant_id: Tenant identity for multi-tenant isolation (optional).
     """
     ctx = AgentContext(
         agent_id=agent_id,
@@ -112,6 +120,7 @@ def init_agent(
         parent_agent=parent_agent,
         namespace=namespace or agent_id,
         principal_id=principal_id or agent_id,
+        tenant_id=tenant_id,
     )
     with _AGENT_LOCK:
         _AGENT_REGISTRY[agent_id] = {

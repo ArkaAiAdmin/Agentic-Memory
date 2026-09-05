@@ -6,6 +6,7 @@ tenant, and that the client only pushes memories for the specified tenant.
 """
 
 import json
+import os
 import socket as _socket
 import sys
 import tempfile
@@ -160,6 +161,9 @@ class TestSyncTenantIsolation(unittest.TestCase):
         # Start server scoped to tenant agent-a
         from infra.sync_server import SyncServer
 
+        cls._orig_loopback = os.environ.get("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK")
+        os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = "1"
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(("127.0.0.1", 0))
         cls.port = sock.getsockname()[1]
@@ -179,6 +183,10 @@ class TestSyncTenantIsolation(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.stop()
+        if cls._orig_loopback is None:
+            os.environ.pop("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK", None)
+        else:
+            os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = cls._orig_loopback
 
     def test_health_counts_only_own_tenant(self):
         """The /health endpoint should only count notes for the server's tenant."""

@@ -26,40 +26,57 @@ _DROPDOWN_RE = re.compile(r"\[(\w+)\] Step (\d+) Dropdown / Menu / Values:\s*(.+
 _OBSERVATION_RE = re.compile(r"\[(\w+)\] Step (\d+) Observation:\s*(.+)")
 
 
-def build_ui_state_inventory(db) -> int:
+def build_ui_state_inventory(db, tenant_id: str | None = None) -> int:
     """(Re)build ui_state_inventory from fact-row observations.
 
     Idempotent: existing ``source_memory`` ids are replaced, not duplicated.
     Returns the number of rows in the view after the build.
     """
-    rows = db.execute(
-        "SELECT id, content FROM memories "
-        "WHERE content LIKE '%Dropdown / Menu / Values:%' AND deleted_at IS NULL"
-    ).fetchall()
-    obs_rows = db.execute(
-        "SELECT id, content FROM memories "
-        "WHERE content LIKE '%Observation:%' AND deleted_at IS NULL"
-    ).fetchall()
+    if tenant_id:
+        rows = db.execute(
+            "SELECT id, content, tenant_id FROM memories "
+            "WHERE content LIKE '%Dropdown / Menu / Values:%' AND deleted_at IS NULL AND tenant_id = ?",
+            (tenant_id,),
+        ).fetchall()
+        obs_rows = db.execute(
+            "SELECT id, content, tenant_id FROM memories "
+            "WHERE content LIKE '%Observation:%' AND deleted_at IS NULL AND tenant_id = ?",
+            (tenant_id,),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT id, content, tenant_id FROM memories "
+            "WHERE content LIKE '%Dropdown / Menu / Values:%' AND deleted_at IS NULL"
+        ).fetchall()
+        obs_rows = db.execute(
+            "SELECT id, content, tenant_id FROM memories "
+            "WHERE content LIKE '%Observation:%' AND deleted_at IS NULL"
+        ).fetchall()
 
     obs_map: dict[tuple[str, int], str] = {}
-    for rid, content in obs_rows:
+    for rid, content, _t in obs_rows:
         m = _OBSERVATION_RE.match(content.strip())
         if m:
             obs_map[(m.group(1), int(m.group(2)))] = m.group(3)[:400]
 
     parsed = []
-    for rid, content in rows:
+    for rid, content, row_tenant_id in rows:
         m = _DROPDOWN_RE.match(content.strip())
         if not m:
             continue
         traj, step, vals = m.group(1), int(m.group(2)), m.group(3)
         ctx = obs_map.get((traj, step - 1), "") or obs_map.get((traj, step), "")
-        parsed.append((traj, step, vals[:2000], ctx, rid))
+        effective_tenant = tenant_id or row_tenant_id or "default"
+        parsed.append((traj, step, vals[:2000], ctx, rid, effective_tenant))
 
-    db.execute("DELETE FROM ui_state_inventory")
+    if tenant_id:
+        db.execute("DELETE FROM ui_state_inventory WHERE tenant_id = ?", (tenant_id,))
+    else:
+        db.execute("DELETE FROM ui_state_inventory")
+
     db.executemany(
-        "INSERT INTO ui_state_inventory (traj_id, step, vals, ctx, source_memory) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO ui_state_inventory (traj_id, step, vals, ctx, source_memory, tenant_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         parsed,
     )
     # Repopulate the query-side FTS index (migration 079).
@@ -85,7 +102,7 @@ def build_ui_state_inventory(db) -> int:
     _vals_freq = Counter(p[2].strip().lower() for p in parsed)
     seen_vals: set[str] = set()
     docs = []
-    for (traj, step, vals, ctx, src_rid) in parsed:
+    for (traj, step, vals, ctx, src_rid, doc_tenant) in parsed:
         key = vals.strip().lower()
         if key in seen_vals or _vals_freq[key] > _BOILERPLATE_MAX_OCCURRENCES:
             continue
@@ -108,7 +125,11 @@ def build_ui_state_inventory(db) -> int:
         "DELETE FROM memories_fts WHERE rowid NOT IN (SELECT rowid FROM memories)"
     )
 
-    db.execute("DELETE FROM memories WHERE id LIKE 'uistate_%'")
+    if tenant_id:
+        db.execute("DELETE FROM memories WHERE id LIKE 'uistate_%' AND tenant_id = ?", (tenant_id,))
+    else:
+        db.execute("DELETE FROM memories WHERE id LIKE 'uistate_%'")
+
     db.executemany(
         "INSERT INTO memories (id, content, source_file, tags, created_at, updated_at, "
         "observed_at, pinned, importance, category, tenant_id) "
@@ -131,6 +152,7 @@ def lookup_ui_state(
     query_tokens: list[str],
     limit: int = 5,
     idf: dict[str, float] | None = None,
+    tenant_id: str | None = None,
 ) -> list[dict]:
     """Route a query to the most relevant inventory entries.
 
@@ -148,16 +170,28 @@ def lookup_ui_state(
         return []
     match_q = " OR ".join(f'"{t}"' for t in distinctive)
     try:
-        cand_rows = db.execute(
-            """
-            SELECT i.traj_id, i.step, i.vals, i.ctx
-            FROM ui_state_inventory_fts f
-            JOIN ui_state_inventory i ON i.id = f.rowid
-            WHERE ui_state_inventory_fts MATCH ?
-            LIMIT 800
-            """,
-            (match_q,),
-        ).fetchall()
+        if tenant_id:
+            cand_rows = db.execute(
+                """
+                SELECT i.traj_id, i.step, i.vals, i.ctx
+                FROM ui_state_inventory_fts f
+                JOIN ui_state_inventory i ON i.id = f.rowid
+                WHERE ui_state_inventory_fts MATCH ? AND i.tenant_id = ?
+                LIMIT 800
+                """,
+                (match_q, tenant_id),
+            ).fetchall()
+        else:
+            cand_rows = db.execute(
+                """
+                SELECT i.traj_id, i.step, i.vals, i.ctx
+                FROM ui_state_inventory_fts f
+                JOIN ui_state_inventory i ON i.id = f.rowid
+                WHERE ui_state_inventory_fts MATCH ?
+                LIMIT 800
+                """,
+                (match_q,),
+            ).fetchall()
     except sqlite3.OperationalError as exc:
         logger.debug("ui_state FTS unavailable: %s", exc)
         return []
@@ -178,14 +212,20 @@ def lookup_ui_state(
     return scored[:limit]
 
 
-def compute_inventory_idf(db) -> dict[str, float]:
+def compute_inventory_idf(db, tenant_id: str | None = None) -> dict[str, float]:
     """Precompute IDF weights over inventory entry tokens."""
     import math
     from collections import Counter
 
     df: Counter = Counter()
     n = 0
-    for (vals, ctx) in db.execute("SELECT vals, ctx FROM ui_state_inventory"):
+    if tenant_id:
+        query = "SELECT vals, ctx FROM ui_state_inventory WHERE tenant_id = ?"
+        params = (tenant_id,)
+    else:
+        query = "SELECT vals, ctx FROM ui_state_inventory"
+        params = ()
+    for (vals, ctx) in db.execute(query, params):
         df.update(set(re.findall(r"[a-z]{4,}", (vals + " " + ctx).lower())))
         n += 1
     if n == 0:

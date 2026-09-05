@@ -23,6 +23,7 @@ def find_shortest_path(
     source_name: str,
     target_name: str,
     max_depth: int = 5,
+    tenant_id: str | None = None,
 ) -> Optional[List[Dict[str, Any]]]:
     """Find the shortest path between two entities by name using a Recursive CTE BFS.
 
@@ -35,13 +36,37 @@ def find_shortest_path(
         ]
         or None if no path is found.
     """
+    resolved_tenant = tenant_id
+    if not resolved_tenant:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            resolved_tenant = getattr(_ctx, "tenant_id", None)
+        except Exception:
+            pass
+    if not resolved_tenant and conn is not None:
+        try:
+            val = conn.execute("SELECT tenant_id()").fetchone()[0]
+            if val:
+                resolved_tenant = str(val)
+        except Exception:
+            pass
+
     # 1. Resolve source and target IDs
-    source_row = conn.execute(
-        "SELECT id FROM kg_entities WHERE name = ?", (source_name,)
-    ).fetchone()
-    target_row = conn.execute(
-        "SELECT id FROM kg_entities WHERE name = ?", (target_name,)
-    ).fetchone()
+    if resolved_tenant:
+        source_row = conn.execute(
+            "SELECT id FROM kg_entities WHERE name = ? AND tenant_id = ?", (source_name, resolved_tenant)
+        ).fetchone()
+        target_row = conn.execute(
+            "SELECT id FROM kg_entities WHERE name = ? AND tenant_id = ?", (target_name, resolved_tenant)
+        ).fetchone()
+    else:
+        source_row = conn.execute(
+            "SELECT id FROM kg_entities WHERE name = ?", (source_name,)
+        ).fetchone()
+        target_row = conn.execute(
+            "SELECT id FROM kg_entities WHERE name = ?", (target_name,)
+        ).fetchone()
 
     if not source_row or not target_row:
         return None
@@ -50,9 +75,14 @@ def find_shortest_path(
     target_id = target_row[0]
 
     if source_id == target_id:
-        entity_info_row = conn.execute(
-            "SELECT id, name, entity_type FROM kg_entities WHERE id = ?", (source_id,)
-        ).fetchone()
+        if resolved_tenant:
+            entity_info_row = conn.execute(
+                "SELECT id, name, entity_type FROM kg_entities WHERE id = ? AND tenant_id = ?", (source_id, resolved_tenant)
+            ).fetchone()
+        else:
+            entity_info_row = conn.execute(
+                "SELECT id, name, entity_type FROM kg_entities WHERE id = ?", (source_id,)
+            ).fetchone()
         if entity_info_row is None:
             return None
         return [{"id": entity_info_row[0], "name": entity_info_row[1], "entity_type": entity_info_row[2]}]
@@ -60,7 +90,8 @@ def find_shortest_path(
     # 2. Run recursive CTE to find shortest path of IDs and relations
     # path_ids matches: ,id1,id2,id3,
     # path_rels matches: ,relation1,relation2,
-    query = """
+    tenant_edge_filter = "AND e.tenant_id = :tenant_id" if resolved_tenant else ""
+    query = f"""
     WITH RECURSIVE bfs(entity_id, visited, depth, path_ids, path_rels) AS (
         SELECT
             id,
@@ -84,6 +115,7 @@ def find_shortest_path(
         WHERE bfs.depth < :max_depth
           AND instr(bfs.visited, ',' || e.target_id || ',') = 0
           AND (e.invalid_at IS NULL OR e.invalid_at = '')
+          {tenant_edge_filter}
     )
     SELECT path_ids, path_rels, depth
     FROM bfs
@@ -92,14 +124,15 @@ def find_shortest_path(
     LIMIT 1
     """
 
-    row = conn.execute(
-        query,
-        {
-            "source_id": source_id,
-            "target_id": target_id,
-            "max_depth": max_depth,
-        },
-    ).fetchone()
+    params = {
+        "source_id": source_id,
+        "target_id": target_id,
+        "max_depth": max_depth,
+    }
+    if resolved_tenant:
+        params["tenant_id"] = resolved_tenant
+
+    row = conn.execute(query, params).fetchone()
 
     if not row:
         return None
@@ -112,10 +145,16 @@ def find_shortest_path(
 
     # Bulk-fetch all entity metadata for the path to avoid N+1 queries
     placeholders = ",".join("?" for _ in path_ids)
-    entities_rows = conn.execute(
-        f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({placeholders})",
-        path_ids,
-    ).fetchall()
+    if resolved_tenant:
+        entities_rows = conn.execute(
+            f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({placeholders}) AND tenant_id = ?",
+            path_ids + [resolved_tenant],
+        ).fetchall()
+    else:
+        entities_rows = conn.execute(
+            f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({placeholders})",
+            path_ids,
+        ).fetchall()
 
     entities_map = {r[0]: {"id": r[0], "name": r[1], "entity_type": r[2]} for r in entities_rows}
 
@@ -138,6 +177,7 @@ def find_neighbors(
     direction: str = "out",
     relation_types: Optional[List[str]] = None,
     max_depth: int = 1,
+    tenant_id: str | None = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve neighbors for a starting entity name up to a given depth.
 
@@ -147,6 +187,7 @@ def find_neighbors(
         direction: "out" | "in" | "both".
         relation_types: Optional filter list of relation type strings.
         max_depth: Depth of neighborhood crawl (default 1).
+        tenant_id: Tenant identity for tenant isolation.
 
     Returns:
         List of edges representing neighbor relationships:
@@ -160,9 +201,30 @@ def find_neighbors(
             }
         ]
     """
-    start_row = conn.execute(
-        "SELECT id FROM kg_entities WHERE name = ?", (entity_name,)
-    ).fetchone()
+    resolved_tenant = tenant_id
+    if not resolved_tenant:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            resolved_tenant = getattr(_ctx, "tenant_id", None)
+        except Exception:
+            pass
+    if not resolved_tenant and conn is not None:
+        try:
+            val = conn.execute("SELECT tenant_id()").fetchone()[0]
+            if val:
+                resolved_tenant = str(val)
+        except Exception:
+            pass
+
+    if resolved_tenant:
+        start_row = conn.execute(
+            "SELECT id FROM kg_entities WHERE name = ? AND tenant_id = ?", (entity_name, resolved_tenant)
+        ).fetchone()
+    else:
+        start_row = conn.execute(
+            "SELECT id FROM kg_entities WHERE name = ?", (entity_name,)
+        ).fetchone()
     if not start_row:
         return []
 
@@ -175,7 +237,8 @@ def find_neighbors(
         max_depth = 1
 
     # CTE query to traverse edges. We track depth and avoid cycles.
-    query = """
+    tenant_edge_filter = "AND e.tenant_id = :tenant_id" if resolved_tenant else ""
+    query = f"""
     WITH RECURSIVE neighbors(entity_id, visited, depth, edge_id, source_id, target_id, relation, weight) AS (
         SELECT
             id,
@@ -218,6 +281,7 @@ def find_neighbors(
         )
         WHERE n.depth < :max_depth
           AND (e.invalid_at IS NULL OR e.invalid_at = '')
+          {tenant_edge_filter}
           AND instr(n.visited, ',' || (
               CASE
                   WHEN :direction = 'out' THEN e.target_id
@@ -231,14 +295,15 @@ def find_neighbors(
     WHERE edge_id IS NOT NULL
     """
 
-    rows = conn.execute(
-        query,
-        {
-            "start_id": start_id,
-            "direction": direction,
-            "max_depth": max_depth,
-        },
-    ).fetchall()
+    params = {
+        "start_id": start_id,
+        "direction": direction,
+        "max_depth": max_depth,
+    }
+    if resolved_tenant:
+        params["tenant_id"] = resolved_tenant
+
+    rows = conn.execute(query, params).fetchall()
 
     if not rows:
         return []
@@ -255,10 +320,16 @@ def find_neighbors(
         entity_ids.add(r[2])
 
     placeholders = ",".join("?" for _ in entity_ids)
-    entities_rows = conn.execute(
-        f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({placeholders})",
-        list(entity_ids),
-    ).fetchall()
+    if resolved_tenant:
+        entities_rows = conn.execute(
+            f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({placeholders}) AND tenant_id = ?",
+            list(entity_ids) + [resolved_tenant],
+        ).fetchall()
+    else:
+        entities_rows = conn.execute(
+            f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({placeholders})",
+            list(entity_ids),
+        ).fetchall()
     entities_map = {r[0]: {"name": r[1], "entity_type": r[2]} for r in entities_rows}
 
     results = []
@@ -284,6 +355,7 @@ def traverse_graph(
     conn: AnyConnection,
     start_name: str,
     edge_patterns: List[str],
+    tenant_id: str | None = None,
 ) -> List[List[Dict[str, Any]]]:
     """Crawl the graph following a specific sequence of relation types.
 
@@ -297,6 +369,22 @@ def traverse_graph(
     if not edge_patterns:
         return []
 
+    resolved_tenant = tenant_id
+    if not resolved_tenant:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            resolved_tenant = getattr(_ctx, "tenant_id", None)
+        except Exception:
+            pass
+    if not resolved_tenant and conn is not None:
+        try:
+            val = conn.execute("SELECT tenant_id()").fetchone()[0]
+            if val:
+                resolved_tenant = str(val)
+        except Exception:
+            pass
+
     # We dynamically build the query with joins to maximize SQLite planner speed.
     # We join N edges and N entities.
     num_joins = len(edge_patterns)
@@ -308,25 +396,33 @@ def traverse_graph(
         select_parts.append(f"edge{idx}.relation as rel{idx}")
         select_parts.append(f"e{idx+1}.id as id{idx+1}, e{idx+1}.name as name{idx+1}, e{idx+1}.entity_type as type{idx+1}")
 
+        tenant_edge_join = f" AND edge{idx}.tenant_id = ?" if resolved_tenant else ""
+        tenant_ent_join = f" AND e{idx+1}.tenant_id = ?" if resolved_tenant else ""
         join_parts.append(
-            f"JOIN kg_edges edge{idx} ON edge{idx}.source_id = e{idx}.id AND edge{idx}.relation = ? AND (edge{idx}.invalid_at IS NULL OR edge{idx}.invalid_at = '')"
+            f"JOIN kg_edges edge{idx} ON edge{idx}.source_id = e{idx}.id AND edge{idx}.relation = ? AND (edge{idx}.invalid_at IS NULL OR edge{idx}.invalid_at = ''){tenant_edge_join}"
         )
         join_parts.append(
-            f"JOIN kg_entities e{idx+1} ON e{idx+1}.id = edge{idx}.target_id"
+            f"JOIN kg_entities e{idx+1} ON e{idx+1}.id = edge{idx}.target_id{tenant_ent_join}"
         )
         params.append(rel)
+        if resolved_tenant:
+            params.append(resolved_tenant)
+            params.append(resolved_tenant)
 
     select_clause = ", ".join(select_parts)
     joins_clause = "\n    ".join(join_parts)
 
+    tenant_start = " AND e0.tenant_id = ?" if resolved_tenant else ""
     query = f"""
     SELECT
         {select_clause}
     FROM kg_entities e0
     {joins_clause}
-    WHERE e0.name = ?
+    WHERE e0.name = ?{tenant_start}
     """
     params.append(start_name)
+    if resolved_tenant:
+        params.append(resolved_tenant)
 
     rows = conn.execute(query, params).fetchall()
 

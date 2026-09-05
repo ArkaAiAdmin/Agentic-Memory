@@ -119,3 +119,55 @@ class TestKGTraversal:
         # Pattern: uses -> imports (invalid order)
         paths = traverse_graph(self.conn, "auto_save", ["uses", "imports"])
         assert len(paths) == 0
+
+    def test_shortest_path_tenant_isolation(self):
+        # Insert entity and edge in tenant_b
+        cur = self.conn.execute(
+            "INSERT INTO kg_entities (name, entity_type, mentions, created_at, updated_at, tenant_id) "
+            "VALUES ('tenant_b_node', 'code', 1, '', '', 'tenant_b')"
+        )
+        b_id = cur.lastrowid
+        self.conn.execute(
+            "INSERT INTO kg_edges (source_id, target_id, relation, weight, created_at, tenant_id) "
+            "VALUES (?, ?, 'isolated_rel', 1.0, '', 'tenant_b')",
+            (self.entity_ids["auto_save"], b_id),
+        )
+        self.conn.commit()
+
+        # Under default tenant, cannot traverse to tenant_b_node
+        path = find_shortest_path(self.conn, "auto_save", "tenant_b_node", max_depth=5, tenant_id="default")
+        assert path is None
+
+        # Under tenant_b, auto_save is in default tenant so not found
+        path_b = find_shortest_path(self.conn, "auto_save", "tenant_b_node", max_depth=5, tenant_id="tenant_b")
+        assert path_b is None
+
+    def test_neighbors_tenant_isolation(self):
+        # Insert tenant_b edge from auto_save
+        cur = self.conn.execute(
+            "INSERT INTO kg_entities (name, entity_type, mentions, created_at, updated_at, tenant_id) "
+            "VALUES ('b_secret', 'data', 1, '', '', 'tenant_b')"
+        )
+        b_id = cur.lastrowid
+        self.conn.execute(
+            "INSERT INTO kg_edges (source_id, target_id, relation, weight, created_at, tenant_id) "
+            "VALUES (?, ?, 'leaks', 1.0, '', 'tenant_b')",
+            (self.entity_ids["auto_save"], b_id),
+        )
+        self.conn.commit()
+
+        neighbors = find_neighbors(self.conn, "auto_save", direction="out", tenant_id="default")
+        target_names = {n["target"]["name"] for n in neighbors}
+        assert "b_secret" not in target_names
+        assert "crdt_field" in target_names
+
+    def test_traverse_graph_tenant_isolation(self):
+        # Under tenant_b, auto_save is not found
+        paths = traverse_graph(self.conn, "auto_save", ["imports"], tenant_id="tenant_b")
+        assert len(paths) == 0
+
+        # Under default, imports matches crdt_field
+        paths_def = traverse_graph(self.conn, "auto_save", ["imports"], tenant_id="default")
+        assert len(paths_def) == 1
+        assert paths_def[0][0]["name"] == "auto_save"
+        assert paths_def[0][2]["name"] == "crdt_field"
