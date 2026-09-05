@@ -1763,6 +1763,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_get_beliefs(self, query_params: dict) -> None:
         try:
+            tenant_id = self._resolve_tenant_id()
             min_confidence_val = None
             if "min_confidence" in query_params:
                 try:
@@ -1771,33 +1772,53 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         min_confidence_val = val
                 except (ValueError, TypeError, IndexError):
                     min_confidence_val = None
+
+            older_than_days_val = None
+            if "older_than_days" in query_params:
+                try:
+                    val = float(query_params["older_than_days"][0])
+                    if val > 0.0:
+                        older_than_days_val = val
+                except (ValueError, TypeError, IndexError):
+                    older_than_days_val = None
+
             try:
                 limit = int(query_params.get("limit", ["50"])[0])
                 limit = max(1, min(limit, 500))
             except (ValueError, TypeError, IndexError):
                 limit = 50
+
             belief_status = query_params.get("belief_status", ["active"])[0]
             if belief_status.lower() in ("all", "*", "any"):
                 belief_status = None
 
+            is_due = (
+                "due" in query_params
+                or older_than_days_val is not None
+                or min_confidence_val is not None
+            )
+
             from infra._lazy_imports import connection_pool, safe_close_db
-            from belief.belief_lifecycle import get_active_beliefs
-            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            from belief.belief_lifecycle import get_active_beliefs, get_beliefs_due_for_review
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
             try:
-                # Mirror MCP memory_review_beliefs semantics:
-                # min_confidence acts as a ceiling (< min_confidence) to retrieve beliefs needing review.
-                # When omitted, <= 0.0, or None, all active beliefs are returned.
-                raw_beliefs = get_active_beliefs(
-                    conn,
-                    min_confidence=0.0,
-                    belief_status=belief_status,
-                    limit=limit * 2 if min_confidence_val is not None else limit,
-                )
-                if min_confidence_val is not None and min_confidence_val > 0.0:
-                    raw_beliefs = [
-                        b for b in raw_beliefs
-                        if b.get("confidence", 1.0) < min_confidence_val
-                    ][:limit]
+                if is_due:
+                    raw_beliefs = get_beliefs_due_for_review(
+                        conn,
+                        staleness_days=older_than_days_val,
+                        min_confidence=min_confidence_val,
+                        limit=limit,
+                        tenant_id=tenant_id,
+                        belief_status=belief_status,
+                    )
+                else:
+                    raw_beliefs = get_active_beliefs(
+                        conn,
+                        min_confidence=0.0,
+                        belief_status=belief_status,
+                        limit=limit,
+                        tenant_id=tenant_id,
+                    )
                 beliefs = [
                     {
                         "id": str(b["id"]),
@@ -1808,9 +1829,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         "object": b.get("object"),
                         "confidence": b.get("confidence", 1.0),
                         "evidence_count": len(b.get("evidence_chain") or []) or 1,
+                        "evidence_chain": b.get("evidence_chain", []),
+                        "rationale": b.get("rationale"),
                         "last_challenged_at": b.get("last_reviewed_at"),
+                        "last_reviewed_at": b.get("last_reviewed_at"),
                         "superseded_by": None,
                         "created_at": b.get("created_at"),
+                        "certainty_tier": b.get("certainty_tier"),
                         "status": b.get("belief_status", "active"),
                     }
                     for b in raw_beliefs

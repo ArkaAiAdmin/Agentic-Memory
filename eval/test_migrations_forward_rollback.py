@@ -110,6 +110,8 @@ TABLES_BY_MIGRATION: dict[int, list[str]] = {
     76: [],  # add missing columns
     77: [],  # saga_log indexes
     78: [],  # end_to_end tenant scoping
+    79: ["ui_state_inventory"],
+    80: [],  # belief_review tenancy indexes
 }
 
 # Column checks: for migrations that add specific columns, verify a
@@ -173,7 +175,7 @@ class TestMigrationsForward:
     """Apply each migration forward and verify schema state."""
 
     def test_run_all_migrations_forward(self, fresh_db):
-        """All migrations 000-078 apply cleanly on a fresh DB."""
+        """All migrations 000-080 apply cleanly on a fresh DB."""
         conn, db_path = fresh_db
         run_migrations(conn)
         version = _get_schema_version(conn)

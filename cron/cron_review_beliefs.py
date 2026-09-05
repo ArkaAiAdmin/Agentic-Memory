@@ -50,19 +50,67 @@ def main() -> int:
 
     try:
         from belief.belief_lifecycle import get_beliefs_due_for_review
-        due = get_beliefs_due_for_review(conn, staleness_days=30.0, limit=args.limit)
+
+        # PRAGMA check on belief_assertions before tenant enumeration
+        ba_cols = [r[1] for r in conn.execute("PRAGMA table_info(belief_assertions)").fetchall()]
+        has_ba_tenant = "tenant_id" in ba_cols
+
+        if has_ba_tenant:
+            tenant_rows = conn.execute(
+                "SELECT DISTINCT tenant_id FROM belief_assertions WHERE tenant_id IS NOT NULL"
+            ).fetchall()
+            tenants = [r[0] for r in tenant_rows] if tenant_rows else ["default"]
+        else:
+            tenants = ["default"]
+
+        # PRAGMA check on belief_review_queue
+        queue_cols = [r[1] for r in conn.execute("PRAGMA table_info(belief_review_queue)").fetchall()]
+        has_queue_tenant = "tenant_id" in queue_cols
+
+        # Global --limit with per-tenant round-robin
+        per_tenant_due: dict[str, list[dict]] = {}
+        for t in tenants:
+            per_tenant_due[t] = get_beliefs_due_for_review(
+                conn, staleness_days=30.0, limit=args.limit, tenant_id=t
+            )
+
+        due_items: list[tuple[dict, str]] = []
+        ptrs = {t: 0 for t in tenants}
+        while len(due_items) < args.limit:
+            advanced = False
+            for t in tenants:
+                if ptrs[t] < len(per_tenant_due[t]):
+                    due_items.append((per_tenant_due[t][ptrs[t]], t))
+                    ptrs[t] += 1
+                    advanced = True
+                    if len(due_items) >= args.limit:
+                        break
+            if not advanced:
+                break
+
         now = time.time()
         queued = 0
-        for b in due:
+        for b, t in due_items:
             if not args.dry_run:
-                conn.execute(
-                    "INSERT OR IGNORE INTO belief_review_queue "
-                    "(belief_id, fact_id, reason, status, created_at) VALUES (?,?,?, 'pending', ?)",
-                    (b["id"], b["fact_id"], "stale_or_low_confidence", now),
-                )
+                if has_queue_tenant:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO belief_review_queue "
+                        "(belief_id, fact_id, reason, status, created_at, tenant_id) "
+                        "VALUES (?, ?, ?, 'pending', ?, ?)",
+                        (b["id"], b["fact_id"], "stale_or_low_confidence", now, t),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO belief_review_queue "
+                        "(belief_id, fact_id, reason, status, created_at) "
+                        "VALUES (?, ?, ?, 'pending', ?)",
+                        (b["id"], b["fact_id"], "stale_or_low_confidence", now),
+                    )
             queued += 1
+
         if not args.dry_run:
             conn.commit()
+
         output = {
             "queued": queued,
             "dry_run": args.dry_run,

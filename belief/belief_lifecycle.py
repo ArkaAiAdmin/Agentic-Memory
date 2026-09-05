@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection
@@ -28,6 +28,7 @@ def ensure_belief_assertion(
     evidence_chain: list[int] | None = None,
     rationale: str | None = None,
     certainty_tier: str = "likely",
+    tenant_id: str = "default",
 ) -> int | None:
     """Create or update a belief_assertion for the given fact_id.
 
@@ -37,8 +38,8 @@ def ensure_belief_assertion(
         now = time.time()
         evidence_json = json.dumps(evidence_chain) if evidence_chain else None
         row = conn.execute(
-            "SELECT id, belief_status FROM belief_assertions WHERE fact_id = ?",
-            (fact_id,),
+            "SELECT id, belief_status FROM belief_assertions WHERE fact_id = ? AND tenant_id = ?",
+            (fact_id, tenant_id),
         ).fetchone()
         if row:
             conn.execute(
@@ -46,7 +47,7 @@ def ensure_belief_assertion(
                 "epistemic_source = ?, asserting_agent_id = ?, evidence_chain = ?, "
                 "rationale = ?, certainty_tier = ?, updated_at = ?, "
                 "review_count = review_count + 1 "
-                "WHERE id = ?",
+                "WHERE id = ? AND tenant_id = ?",
                 (
                     belief_status,
                     confidence,
@@ -57,6 +58,7 @@ def ensure_belief_assertion(
                     certainty_tier,
                     now,
                     row[0],
+                    tenant_id,
                 ),
             )
             return int(row[0])
@@ -64,8 +66,8 @@ def ensure_belief_assertion(
             "INSERT INTO belief_assertions "
             "(fact_id, memory_id, belief_status, confidence, epistemic_source, "
             "asserting_agent_id, evidence_chain, rationale, certainty_tier, "
-            "last_reviewed_at, review_count, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+            "last_reviewed_at, review_count, created_at, updated_at, tenant_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
             (
                 fact_id,
                 memory_id,
@@ -79,6 +81,7 @@ def ensure_belief_assertion(
                 now,
                 now,
                 now,
+                tenant_id,
             ),
         )
         return int(cur.lastrowid) if cur.lastrowid is not None else None
@@ -88,15 +91,17 @@ def ensure_belief_assertion(
 
 
 def get_beliefs_for_fact(
-    conn: AnyConnection, fact_id: int
+    conn: AnyConnection,
+    fact_id: int,
+    tenant_id: str = "default",
 ) -> dict | None:
     """Retrieve the belief_assertion for a given fact_id."""
     row = conn.execute(
         "SELECT id, fact_id, memory_id, belief_status, confidence, "
         "epistemic_source, asserting_agent_id, evidence_chain, rationale, "
         "certainty_tier, last_reviewed_at, review_count, created_at, updated_at "
-        "FROM belief_assertions WHERE fact_id = ?",
-        (fact_id,),
+        "FROM belief_assertions WHERE fact_id = ? AND tenant_id = ?",
+        (fact_id, tenant_id),
     ).fetchone()
     if row is None:
         return None
@@ -125,10 +130,11 @@ def get_active_beliefs(
     epistemic_source: str | None = None,
     certainty_tier: str | None = None,
     limit: int = 50,
+    tenant_id: str = "default",
 ) -> list[dict]:
     """List belief assertions with optional filters."""
-    clauses = ["1=1"]
-    params: list[str | int | float] = []
+    clauses = ["ba.tenant_id = ?"]
+    params: list[str | int | float] = [tenant_id]
     if belief_status is not None:
         clauses.append("ba.belief_status = ?")
         params.append(belief_status)
@@ -147,7 +153,7 @@ def get_active_beliefs(
         "ba.certainty_tier, ba.last_reviewed_at, ba.review_count, ba.created_at, ba.updated_at, "
         "kf.subject, kf.predicate, kf.object, kf.confidence as extraction_confidence "
         "FROM belief_assertions ba "
-        "LEFT JOIN kg_facts kf ON kf.id = ba.fact_id "
+        "LEFT JOIN kg_facts kf ON kf.id = ba.fact_id AND kf.tenant_id = ba.tenant_id "
         f"WHERE {' AND '.join(clauses)} "
         "ORDER BY ba.confidence DESC, ba.updated_at DESC "
         "LIMIT ?"
@@ -186,6 +192,7 @@ def update_belief_status(
     fact_id: int,
     new_status: str,
     rationale: str | None = None,
+    tenant_id: str = "default",
 ) -> bool:
     """Change a belief assertion's status (retract, deprecate, reactivate).
 
@@ -198,20 +205,21 @@ def update_belief_status(
     now = time.time()
     try:
         row = conn.execute(
-            "SELECT id FROM belief_assertions WHERE fact_id = ?", (fact_id,)
+            "SELECT id FROM belief_assertions WHERE fact_id = ? AND tenant_id = ?",
+            (fact_id, tenant_id),
         ).fetchone()
         if row is None:
-            logger.warning("No belief_assertion found for fact_id %s", fact_id)
+            logger.warning("No belief_assertion found for fact_id %s in tenant %s", fact_id, tenant_id)
             return False
         conn.execute(
             "UPDATE belief_assertions SET belief_status = ?, updated_at = ?, "
             "last_reviewed_at = ?, rationale = COALESCE(?, rationale) "
-            "WHERE fact_id = ?",
-            (new_status, now, now, rationale, fact_id),
+            "WHERE fact_id = ? AND tenant_id = ?",
+            (new_status, now, now, rationale, fact_id, tenant_id),
         )
         conn.execute(
-            "UPDATE kg_facts SET belief_status = ? WHERE id = ?",
-            (new_status, fact_id),
+            "UPDATE kg_facts SET belief_status = ? WHERE id = ? AND tenant_id = ?",
+            (new_status, fact_id, tenant_id),
         )
         return True
     except Exception as e:
@@ -220,7 +228,9 @@ def update_belief_status(
 
 
 def retract_dependent_beliefs(
-    conn: AnyConnection, superseded_fact_id: int
+    conn: AnyConnection,
+    superseded_fact_id: int,
+    tenant_id: str = "default",
 ) -> int:
     """When a fact is superseded, retract all beliefs that cite it in evidence_chain.
 
@@ -229,7 +239,8 @@ def retract_dependent_beliefs(
     now = time.time()
     rows = conn.execute(
         "SELECT id, fact_id, evidence_chain FROM belief_assertions "
-        "WHERE belief_status = 'active' AND evidence_chain IS NOT NULL"
+        "WHERE belief_status = 'active' AND evidence_chain IS NOT NULL AND tenant_id = ?",
+        (tenant_id,),
     ).fetchall()
     retracted = 0
     for row in rows:
@@ -246,19 +257,21 @@ def retract_dependent_beliefs(
             conn.execute(
                 "UPDATE belief_assertions SET belief_status = 'deprecated', "
                 "updated_at = ?, rationale = 'evidence_chain_fact_superseded' "
-                "WHERE id = ?",
-                (now, ba_id),
+                "WHERE id = ? AND tenant_id = ?",
+                (now, ba_id, tenant_id),
             )
             conn.execute(
-                "UPDATE kg_facts SET belief_status = 'deprecated' WHERE id = ?",
-                (fact_id,),
+                "UPDATE kg_facts SET belief_status = 'deprecated' WHERE id = ? AND tenant_id = ?",
+                (fact_id, tenant_id),
             )
             retracted += 1
     return retracted
 
 
 def handle_evidence_chain_staleness(
-    conn: AnyConnection, batch_size: int = 100
+    conn: AnyConnection,
+    batch_size: int = 100,
+    tenant_id: str = "default",
 ) -> dict:
     """Background task: check if any belief's evidence_chain contains superseded facts.
 
@@ -273,8 +286,9 @@ def handle_evidence_chain_staleness(
         "FROM belief_assertions ba "
         "WHERE ba.belief_status = 'active' "
         "AND ba.evidence_chain IS NOT NULL "
+        "AND ba.tenant_id = ? "
         "LIMIT ?",
-        (batch_size,),
+        (tenant_id, batch_size),
     ).fetchall()
     deprecation_count = 0
     checked_count = 0
@@ -291,20 +305,20 @@ def handle_evidence_chain_staleness(
         placeholders = ",".join("?" for _ in chain)
         superseded = conn.execute(
             f"SELECT id FROM kg_facts WHERE id IN ({placeholders}) "
-            "AND superseded_by IS NOT NULL",
-            chain,
+            "AND superseded_by IS NOT NULL AND tenant_id = ?",
+            [*chain, tenant_id],
         ).fetchall()
         checked_count += 1
         if superseded:
             conn.execute(
                 "UPDATE belief_assertions SET belief_status = 'deprecated', "
                 "updated_at = ?, rationale = 'evidence_chain_stale' "
-                "WHERE id = ?",
-                (now, ba_id),
+                "WHERE id = ? AND tenant_id = ?",
+                (now, ba_id, tenant_id),
             )
             conn.execute(
-                "UPDATE kg_facts SET belief_status = 'deprecated' WHERE id = ?",
-                (fact_id,),
+                "UPDATE kg_facts SET belief_status = 'deprecated' WHERE id = ? AND tenant_id = ?",
+                (fact_id, tenant_id),
             )
             deprecation_count += 1
     return {
@@ -314,28 +328,55 @@ def handle_evidence_chain_staleness(
 
 
 def get_beliefs_due_for_review(
-    conn: AnyConnection, staleness_days: float = 30.0,
-    min_confidence: float = 1.0, limit: int = 50,
+    conn: AnyConnection,
+    staleness_days: float | None = 30.0,
+    min_confidence: float | None = 1.0,
+    limit: int = 50,
+    tenant_id: str = "default",
+    belief_status: str | None = "active",
 ) -> list[dict]:
-    """Return active beliefs that are stale or low-confidence.
+    """Return beliefs that are stale or low-confidence.
 
     Args:
         staleness_days: Beliefs not reviewed within this many days are stale.
+            None or <= 0 disables staleness filtering.
         min_confidence: Beliefs with confidence below this threshold need review.
             Default 1.0 means all confidence levels pass (only staleness filters).
+            None disables confidence filtering.
+        limit: Max records to return.
+        tenant_id: Tenant identifier (default 'default').
+        belief_status: Status filter, defaults to 'active'. None returns any status.
     """
-    import time as _time
-    cutoff = _time.time() - (staleness_days * 86400)
-    rows = conn.execute(
+    where_clauses = ["ba.tenant_id = ?"]
+    params: list[Any] = [tenant_id]
+
+    if belief_status is not None:
+        where_clauses.append("ba.belief_status = ?")
+        params.append(belief_status)
+
+    if min_confidence is not None:
+        where_clauses.append("ba.confidence < ?")
+        params.append(min_confidence)
+
+    if staleness_days is not None and staleness_days > 0:
+        cutoff = time.time() - (staleness_days * 86400)
+        where_clauses.append("(ba.last_reviewed_at IS NULL OR ba.last_reviewed_at < ?)")
+        params.append(cutoff)
+
+    where_sql = " AND ".join(where_clauses)
+    query = (
         "SELECT ba.id, ba.fact_id, ba.memory_id, ba.belief_status, ba.confidence, "
         "ba.epistemic_source, ba.certainty_tier, ba.last_reviewed_at, ba.review_count, "
-        "kf.subject, kf.predicate, kf.object "
-        "FROM belief_assertions ba LEFT JOIN kg_facts kf ON kf.id = ba.fact_id "
-        "WHERE ba.belief_status = 'active' AND ba.confidence < ? "
-        "AND (ba.last_reviewed_at IS NULL OR ba.last_reviewed_at < ?) "
-        "ORDER BY ba.confidence ASC, ba.last_reviewed_at ASC LIMIT ?",
-        (min_confidence, cutoff, limit),
-    ).fetchall()
+        "kf.subject, kf.predicate, kf.object, "
+        "ba.evidence_chain, ba.rationale, ba.created_at "
+        "FROM belief_assertions ba "
+        "LEFT JOIN kg_facts kf ON kf.id = ba.fact_id AND kf.tenant_id = ba.tenant_id "
+        f"WHERE {where_sql} "
+        "ORDER BY (ba.last_reviewed_at IS NOT NULL) ASC, ba.last_reviewed_at ASC, ba.confidence ASC "
+        "LIMIT ?"
+    )
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
     return [
         {
             "id": r[0],
@@ -350,6 +391,9 @@ def get_beliefs_due_for_review(
             "subject": r[9],
             "predicate": r[10],
             "object": r[11],
+            "evidence_chain": json.loads(r[12]) if r[12] else [],
+            "rationale": r[13],
+            "created_at": r[14],
         }
         for r in rows
     ]

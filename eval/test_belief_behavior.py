@@ -250,3 +250,90 @@ class TestFactTypeTaxonomy:
         types = [r[0] for r in rows]
         assert "observation" in types
         assert "hypothesis" in types
+
+
+class TestBeliefReviewOrderingTies:
+    """Discriminating tests for coverage-first ORDER BY in get_beliefs_due_for_review:
+    ORDER BY (ba.last_reviewed_at IS NOT NULL) ASC, ba.last_reviewed_at ASC, ba.confidence ASC
+    """
+
+    def test_null_last_reviewed_precedes_reviewed_regardless_of_confidence(self, conn):
+        """Case C (NULL last_reviewed_at, high confidence) MUST precede Case D (reviewed, low confidence)."""
+        from belief.belief_lifecycle import get_beliefs_due_for_review
+
+        # Case D: reviewed long ago (timestamp 1000.0), low confidence 0.1
+        fid_d = fe._upsert_fact(conn, "entity_d", "has", "prop_d", 0.1, 1000.0)
+        ba_id_d = ensure_belief_assertion(conn, fid_d, confidence=0.1)
+        conn.execute(
+            "UPDATE belief_assertions SET last_reviewed_at = 1000.0, confidence = 0.1 WHERE id = ?",
+            (ba_id_d,),
+        )
+
+        # Case C: never reviewed (last_reviewed_at = NULL), high confidence 0.9
+        fid_c = fe._upsert_fact(conn, "entity_c", "has", "prop_c", 0.9, 1000.0)
+        ba_id_c = ensure_belief_assertion(conn, fid_c, confidence=0.9)
+        conn.execute(
+            "UPDATE belief_assertions SET last_reviewed_at = NULL, confidence = 0.9 WHERE id = ?",
+            (ba_id_c,),
+        )
+
+        results = get_beliefs_due_for_review(conn, staleness_days=None, min_confidence=1.0)
+        result_ids = [r["id"] for r in results]
+        assert ba_id_c in result_ids
+        assert ba_id_d in result_ids
+        idx_c = result_ids.index(ba_id_c)
+        idx_d = result_ids.index(ba_id_d)
+        assert idx_c < idx_d, f"Case C (NULL) must precede Case D (reviewed): {result_ids}"
+
+    def test_older_reviewed_timestamp_precedes_lower_confidence(self, conn):
+        """Belief A (last_reviewed_at=1000.0, conf=0.5) MUST precede Belief B (last_reviewed_at=2000.0, conf=0.2)."""
+        from belief.belief_lifecycle import get_beliefs_due_for_review
+
+        # Belief B: reviewed more recently (2000.0), lower confidence 0.2
+        fid_b = fe._upsert_fact(conn, "entity_b", "has", "prop_b", 0.2, 1000.0)
+        ba_id_b = ensure_belief_assertion(conn, fid_b, confidence=0.2)
+        conn.execute(
+            "UPDATE belief_assertions SET last_reviewed_at = 2000.0, confidence = 0.2 WHERE id = ?",
+            (ba_id_b,),
+        )
+
+        # Belief A: reviewed earlier (1000.0), higher confidence 0.5
+        fid_a = fe._upsert_fact(conn, "entity_a", "has", "prop_a", 0.5, 1000.0)
+        ba_id_a = ensure_belief_assertion(conn, fid_a, confidence=0.5)
+        conn.execute(
+            "UPDATE belief_assertions SET last_reviewed_at = 1000.0, confidence = 0.5 WHERE id = ?",
+            (ba_id_a,),
+        )
+
+        results = get_beliefs_due_for_review(conn, staleness_days=None, min_confidence=1.0)
+        result_ids = [r["id"] for r in results]
+        assert ba_id_a in result_ids
+        assert ba_id_b in result_ids
+        idx_a = result_ids.index(ba_id_a)
+        idx_b = result_ids.index(ba_id_b)
+        assert idx_a < idx_b, f"Belief A (older review 1000.0) must precede Belief B (newer review 2000.0): {result_ids}"
+
+    def test_equal_timestamp_breaks_ties_by_lowest_confidence(self, conn):
+        """When last_reviewed_at is tied, lower confidence precedes higher confidence."""
+        from belief.belief_lifecycle import get_beliefs_due_for_review
+
+        fid_low = fe._upsert_fact(conn, "entity_low", "has", "prop_low", 0.3, 1000.0)
+        ba_id_low = ensure_belief_assertion(conn, fid_low, confidence=0.3)
+        conn.execute(
+            "UPDATE belief_assertions SET last_reviewed_at = 1500.0, confidence = 0.3 WHERE id = ?",
+            (ba_id_low,),
+        )
+
+        fid_high = fe._upsert_fact(conn, "entity_high", "has", "prop_high", 0.8, 1000.0)
+        ba_id_high = ensure_belief_assertion(conn, fid_high, confidence=0.8)
+        conn.execute(
+            "UPDATE belief_assertions SET last_reviewed_at = 1500.0, confidence = 0.8 WHERE id = ?",
+            (ba_id_high,),
+        )
+
+        results = get_beliefs_due_for_review(conn, staleness_days=None, min_confidence=1.0)
+        result_ids = [r["id"] for r in results]
+        idx_low = result_ids.index(ba_id_low)
+        idx_high = result_ids.index(ba_id_high)
+        assert idx_low < idx_high, f"Lower confidence (0.3) must precede higher (0.8) on timestamp tie: {result_ids}"
+

@@ -292,12 +292,12 @@ class TestCronReviewBeliefs:
                         rc = mod.main()
                 assert rc == 0
 
-            # Both runs insert (no UNIQUE constraint on belief_review_queue),
-            # so count is 2 — but no crash or constraint violation.
+            # Migration 080 adds UNIQUE partial index on (tenant_id, belief_id) WHERE status='pending',
+            # so the second run is ignored and count remains 1 without crash or constraint violation.
             count = conn.execute(
                 "SELECT COUNT(*) FROM belief_review_queue"
             ).fetchone()[0]
-            assert count >= 1, f"Expected at least 1 queued row, got {count}"
+            assert count == 1, f"Expected exactly 1 queued row after idempotent runs, got {count}"
         finally:
             conn.close()
             if os.path.exists(db_path):

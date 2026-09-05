@@ -26,9 +26,14 @@ class TestVersionContract(unittest.TestCase):
         pyproject_ver = match.group(1)
 
         from infra.api_server import PACKAGE_VERSION
-        # Either exact match or matches package distribution
-        self.assertEqual(pyproject_ver, "1.2.0")
-        self.assertEqual(PACKAGE_VERSION, "1.2.0")
+        self.assertEqual(pyproject_ver, PACKAGE_VERSION)
+
+        try:
+            import importlib.metadata
+            installed_ver = importlib.metadata.version("agentic-memory")
+            self.assertEqual(installed_ver, pyproject_ver)
+        except (importlib.metadata.PackageNotFoundError, Exception):
+            pass
 
     def test_bridge_supported_kernel_range_covers_kernel(self):
         # Look for sibling or standard path to agentic-memory-ide

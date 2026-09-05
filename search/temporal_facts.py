@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 def query_state_count_from_ledger(
     db: AnyConnection,
     target_entity: str,
+    tenant_id: str = "default",
 ) -> dict[str, Any] | None:
     """Query the distinct historical values of an entity from kg_facts.
 
@@ -36,6 +37,7 @@ def query_state_count_from_ledger(
             FROM kg_facts
             WHERE (LOWER(subject) = ? OR LOWER(predicate) = ? OR subject LIKE ? OR predicate LIKE ?)
               AND (invalidation_reason IS NULL OR invalidation_reason != 'error')
+              AND tenant_id = ?
             ORDER BY COALESCE(event_time, valid_at, rowid) ASC
             """,
             (
@@ -43,6 +45,7 @@ def query_state_count_from_ledger(
                 safe_target,
                 f"%{safe_target}%",
                 f"%{safe_target}%",
+                tenant_id,
             ),
         ).fetchall()
 
@@ -76,6 +79,7 @@ def query_state_count_from_ledger(
 def query_latest_fact_from_ledger(
     db: AnyConnection,
     target_entity: str,
+    tenant_id: str = "default",
 ) -> dict[str, Any] | None:
     """Query the most recent valid fact for an entity from kg_facts.
 
@@ -93,6 +97,7 @@ def query_latest_fact_from_ledger(
             FROM kg_facts
             WHERE (LOWER(subject) = ? OR LOWER(predicate) = ? OR subject LIKE ? OR predicate LIKE ?)
               AND (invalidation_reason IS NULL OR invalidation_reason != 'error')
+              AND tenant_id = ?
             ORDER BY COALESCE(event_time, valid_at, rowid) DESC
             LIMIT 1
             """,
@@ -101,6 +106,7 @@ def query_latest_fact_from_ledger(
                 safe_target,
                 f"%{safe_target}%",
                 f"%{safe_target}%",
+                tenant_id,
             ),
         ).fetchall()
 

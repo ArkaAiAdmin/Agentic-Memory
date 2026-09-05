@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS belief_assertions (
     review_count INTEGER DEFAULT 0,
     created_at REAL,
     updated_at REAL,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     UNIQUE(fact_id)
 );
 
@@ -43,6 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_belief_assertions_certainty ON belief_assertions(
 CREATE INDEX IF NOT EXISTS idx_belief_assertions_confidence ON belief_assertions(confidence);
 CREATE INDEX IF NOT EXISTS idx_belief_assertions_agent ON belief_assertions(asserting_agent_id);
 CREATE INDEX IF NOT EXISTS idx_belief_assertions_fact ON belief_assertions(fact_id);
+CREATE INDEX IF NOT EXISTS idx_belief_assertions_tenant ON belief_assertions(tenant_id);
 """
 
 

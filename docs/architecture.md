@@ -122,7 +122,7 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v79)
+├── migration_runner.py             # Schema migrations (current v80)
 └── ... (93 modules total)
 ```
 
@@ -140,7 +140,7 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v79, 80 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v80, 81 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 

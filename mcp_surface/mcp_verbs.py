@@ -419,7 +419,7 @@ def memory_save(
 def memory_review_beliefs(
     min_confidence: float = 0.5,
     belief_status: str = "active",
-    older_than_days: float = 30.0,
+    older_than_days: float | None = None,
     limit: int = 20,
 ) -> str:
     """Review beliefs that may need agent attention — low confidence, old, or stale.
@@ -430,55 +430,97 @@ def memory_review_beliefs(
     Args:
         min_confidence: Maximum confidence threshold (returns beliefs BELOW this).
         belief_status: Filter by status (default "active").
-        older_than_days: Only return beliefs last reviewed more than this many days ago.
-        limit: Max results (default 20).
+        older_than_days: Only return beliefs last reviewed more than this many days ago (default 30.0).
+        limit: Max results (default 20, clamped to 1..500).
     """
     auth_err = _check_authorization("search", "memory")
     if auth_err:
         return auth_err
     try:
         from infra.db import open_db
-        from belief.belief_lifecycle import get_active_beliefs
+        from belief.belief_lifecycle import get_beliefs_due_for_review
+
+        # 1..500 clamp
+        limit = max(1, min(500, limit))
+
+        # Sentinel: None defaults to 30.0; <= 0 disables staleness filter
+        effective_older_than_days: float | None = 30.0 if older_than_days is None else (older_than_days if older_than_days > 0 else None)
+
+        # Resolve tenant from agent context or env
+        resolved_tenant = None
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            resolved_tenant = getattr(_ctx, "tenant_id", None)
+        except Exception:
+            pass
+        if not resolved_tenant:
+            resolved_tenant = os.environ.get("MEMORY_TENANT_ID") or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
 
         db_path = _resolve_db_path()
-        with open_db(db_path, timeout=10.0, write=False) as db:
-            # Try reading from the review queue first; fall back to filtering
+        with open_db(db_path, timeout=10.0, write=False, tenant_id=resolved_tenant) as db:
+            # PRAGMA table_info guards
+            has_queue = False
+            has_queue_tenant = False
             try:
-                rows = db.execute(
-                    "SELECT q.belief_id, q.fact_id, ba.confidence, ba.epistemic_source, "
-                    "kf.subject, kf.predicate, kf.object "
-                    "FROM belief_review_queue q "
-                    "JOIN belief_assertions ba ON ba.id = q.belief_id "
-                    "LEFT JOIN kg_facts kf ON kf.id = ba.fact_id "
-                    "WHERE q.status = 'pending' LIMIT ?", (limit,)
-                ).fetchall()
+                cols = [r[1] for r in db.execute("PRAGMA table_info(belief_review_queue)").fetchall()]
+                if cols:
+                    has_queue = True
+                    has_queue_tenant = "tenant_id" in cols
             except Exception:
-                rows = []
+                pass
+
             candidates = []
-            for r in rows:
-                candidates.append({
-                    "id": r[0],
-                    "fact_id": r[1],
-                    "confidence": r[2],
-                    "epistemic_source": r[3],
-                    "subject": r[4],
-                    "predicate": r[5],
-                    "object": r[6],
-                })
+            if has_queue:
+                try:
+                    if has_queue_tenant:
+                        rows = db.execute(
+                            "SELECT q.belief_id, q.fact_id, ba.confidence, ba.epistemic_source, "
+                            "kf.subject, kf.predicate, kf.object, ba.last_reviewed_at "
+                            "FROM belief_review_queue q "
+                            "JOIN belief_assertions ba ON ba.id = q.belief_id AND ba.tenant_id = q.tenant_id "
+                            "LEFT JOIN kg_facts kf ON kf.id = ba.fact_id AND kf.tenant_id = q.tenant_id "
+                            "WHERE q.status = 'pending' AND q.tenant_id = ? "
+                            "ORDER BY (ba.last_reviewed_at IS NOT NULL) ASC, ba.last_reviewed_at ASC, ba.confidence ASC LIMIT ?",
+                            (resolved_tenant, limit),
+                        ).fetchall()
+                    else:
+                        rows = db.execute(
+                            "SELECT q.belief_id, q.fact_id, ba.confidence, ba.epistemic_source, "
+                            "kf.subject, kf.predicate, kf.object, ba.last_reviewed_at "
+                            "FROM belief_review_queue q "
+                            "JOIN belief_assertions ba ON ba.id = q.belief_id "
+                            "LEFT JOIN kg_facts kf ON kf.id = ba.fact_id "
+                            "WHERE q.status = 'pending' "
+                            "ORDER BY (ba.last_reviewed_at IS NOT NULL) ASC, ba.last_reviewed_at ASC, ba.confidence ASC LIMIT ?",
+                            (limit,),
+                        ).fetchall()
+                    for r in rows:
+                        candidates.append({
+                            "id": r[0],
+                            "fact_id": r[1],
+                            "confidence": r[2],
+                            "epistemic_source": r[3],
+                            "subject": r[4],
+                            "predicate": r[5],
+                            "object": r[6],
+                            "last_reviewed_at": r[7],
+                        })
+                except Exception as q_err:
+                    logger.debug("belief_review_queue query failed, falling back: %s", q_err)
+
             if not candidates:
-                # Fallback: filter active beliefs directly
-                cutoff = time.time() - (older_than_days * 86400)
-                beliefs = get_active_beliefs(
+                # Fallback: query beliefs due for review directly with tenant scoping
+                due = get_beliefs_due_for_review(
                     db,
-                    min_confidence=0,
+                    staleness_days=effective_older_than_days,
+                    min_confidence=min_confidence,
+                    limit=limit,
+                    tenant_id=resolved_tenant,
                     belief_status=belief_status,
-                    limit=limit * 2,
                 )
-                candidates = [
-                    b for b in beliefs
-                    if b.get("confidence", 1.0) < min_confidence
-                    and (b.get("last_reviewed_at") is None or b["last_reviewed_at"] < cutoff)
-                ]
+                candidates = due
+
             if not candidates:
                 return "No beliefs need review at this time."
             lines = [f"Found {len(candidates)} beliefs for review:"]

@@ -635,7 +635,7 @@ def _counting_phase(
         # Structured KG State Ledger check first (Option B)
         try:
             from search.temporal_facts import query_state_count_from_ledger
-            ledger_state = query_state_count_from_ledger(db, target)
+            ledger_state = query_state_count_from_ledger(db, target, tenant_id=tenant_id or "default")
             if ledger_state and ledger_state["count"] > 0:
                 count = ledger_state["count"]
                 sorted_vals = ", ".join(ledger_state["values"])
@@ -1004,7 +1004,9 @@ def _temporal_compare(
                 continue
 
         if candidate_records:
-            reverse_sort = not any(w in query.lower() for w in ["first", "earliest"])
+            has_earliest = bool(_re.search(r"\b(first|earliest)\b", query, _re.IGNORECASE))
+            has_exclusion = bool(_re.search(r"\b(first\s+of\s+all|at\s+first\s+glance|first-class)\b", query, _re.IGNORECASE))
+            reverse_sort = not (has_earliest and not has_exclusion)
             candidate_records.sort(
                 key=lambda item: str(item[1][5] or item[1][4] or ""),
                 reverse=reverse_sort,
@@ -1061,11 +1063,13 @@ def _temporal_compare(
             # Structured KG State Ledger check first (Option B)
             try:
                 from search.temporal_facts import query_latest_fact_from_ledger
-                ledger_fact = query_latest_fact_from_ledger(db, target)
+                ledger_fact = query_latest_fact_from_ledger(db, target, tenant_id=tenant_id or "default")
                 if ledger_fact and ledger_fact.get("source_memory"):
+                    tenant_filter = " AND tenant_id = ?" if tenant_id else ""
+                    m_params = (ledger_fact["source_memory"], tenant_id) if tenant_id else (ledger_fact["source_memory"],)
                     m_row = db.execute(
-                        "SELECT id, content, source_file, tags, created_at, observed_at FROM memories WHERE id = ?",
-                        (ledger_fact["source_memory"],)
+                        f"SELECT id, content, source_file, tags, created_at, observed_at FROM memories WHERE id = ?{tenant_filter}",
+                        m_params,
                     ).fetchone()
                     if m_row:
                         new_results = [(
@@ -1611,7 +1615,7 @@ def search_memories(
             query, db_path, conn=db, mode=mode_effective, q_type=_search_qtype
         )
         _reasoning_t0 = time.time()
-        expansion_terms = _reasoning_expand(db_path, query, conn=db)
+        expansion_terms = _reasoning_expand(db_path, query, conn=db, tenant_id=tenant_id)
         if expansion_terms:
             fts_query = f"{fts_query} OR {' OR '.join(_sanitize_fts_term(t) for t in expansion_terms[:5])}"
         _record_phase_latency("reasoning_expand", _reasoning_t0)
