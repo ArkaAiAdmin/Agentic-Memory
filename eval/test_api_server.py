@@ -1086,6 +1086,89 @@ class TestAPIServer(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_search_and_list_dual_emit_id_and_note_id(self):
+        # 1. Create a memory
+        status, data = self._http_request(
+            "/api/v1/memories",
+            "POST",
+            {"content": "Dual emission verification note 12345", "category": "decisions", "tags": ["dual_test"]},
+        )
+        self.assertEqual(status, 201)
+        created_id = data["id"]
+
+        # 2. Test GET /api/v1/memories/<id>
+        status, get_data = self._http_request(f"/api/v1/memories/{created_id}", "GET")
+        self.assertEqual(status, 200)
+        self.assertEqual(get_data["id"], created_id)
+        self.assertEqual(get_data["note_id"], created_id)
+
+        # 3. Test GET /api/v1/memories (list)
+        status, list_data = self._http_request("/api/v1/memories?limit=10", "GET")
+        self.assertEqual(status, 200)
+        self.assertIn("memories", list_data)
+        found = [m for m in list_data["memories"] if m["id"] == created_id]
+        self.assertTrue(len(found) > 0)
+        self.assertEqual(found[0]["id"], created_id)
+        self.assertEqual(found[0]["note_id"], created_id)
+
+        # 4. Test GET /api/v1/memories/search
+        status, search_data = self._http_request("/api/v1/memories/search?query=12345", "GET")
+        self.assertEqual(status, 200)
+        self.assertIn("results", search_data)
+        s_found = [r for r in search_data["results"] if r["id"] == created_id]
+        self.assertTrue(len(s_found) > 0)
+        self.assertEqual(s_found[0]["id"], created_id)
+        self.assertEqual(s_found[0]["note_id"], created_id)
+
+        # 5. Test POST /api/v1/memories/search
+        status, post_search_data = self._http_request(
+            "/api/v1/memories/search",
+            "POST",
+            {"query": "12345", "limit": 10},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("results", post_search_data)
+        ps_found = [r for r in post_search_data["results"] if r["id"] == created_id]
+        self.assertTrue(len(ps_found) > 0)
+        self.assertEqual(ps_found[0]["id"], created_id)
+        self.assertEqual(ps_found[0]["note_id"], created_id)
+
+    def test_get_beliefs_endpoint(self):
+        status, data = self._http_request("/api/v1/beliefs", "GET")
+        self.assertEqual(status, 200)
+        self.assertIn("beliefs", data)
+        self.assertIn("count", data)
+        self.assertIsInstance(data["beliefs"], list)
+
+    def test_kg_nodes_query_filter_and_explore(self):
+        from infra.db import open_db
+        with open_db(self.db_path, write=True) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO kg_entities (id, name, entity_type) VALUES (99991, 'UniqueQuantumEngine', 'technology')"
+            )
+
+        try:
+            # Query with substring and verify case-insensitivity
+            status, data = self._http_request("/api/v1/kg/nodes?query=quantum", "GET")
+            self.assertEqual(status, 200)
+            self.assertIn("nodes", data)
+            matched = [n for n in data["nodes"] if n["id"] == "99991"]
+            self.assertEqual(len(matched), 1)
+            self.assertEqual(matched[0]["name"], "UniqueQuantumEngine")
+
+            # Query explore endpoint and verify structured response
+            status_exp, data_exp = self._http_request("/api/v1/kg/explore", "GET")
+            self.assertEqual(status_exp, 200)
+            self.assertIn("nodes", data_exp)
+            self.assertIn("edges", data_exp)
+            self.assertIn("stats", data_exp)
+            self.assertIsInstance(data_exp["nodes"], list)
+            self.assertIsInstance(data_exp["edges"], list)
+            self.assertIsInstance(data_exp["stats"], dict)
+        finally:
+            with open_db(self.db_path, write=True) as conn:
+                conn.execute("DELETE FROM kg_entities WHERE id = 99991")
+
 
 if __name__ == "__main__":
     unittest.main()

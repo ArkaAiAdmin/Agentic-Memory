@@ -32,7 +32,7 @@ try:
     from importlib.metadata import version as _get_version
     PACKAGE_VERSION = _get_version("agentic-memory")
 except Exception:
-    PACKAGE_VERSION = "1.1.0"
+    PACKAGE_VERSION = "1.2.0"
 
 # Config variables (from env with fallback to empty/defaults)
 API_AUTH_TOKEN = os.environ.get("MEMORY_API_TOKEN", "")
@@ -106,7 +106,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             # line is emitted first and the response stays well-formed).
             for _ck in getattr(self, "_pending_cookies", []) or []:
                 self.send_header("Set-Cookie", _ck)
-            self._pending_cookies = []
+            self._pending_cookies: list[str] = []
             # CORS
             origin = self.headers.get("Origin", "")
             for hdr, val in self._cors_headers(origin):
@@ -466,6 +466,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
             note_id = path[len("/api/v1/memories/"):]
             self._handle_get_memory(note_id)
+        elif path == "/api/v1/beliefs":
+            if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
+            self._handle_get_beliefs(parse_qs(parsed.query))
         elif path == "/api/v1/kg/nodes":
             if not self._require_auth():
                 return
@@ -760,6 +767,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             memories_list = [
                 {
                     "id": m.id,
+                    "note_id": m.id,
                     "content": m.content,
                     "tags": m.tags,
                     "category": m.category,
@@ -803,6 +811,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             results_list = [
                 {
                     "id": r.id,
+                    "note_id": r.id,
                     "content": r.content,
                     "score": r.score,
                     "tags": r.tags,
@@ -858,6 +867,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             results_list = [
                 {
                     "id": r.id,
+                    "note_id": r.id,
                     "content": r.content,
                     "score": r.score,
                     "tags": r.tags,
@@ -914,6 +924,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 tags = json.loads(tags_val) if isinstance(tags_val, str) else list(tags_val or [])
                 self._write_json({
                     "id": row[0],
+                    "note_id": row[0],
                     "content": row[1],
                     "tags": tags,
                     "category": row[3],
@@ -1750,25 +1761,88 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             logger.warning("_handle_acl_delete_rule: %s", e)
             self._error(f"Failed: {e}", 500)
 
+    def _handle_get_beliefs(self, query_params: dict) -> None:
+        try:
+            try:
+                min_confidence = float(query_params.get("min_confidence", ["0.0"])[0])
+            except (ValueError, TypeError, IndexError):
+                min_confidence = 0.0
+            try:
+                limit = int(query_params.get("limit", ["50"])[0])
+                limit = max(1, min(limit, 500))
+            except (ValueError, TypeError, IndexError):
+                limit = 50
+            belief_status = query_params.get("belief_status", ["active"])[0]
+            if belief_status.lower() in ("all", "*", "any"):
+                belief_status = None
+
+            from infra._lazy_imports import connection_pool, safe_close_db
+            from belief.belief_lifecycle import get_active_beliefs
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                raw_beliefs = get_active_beliefs(
+                    conn,
+                    min_confidence=min_confidence,
+                    belief_status=belief_status,
+                    limit=limit,
+                )
+                beliefs = [
+                    {
+                        "id": str(b["id"]),
+                        "fact_id": b["fact_id"],
+                        "content": f"{b.get('subject', '')} --[{b.get('predicate', '')}]--> {b.get('object', '')}" if b.get("subject") and b.get("predicate") else b.get("rationale", ""),
+                        "subject": b.get("subject"),
+                        "predicate": b.get("predicate"),
+                        "object": b.get("object"),
+                        "confidence": b.get("confidence", 1.0),
+                        "evidence_count": len(b.get("evidence_chain") or []) or 1,
+                        "last_challenged_at": b.get("last_reviewed_at"),
+                        "superseded_by": None,
+                        "created_at": b.get("created_at"),
+                        "status": b.get("belief_status", "active"),
+                    }
+                    for b in raw_beliefs
+                ]
+                self._write_json({"beliefs": beliefs, "count": len(beliefs)})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_get_beliefs: %s", e)
+            self._error(f"Failed to get beliefs: {e}", 500)
+
     def _handle_kg_nodes(self, query_params: dict) -> None:
         try:
             try:
                 raw_limit = int(query_params.get("limit", ["100"])[0])
                 limit = max(1, min(raw_limit, 500))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, IndexError):
                 limit = 100
+            q = query_params.get("query", [""])[0].strip()
+            if not q:
+                q = query_params.get("q", [""])[0].strip()
+
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
-                rows = conn.execute(
-                    "SELECT id, name, entity_type FROM kg_entities LIMIT ?",
-                    (limit,),
-                ).fetchall()
+                params: tuple[Any, ...]
+                if q:
+                    escaped_q = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                    sql = (
+                        "SELECT id, name, entity_type FROM kg_entities "
+                        "WHERE name LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                        "LIMIT ?"
+                    )
+                    params = (f"%{escaped_q}%", limit)
+                else:
+                    sql = "SELECT id, name, entity_type FROM kg_entities LIMIT ?"
+                    params = (limit,)
+                rows = conn.execute(sql, params).fetchall()
                 nodes = [
                     {
-                        "id": r[0],
+                        "id": str(r[0]),
                         "name": r[1],
                         "type": r[2] or "entity",
+                        "facts": [],
                         "properties": {}
                     }
                     for r in rows
@@ -2379,6 +2453,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                             results_list = [
                                 {
                                     "id": r.id,
+                                    "note_id": r.id,
                                     "content": r.content,
                                     "score": r.score,
                                     "tags": r.tags,
@@ -2854,7 +2929,25 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Invalid KG explore parameters", 400)
                 return
 
-            self._write_json({"result": result_text})
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                entity_rows = conn.execute("SELECT id, name, entity_type FROM kg_entities LIMIT 100").fetchall()
+                nodes = [{"id": str(r[0]), "name": r[1], "type": r[2] or "entity", "facts": []} for r in entity_rows]
+                edge_rows = conn.execute("SELECT source_id, target_id, relation, weight FROM kg_edges LIMIT 100").fetchall()
+                edges = [{"source": str(r[0]), "target": str(r[1]), "predicate": r[2], "confidence": r[3]} for r in edge_rows]
+                entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
+                edge_count = conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone()[0]
+                stats_dict = {"node_count": entity_count, "edge_count": edge_count}
+            finally:
+                safe_close_db(conn)
+
+            self._write_json({
+                "result": result_text,
+                "nodes": nodes,
+                "edges": edges,
+                "stats": stats_dict,
+            })
         except Exception as e:
             logger.warning("_handle_kg_explore: %s", e)
             self._error("KG explore failed", 500)

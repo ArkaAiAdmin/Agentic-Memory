@@ -45,7 +45,7 @@ See Also:
     - ``examples/`` — runnable example scripts.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import sys
 from pathlib import Path

@@ -27,8 +27,8 @@ class TestVersionContract(unittest.TestCase):
 
         from infra.api_server import PACKAGE_VERSION
         # Either exact match or matches package distribution
-        self.assertEqual(pyproject_ver, "1.1.0")
-        self.assertEqual(PACKAGE_VERSION, "1.1.0")
+        self.assertEqual(pyproject_ver, "1.2.0")
+        self.assertEqual(PACKAGE_VERSION, "1.2.0")
 
     def test_bridge_supported_kernel_range_covers_kernel(self):
         # Look for sibling or standard path to agentic-memory-ide

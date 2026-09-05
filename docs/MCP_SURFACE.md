@@ -5,7 +5,7 @@
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
 <!--AUTO-GEN:START key="mcp_surface_schema_header"-->
-> Last updated: 2026-09-04. Schema v79. Multi-tenant isolation enforced.
+> Last updated: 2026-09-05. Schema v79. Multi-tenant isolation enforced.
 <!--AUTO-GEN:END key="mcp_surface_schema_header"-->
 
 ---
