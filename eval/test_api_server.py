@@ -1158,6 +1158,13 @@ class TestAPIServer(unittest.TestCase):
         self.assertTrue(any("HighConfSubject" in c for c in contents))
         self.assertTrue(any("LowConfSubject" in c for c in contents))
 
+        # 1b. min_confidence=0.0 (IDE default) treats absent/<=0 as no-filter
+        status_zero, data_zero = self._http_request("/api/v1/beliefs?min_confidence=0.0", "GET")
+        self.assertEqual(status_zero, 200)
+        zero_contents = [b["content"] for b in data_zero["beliefs"]]
+        self.assertTrue(any("HighConfSubject" in c for c in zero_contents))
+        self.assertTrue(any("LowConfSubject" in c for c in zero_contents))
+
         # 2. min_confidence acts as ceiling (< min_confidence) to retrieve beliefs needing review (MCP parity)
         status_filtered, data_filtered = self._http_request("/api/v1/beliefs?min_confidence=0.5", "GET")
         self.assertEqual(status_filtered, 200)

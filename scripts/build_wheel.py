@@ -84,7 +84,7 @@ def build_wheel() -> None:
         import tomllib
         with open(root / "pyproject.toml", "rb") as f:
             pyproject_data = tomllib.load(f)
-        version = pyproject_data.get("project", {}).get("version", "1.1.0")
+        version = pyproject_data["project"]["version"]
 
         setup_content = f"""from setuptools import setup, find_packages
 

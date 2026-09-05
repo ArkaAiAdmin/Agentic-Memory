@@ -1766,7 +1766,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             min_confidence_val = None
             if "min_confidence" in query_params:
                 try:
-                    min_confidence_val = float(query_params["min_confidence"][0])
+                    val = float(query_params["min_confidence"][0])
+                    if val > 0.0:
+                        min_confidence_val = val
                 except (ValueError, TypeError, IndexError):
                     min_confidence_val = None
             try:
@@ -1784,14 +1786,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             try:
                 # Mirror MCP memory_review_beliefs semantics:
                 # min_confidence acts as a ceiling (< min_confidence) to retrieve beliefs needing review.
-                # When omitted or None, all active beliefs are returned.
+                # When omitted, <= 0.0, or None, all active beliefs are returned.
                 raw_beliefs = get_active_beliefs(
                     conn,
                     min_confidence=0.0,
                     belief_status=belief_status,
                     limit=limit * 2 if min_confidence_val is not None else limit,
                 )
-                if min_confidence_val is not None:
+                if min_confidence_val is not None and min_confidence_val > 0.0:
                     raw_beliefs = [
                         b for b in raw_beliefs
                         if b.get("confidence", 1.0) < min_confidence_val
