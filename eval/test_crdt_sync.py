@@ -9,6 +9,7 @@ Tests the full sync protocol without external network:
 """
 
 import json
+import os
 import socket as _socket
 import sys
 import tempfile
@@ -19,6 +20,22 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
+
+_orig_loopback = None
+
+
+def setUpModule():
+    global _orig_loopback
+    _orig_loopback = os.environ.get("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK")
+    os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = "1"
+
+
+def tearDownModule():
+    if _orig_loopback is None:
+        os.environ.pop("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK", None)
+    else:
+        os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = _orig_loopback
+
 
 from infra.memory_common import connection_pool, open_db
 

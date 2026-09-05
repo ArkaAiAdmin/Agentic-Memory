@@ -342,6 +342,8 @@ class TestSyncOnce(unittest.TestCase):
         port = sock.getsockname()[1]
         sock.close()
 
+        orig_loopback = os.environ.get("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK")
+        os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = "1"
         server = SyncServer(
             db_path=str(db_a), agent_id="agent-A", host="127.0.0.1", port=port
         )
@@ -380,6 +382,10 @@ class TestSyncOnce(unittest.TestCase):
             conn.close()
         finally:
             server.stop()
+            if orig_loopback is None:
+                os.environ.pop("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK", None)
+            else:
+                os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = orig_loopback
 
 
 class TestSyncCLICommand(unittest.TestCase):

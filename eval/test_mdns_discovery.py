@@ -21,6 +21,8 @@ from infra.db import open_db
 
 class TestMDNSDiscoveryAndPEX:
     def setup_method(self):
+        self._orig_loopback = os.environ.get("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK")
+        os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = "1"
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path1 = Path(self.temp_dir.name) / "mem1.db"
         self.db_path2 = Path(self.temp_dir.name) / "mem2.db"
@@ -55,6 +57,10 @@ class TestMDNSDiscoveryAndPEX:
         self.server1.stop()
         self.server2.stop()
         self.temp_dir.cleanup()
+        if self._orig_loopback is None:
+            os.environ.pop("MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK", None)
+        else:
+            os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = self._orig_loopback
 
     def test_mdns_and_pex_gossip(self):
         # Start both servers

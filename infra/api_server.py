@@ -1521,7 +1521,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         check. Returns True when the caller is authorized to mutate RBAC/ACL
         state, False otherwise (and writes a 403 response)."""
         principal_id = getattr(self, "_principal_id", None)
-        tenant_id = self._resolve_tenant_id()
+        tenant_id = self._resolve_tenant_id() if hasattr(self, "_resolve_tenant_id") else "default"
         try:
             from infra.authorizer import mcp_authorize
 

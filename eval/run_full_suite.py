@@ -200,6 +200,8 @@ def run_one_test(f):
                 str(f),
                 "-p",
                 "no:xdist",
+                "-p",
+                "no:faulthandler",
                 *marker_args,
                 "--tb=line",
                 "-q",

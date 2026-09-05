@@ -167,6 +167,7 @@ def sync_server_env_names() -> tuple:
         "MEMORY_SYNC_TLS_CERT",
         "MEMORY_SYNC_TLS_KEY",
         "MEMORY_SYNC_TLS_CLIENT_CA",
+        "MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK",
     )
 
 
@@ -187,6 +188,7 @@ class TestTlsServerEndToEnd(unittest.TestCase):
 
         os.environ["MEMORY_SYNC_TLS_CERT"] = str(self.cert_path)
         os.environ["MEMORY_SYNC_TLS_KEY"] = str(self.key_path)
+        os.environ["MEMORY_SYNC_ALLOW_UNAUTHENTICATED_LOOPBACK"] = "1"
 
         # Pick a random-ish free port
 

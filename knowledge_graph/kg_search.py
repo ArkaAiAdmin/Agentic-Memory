@@ -320,7 +320,7 @@ def _assemble_2hop(
             WHERE (e.source_id IN ({placeholders}) OR e.target_id IN ({placeholders}))
             {tenant_clause}
             {temporal_clause}""",
-        hop1_list + hop1_list + tenant_params + temporal_params,
+        hop1_list * 3 + tenant_params + temporal_params,
     ).fetchall()
     hop2_ids = [r[0] for r in hop2_raw if r[0] not in already_ids][:10]
     if not hop2_ids:
@@ -545,7 +545,9 @@ def graph_stats(conn: AnyConnection, tenant_id: str | None = None) -> dict:
         return {
             "enabled": True,
             "entities": entity_count,
+            "entity_count": entity_count,
             "edges": edge_count,
+            "edge_count": edge_count,
             "entity_types": type_dist,
             "relations": rel_dist,
             "most_connected": [
