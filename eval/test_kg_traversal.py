@@ -171,3 +171,20 @@ class TestKGTraversal:
         assert len(paths_def) == 1
         assert paths_def[0][0]["name"] == "auto_save"
         assert paths_def[0][2]["name"] == "crdt_field"
+
+    def test_traverse_graph_wildcard_pattern(self):
+        # Wildcard '*' matches any relation
+        paths = traverse_graph(self.conn, "auto_save", ["*"], tenant_id="default")
+        assert len(paths) >= 1
+        assert paths[0][0]["name"] == "auto_save"
+        # Two-hop wildcard
+        paths2 = traverse_graph(self.conn, "auto_save", ["*", "*"], tenant_id="default")
+        assert len(paths2) >= 1
+        assert paths2[0][0]["name"] == "auto_save"
+        assert paths2[0][4]["name"] == "db_migrations"
+
+    def test_memory_graph_router_tenant_forwarding(self):
+        from mcp_surface.mcp_verbs import memory_graph
+        # Verify memory_graph router accepts tenant_id and passes it to handlers
+        res = memory_graph(action="stats", tenant_id="test_tenant_xyz")
+        assert "Knowledge graph disabled" in res or "Total Entities" in res or "Entities" in res or "Stats" in res

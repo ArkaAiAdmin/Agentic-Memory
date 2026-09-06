@@ -1076,6 +1076,8 @@ def memory_graph(
     edge_patterns: str = "",
     max_depth: int = 2,
     action: str = "explore",
+    tenant_id: str = "default",
+    **kwargs,
 ) -> str:
     """Explore the knowledge graph.
 
@@ -1085,6 +1087,7 @@ def memory_graph(
         edge_patterns: Edge type filter (for action=traverse).
         max_depth: Max traversal depth (default 2).
         action: "explore" | "traverse" | "shortest_path" | "stats".
+        tenant_id: Tenant identity for tenant-scoped graph operations (default "default").
     """
     auth_err = _check_authorization("search", "memory")
     if auth_err:
@@ -1098,15 +1101,15 @@ def memory_graph(
         from mcp_surface.mcp_kg_traversal import memory_graph_shortest_path, memory_graph_traverse
 
         if action == "explore":
-            facts = memory_facts_list(limit=20)
-            stats = memory_graph_stats()
+            facts = memory_facts_list(limit=20, tenant_id=tenant_id)
+            stats = memory_graph_stats(tenant_id=tenant_id)
             return f"## KG Facts\n{facts}\n\n## Stats\n{stats}"
         elif action == "traverse":
-            return str(memory_graph_traverse(start=start, edge_patterns=edge_patterns))
+            return str(memory_graph_traverse(start=start, edge_patterns=edge_patterns, tenant_id=tenant_id))
         elif action == "shortest_path":
-            return str(memory_graph_shortest_path(source=start, target=edge_patterns, max_depth=max_depth))
+            return str(memory_graph_shortest_path(source=start, target=edge_patterns, max_depth=max_depth, tenant_id=tenant_id))
         elif action == "stats":
-            return str(memory_graph_stats())
+            return str(memory_graph_stats(tenant_id=tenant_id))
         else:
             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:

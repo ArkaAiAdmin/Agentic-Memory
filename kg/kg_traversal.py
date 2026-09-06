@@ -398,13 +398,18 @@ def traverse_graph(
 
         tenant_edge_join = f" AND edge{idx}.tenant_id = ?" if resolved_tenant else ""
         tenant_ent_join = f" AND e{idx+1}.tenant_id = ?" if resolved_tenant else ""
-        join_parts.append(
-            f"JOIN kg_edges edge{idx} ON edge{idx}.source_id = e{idx}.id AND edge{idx}.relation = ? AND (edge{idx}.invalid_at IS NULL OR edge{idx}.invalid_at = ''){tenant_edge_join}"
-        )
+        if rel == "*":
+            join_parts.append(
+                f"JOIN kg_edges edge{idx} ON edge{idx}.source_id = e{idx}.id AND (edge{idx}.invalid_at IS NULL OR edge{idx}.invalid_at = ''){tenant_edge_join}"
+            )
+        else:
+            join_parts.append(
+                f"JOIN kg_edges edge{idx} ON edge{idx}.source_id = e{idx}.id AND edge{idx}.relation = ? AND (edge{idx}.invalid_at IS NULL OR edge{idx}.invalid_at = ''){tenant_edge_join}"
+            )
+            params.append(rel)
         join_parts.append(
             f"JOIN kg_entities e{idx+1} ON e{idx+1}.id = edge{idx}.target_id{tenant_ent_join}"
         )
-        params.append(rel)
         if resolved_tenant:
             params.append(resolved_tenant)
             params.append(resolved_tenant)
