@@ -1780,12 +1780,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 except (ValueError, TypeError, IndexError):
                     min_confidence_val = None
 
+            has_older_than = "older_than_days" in query_params
             older_than_days_val = None
-            if "older_than_days" in query_params:
+            if has_older_than:
                 try:
                     val = float(query_params["older_than_days"][0])
-                    if val > 0.0:
-                        older_than_days_val = val
+                    older_than_days_val = val if val > 0.0 else None
                 except (ValueError, TypeError, IndexError):
                     older_than_days_val = None
 
@@ -1801,9 +1801,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
             is_due = (
                 "due" in query_params
-                or older_than_days_val is not None
+                or has_older_than
                 or min_confidence_val is not None
             )
+            if "due" in query_params and not has_older_than:
+                older_than_days_val = 30.0
 
             from infra._lazy_imports import connection_pool, safe_close_db
             from belief.belief_lifecycle import get_active_beliefs, get_beliefs_due_for_review

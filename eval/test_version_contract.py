@@ -28,6 +28,15 @@ class TestVersionContract(unittest.TestCase):
         from infra.api_server import PACKAGE_VERSION
         self.assertEqual(pyproject_ver, PACKAGE_VERSION)
 
+        import sdk
+        self.assertEqual(sdk.__version__, pyproject_ver)
+
+        citation_path = REPO_ROOT / "CITATION.cff"
+        if citation_path.exists():
+            cit_match = re.search(r'version:\s*([^\s]+)', citation_path.read_text(encoding="utf-8"))
+            if cit_match:
+                self.assertEqual(cit_match.group(1), pyproject_ver)
+
         try:
             import importlib.metadata
             installed_ver = importlib.metadata.version("agentic-memory")

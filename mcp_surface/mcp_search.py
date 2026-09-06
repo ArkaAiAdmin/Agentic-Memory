@@ -135,11 +135,15 @@ def memory_search(
         logger.debug("BB2 resolve failed for %r: %s", query, exc)
         expanded_query = query
     active_dir = _resolve_memory_dir()
-    if os.environ.get("MEMORY_DB_PATH"):
+    if os.environ.get("GLOBAL_MEM_DIR"):
+        global_mem = Path(os.environ["GLOBAL_MEM_DIR"]).expanduser()
         local_mem = active_dir
-        global_mem = Path(GLOBAL_MEM_DIR)
+    elif os.environ.get("MEMORY_DB_PATH"):
+        local_mem = active_dir
+        global_mem = active_dir
     else:
         _, local_mem, global_mem = get_memory_paths()
+        local_mem = active_dir
     local_db = local_mem / "memory.db"
     global_db = global_mem / "memory.db"
 
@@ -174,7 +178,12 @@ def memory_search(
         except Exception as exc:
             logger.warning("Local search failed for query %r: %s", expanded_query, exc)
 
-    if include_global and global_db.exists() and local_results["count"] < 3:
+    if (
+        include_global
+        and global_db.exists()
+        and local_results["count"] < 3
+        and (not local_db.exists() or global_db.resolve() != local_db.resolve())
+    ):
         try:
             global_results: dict[str, Any] = search_memories(
                 global_db,

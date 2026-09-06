@@ -1005,7 +1005,7 @@ def _temporal_compare(
 
         if candidate_records:
             has_earliest = bool(_re.search(r"\b(first|earliest)\b", query, _re.IGNORECASE))
-            has_exclusion = bool(_re.search(r"\b(first\s+of\s+all|at\s+first\s+glance|first-class)\b", query, _re.IGNORECASE))
+            has_exclusion = bool(_re.search(r"\b(first\s+of\s+all|at\s+first\s+glance|first-class|first-aid|first\s+aid)\b", query, _re.IGNORECASE))
             reverse_sort = not (has_earliest and not has_exclusion)
             candidate_records.sort(
                 key=lambda item: str(item[1][5] or item[1][4] or ""),

@@ -5,7 +5,7 @@ authors:
     given-names: Subrata
     orcid: ""
 title: "KG Projection: Local-First Persistent Memory for AI Agents with Temporal Knowledge Graphs"
-version: 1.1.0
+version: 1.2.0
 date-released: 2026-07-16
 doi: ""
 license: Apache-2.0

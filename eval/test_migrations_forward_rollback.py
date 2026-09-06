@@ -112,6 +112,7 @@ TABLES_BY_MIGRATION: dict[int, list[str]] = {
     78: [],  # end_to_end tenant scoping
     79: ["ui_state_inventory"],
     80: [],  # belief_review tenancy indexes
+    81: [],  # ui_state_inventory tenancy column and index
 }
 
 # Column checks: for migrations that add specific columns, verify a
@@ -121,6 +122,7 @@ COLUMN_CHECKS: dict[int, tuple[str, str]] = {
     30: ("kg_entities", "community_id"),
     49: ("gdpr_requests", "id"),
     62: ("memories", "data_subject_sub"),
+    81: ("ui_state_inventory", "tenant_id"),
 }
 
 
