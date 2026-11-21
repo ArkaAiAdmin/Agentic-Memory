@@ -985,47 +985,49 @@ def run_schema_setup(conn: AnyConnection) -> None:
             conn.execute("PRAGMA foreign_keys = OFF")
         except Exception:
             pass
-        with conn:
-            _migrate_memory_audit_log(conn)
-            _migrate_ensure_chunks_table(conn)
-            _migrate_ensure_skill_columns(conn)
-            _stable_snapshot = None
+        try:
+            with conn:
+                _migrate_memory_audit_log(conn)
+                _migrate_ensure_chunks_table(conn)
+                _migrate_ensure_skill_columns(conn)
+                _stable_snapshot = None
+                try:
+                    import infra.migration_runner as _mr
+                    _stable_snapshot = _mr.SCHEMA_STABLE
+                    if _stable_snapshot:
+                        _mr.SCHEMA_STABLE = False
+                except Exception:
+                    pass
+                try:
+                    db_path = getattr(conn, "_db_path", None) or getattr(conn, "name", None)
+                    if db_path and isinstance(db_path, (str, Path)) and str(db_path) != ":memory:":
+                        from infra.db_path_flock import db_path_flock
+                        with db_path_flock(Path(db_path)):
+                            _run_sql_migrations(conn)
+                    else:
+                        _run_sql_migrations(conn)
+                finally:
+                    if _stable_snapshot is not None:
+                        try:
+                            _mr.SCHEMA_STABLE = _stable_snapshot
+                        except Exception:
+                            pass
+                from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
+                _cast_conn = cast("sqlite3.Connection", conn)
+                _migrate_fts5_porter_tokenizer(_cast_conn)
+                _migrate_ensure_fts_triggers(_cast_conn)
+                _migrate_memory_ctr_feedback(conn)
+                _migrate_concept_drift(conn)
+                _migrate_add_fk_constraints(conn)
+                _migrate_audit_tenant_index(conn)
+                _migrate_fix_kg_edges_fk(conn)
+                _migrate_kg_edges_tenant_id(conn)
+                _migrate_schema_version(conn)
+        finally:
             try:
-                import infra.migration_runner as _mr
-                _stable_snapshot = _mr.SCHEMA_STABLE
-                if _stable_snapshot:
-                    _mr.SCHEMA_STABLE = False
+                conn.execute("PRAGMA foreign_keys = ON")
             except Exception:
                 pass
-            try:
-                db_path = getattr(conn, "_db_path", None) or getattr(conn, "name", None)
-                if db_path and isinstance(db_path, (str, Path)) and str(db_path) != ":memory:":
-                    from infra.db_path_flock import db_path_flock
-                    with db_path_flock(Path(db_path)):
-                        _run_sql_migrations(conn)
-                else:
-                    _run_sql_migrations(conn)
-            finally:
-                if _stable_snapshot is not None:
-                    try:
-                        _mr.SCHEMA_STABLE = _stable_snapshot
-                    except Exception:
-                        pass
-            from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
-            _cast_conn = cast("sqlite3.Connection", conn)
-            _migrate_fts5_porter_tokenizer(_cast_conn)
-            _migrate_ensure_fts_triggers(_cast_conn)
-            _migrate_memory_ctr_feedback(conn)
-            _migrate_concept_drift(conn)
-            _migrate_add_fk_constraints(conn)
-            _migrate_audit_tenant_index(conn)
-            _migrate_fix_kg_edges_fk(conn)
-            _migrate_kg_edges_tenant_id(conn)
-            _migrate_schema_version(conn)
-        try:
-            conn.execute("PRAGMA foreign_keys = ON")
-        except Exception:
-            pass
         return
 
     # Fresh or stale DBs need all migrations up to SCHEMA_VERSION, but
@@ -1078,144 +1080,145 @@ def run_schema_setup(conn: AnyConnection) -> None:
     except Exception as exc:
         logger.debug("Failed to disable foreign_keys pragma (non-fatal): %s", exc)
 
-    with conn:
-        # ------------------------------------------------------------------
-        # 1. Ensure ALL dynamic tables exist BEFORE numbered SQL migrations
-        #    run.  Numbered migrations (e.g. 006, 010) create indexes and
-        #    constraints on tables like memory_embeddings, shared_memories,
-        #    etc.  If these tables don't exist yet, the migrations silently
-        #    skip the CREATE INDEX statements ("no such table" caught in the
-        #    forward-DDL handler), producing a different schema than when
-        #    the same migrations are re-applied after a rollback (where the
-        #    tables persist from the initial setup).
-        # ------------------------------------------------------------------
-        _migrate_ensure_columns(conn, cols)
-        _migrate_ensure_indexes(conn)
-        _migrate_memory_embeddings(conn)
-        _migrate_memory_audit_log(conn)
-        _migrate_memory_vec_idx(conn)
-        _migrate_kg_tables(conn)
-        _migrate_kg_extraction_stats(conn)
-
-        try:
-            from memory_sharing import _ensure_shared_table
-
-            _ensure_shared_table(conn)
-        except Exception:
-            logger.warning("Failed to ensure memory_sharing table during migration")
-            pass
-
-        try:
-            from adaptive_retention import ensure_adaptive_schema
-
-            ensure_adaptive_schema(conn)
-        except Exception:
-            logger.warning(
-                "Failed to ensure adaptive retention schema during migration"
-            )
-            pass
-
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS user_profile_access_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    note_id TEXT NOT NULL,
-                    source TEXT DEFAULT 'search',
-                    category TEXT,
-                    tags TEXT,
-                    accessed_at REAL NOT NULL,
-                    FOREIGN KEY (note_id) REFERENCES memories(id) ON DELETE CASCADE
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_user_profile_note ON user_profile_access_log(note_id)"
-            )
-        except Exception:
-            logger.warning(
-                "Failed to create user_profile_access_log table during migration"
-            )
-            pass
-
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS search_phase_stats (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    query_id    TEXT NOT NULL,
-                    phase_name  TEXT NOT NULL,
-                    latency_ms  REAL NOT NULL,
-                    created_at  REAL NOT NULL
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_search_phase_stats_query "
-                "ON search_phase_stats(query_id, created_at)"
-            )
-        except Exception:
-            logger.warning(
-                "Failed to create search_phase_stats table during migration"
-            )
-            pass
-
-        # ------------------------------------------------------------------
-        # 2. Run numbered SQL migrations.  All tables they reference are
-        #    already in place from step 1, so CREATE INDEX / ALTER TABLE
-        #    etc. succeed rather than being silently skipped.
-        # ------------------------------------------------------------------
-        try:
-            import infra.migration_runner as _mr
-
-            _stable_snapshot = _mr.SCHEMA_STABLE
-            if _stable_snapshot:
-                _mr.SCHEMA_STABLE = False
-        except Exception as e:
-            logger.warning("run_schema_setup stable-snapshot failed: %s", e)
-            _stable_snapshot = None
-
-        try:
-            db_path = getattr(conn, "_db_path", None) or getattr(conn, "name", None)
-            if db_path and isinstance(db_path, (str, Path)) and str(db_path) != ":memory:":
-                from infra.db_path_flock import db_path_flock
-                with db_path_flock(Path(db_path)):
-                    _run_sql_migrations(conn)  # type: ignore[arg-type]
-            else:
-                _run_sql_migrations(conn)  # type: ignore[arg-type]
-        finally:
-            if _stable_snapshot is not None:
-                try:
-                    import infra.migration_runner as _mr2
-
-                    _mr2.SCHEMA_STABLE = _stable_snapshot
-                except Exception as e:
-                    logger.warning("run_schema_setup stable-restore failed: %s", e)
-
-        # Ensure memory_chunks FTS triggers AFTER migrations create the table.
-        _migrate_ensure_chunks_table(conn)
-
-        # Ensure skill columns AFTER migrations create memory_skills (migration 007).
-        _migrate_ensure_skill_columns(conn)
-
-        # ------------------------------------------------------------------
-        # 3. Post-migration setup: FTS5, FK constraints, etc.
-        # ------------------------------------------------------------------
-        from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
-
-        _cast_conn = cast("sqlite3.Connection", conn)
-        _migrate_fts5_porter_tokenizer(_cast_conn)
-        _migrate_ensure_fts_triggers(_cast_conn)
-        _migrate_memory_ctr_feedback(conn)
-        _migrate_concept_drift(conn)
-        _migrate_add_fk_constraints(conn)
-        _migrate_audit_tenant_index(conn)
-        _migrate_fix_kg_edges_fk(conn)
-        _migrate_kg_edges_tenant_id(conn)
-        _migrate_schema_version(conn)
-
-    # No need to mark the conn — the schema_version table is the
-    # canonical fast-path. See the gate at the top of this function.
     try:
-        conn.execute("PRAGMA foreign_keys = ON")
-    except Exception as e:
-        logger.warning("run_schema_setup failed: %s", e)
+        with conn:
+            # ------------------------------------------------------------------
+            # 1. Ensure ALL dynamic tables exist BEFORE numbered SQL migrations
+            #    run.  Numbered migrations (e.g. 006, 010) create indexes and
+            #    constraints on tables like memory_embeddings, shared_memories,
+            #    etc.  If these tables don't exist yet, the migrations silently
+            #    skip the CREATE INDEX statements ("no such table" caught in the
+            #    forward-DDL handler), producing a different schema than when
+            #    the same migrations are re-applied after a rollback (where the
+            #    tables persist from the initial setup).
+            # ------------------------------------------------------------------
+            _migrate_ensure_columns(conn, cols)
+            _migrate_ensure_indexes(conn)
+            _migrate_memory_embeddings(conn)
+            _migrate_memory_audit_log(conn)
+            _migrate_memory_vec_idx(conn)
+            _migrate_kg_tables(conn)
+            _migrate_kg_extraction_stats(conn)
+
+            try:
+                from memory_sharing import _ensure_shared_table
+
+                _ensure_shared_table(conn)
+            except Exception:
+                logger.warning("Failed to ensure memory_sharing table during migration")
+                pass
+
+            try:
+                from adaptive_retention import ensure_adaptive_schema
+
+                ensure_adaptive_schema(conn)
+            except Exception:
+                logger.warning(
+                    "Failed to ensure adaptive retention schema during migration"
+                )
+                pass
+
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_profile_access_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        note_id TEXT NOT NULL,
+                        source TEXT DEFAULT 'search',
+                        category TEXT,
+                        tags TEXT,
+                        accessed_at REAL NOT NULL,
+                        FOREIGN KEY (note_id) REFERENCES memories(id) ON DELETE CASCADE
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_user_profile_note ON user_profile_access_log(note_id)"
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to create user_profile_access_log table during migration"
+                )
+                pass
+
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS search_phase_stats (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        query_id    TEXT NOT NULL,
+                        phase_name  TEXT NOT NULL,
+                        latency_ms  REAL NOT NULL,
+                        created_at  REAL NOT NULL
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_search_phase_stats_query "
+                    "ON search_phase_stats(query_id, created_at)"
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to create search_phase_stats table during migration"
+                )
+                pass
+
+            # ------------------------------------------------------------------
+            # 2. Run numbered SQL migrations.  All tables they reference are
+            #    already in place from step 1, so CREATE INDEX / ALTER TABLE
+            #    etc. succeed rather than being silently skipped.
+            # ------------------------------------------------------------------
+            try:
+                import infra.migration_runner as _mr
+
+                _stable_snapshot = _mr.SCHEMA_STABLE
+                if _stable_snapshot:
+                    _mr.SCHEMA_STABLE = False
+            except Exception as e:
+                logger.warning("run_schema_setup stable-snapshot failed: %s", e)
+                _stable_snapshot = None
+
+            try:
+                db_path = getattr(conn, "_db_path", None) or getattr(conn, "name", None)
+                if db_path and isinstance(db_path, (str, Path)) and str(db_path) != ":memory:":
+                    from infra.db_path_flock import db_path_flock
+                    with db_path_flock(Path(db_path)):
+                        _run_sql_migrations(conn)  # type: ignore[arg-type]
+                else:
+                    _run_sql_migrations(conn)  # type: ignore[arg-type]
+            finally:
+                if _stable_snapshot is not None:
+                    try:
+                        import infra.migration_runner as _mr2
+
+                        _mr2.SCHEMA_STABLE = _stable_snapshot
+                    except Exception as e:
+                        logger.warning("run_schema_setup stable-restore failed: %s", e)
+
+            # Ensure memory_chunks FTS triggers AFTER migrations create the table.
+            _migrate_ensure_chunks_table(conn)
+
+            # Ensure skill columns AFTER migrations create memory_skills (migration 007).
+            _migrate_ensure_skill_columns(conn)
+
+            # ------------------------------------------------------------------
+            # 3. Post-migration setup: FTS5, FK constraints, etc.
+            # ------------------------------------------------------------------
+            from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
+
+            _cast_conn = cast("sqlite3.Connection", conn)
+            _migrate_fts5_porter_tokenizer(_cast_conn)
+            _migrate_ensure_fts_triggers(_cast_conn)
+            _migrate_memory_ctr_feedback(conn)
+            _migrate_concept_drift(conn)
+            _migrate_add_fk_constraints(conn)
+            _migrate_audit_tenant_index(conn)
+            _migrate_fix_kg_edges_fk(conn)
+            _migrate_kg_edges_tenant_id(conn)
+            _migrate_schema_version(conn)
+    finally:
+        # No need to mark the conn — the schema_version table is the
+        # canonical fast-path. See the gate at the top of this function.
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception as e:
+            logger.warning("run_schema_setup failed: %s", e)
 
 
 def run_db_migrations(conn) -> None:

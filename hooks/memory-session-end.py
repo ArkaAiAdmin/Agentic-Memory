@@ -27,7 +27,6 @@ session start, the hook auto-saves a session memory via the MCP tool.
 
 import logging
 
-import fcntl
 import json
 import os
 import sys
@@ -71,13 +70,15 @@ def _read_current_session() -> dict:
 
 
 def _clear_current_session() -> None:
+    from infra.file_lock import lock_fd, unlock_fd
+
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     try:
         fd = _CURRENT_SESSION_LOCK.open("w")
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            lock_fd(fd.fileno(), nonblocking=False)
             _CURRENT_SESSION_FILE.write_text("{}")
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            unlock_fd(fd.fileno())
         finally:
             fd.close()
     except OSError:

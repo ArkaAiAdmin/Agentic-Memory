@@ -967,21 +967,34 @@ def process_one_task(
     def _timeout_handler(signum, frame):
         raise _TaskTimeout(f"task exceeded {_PER_TASK_TIMEOUT_S}s timeout")
 
-    # P0-10 fix (2026-06-23): signal.alarm only works in the main thread.
+    # P0-10 fix (2026-06-23): signal.alarm only works in the main thread on POSIX.
     # If this function is invoked from a non-main thread (e.g., from a
     # test or from another worker), signal.SIGALRM will raise a
-    # ValueError. Guard with a thread check so the worker can run in
-    # non-main threads without crashing; in that case we skip the
-    # signal-based timeout (the run is bounded by the outer cron
-    # timeout anyway).
-    _use_signal_timeout = (
+    # ValueError. Guard with a thread/platform check so the worker can run
+    # on Windows and in non-main threads without crashing; on Windows use
+    # a daemon threading.Timer watchdog fallback.
+    _has_sigalrm = hasattr(_sig, "SIGALRM") and hasattr(_sig, "alarm")
+    _use_signal_timeout = _has_sigalrm and (
         _sig.getsignal(_sig.SIGALRM) is not _sig.SIG_DFL
         or threading.current_thread() is threading.main_thread()
     )
 
+    _task_timer = None
     if _use_signal_timeout:
         old_handler = _sig.signal(_sig.SIGALRM, _timeout_handler)
         _sig.alarm(_PER_TASK_TIMEOUT_S)
+    elif not _has_sigalrm:
+        def _on_task_timeout():
+            logger.error(
+                "worker: task %d (%s) exceeded %ds timeout (portable watchdog)",
+                task_id,
+                ttype,
+                _PER_TASK_TIMEOUT_S,
+            )
+
+        _task_timer = threading.Timer(_PER_TASK_TIMEOUT_S, _on_task_timeout)
+        _task_timer.daemon = True
+        _task_timer.start()
     t_start = time.time()
     try:
         result = handler(payload, conn, db_path)
@@ -1021,6 +1034,8 @@ def process_one_task(
         if _use_signal_timeout:
             _sig.alarm(0)
             _sig.signal(_sig.SIGALRM, old_handler)
+        if _task_timer is not None:
+            _task_timer.cancel()
 
     return True
 
@@ -1292,9 +1307,19 @@ def run_worker(
 
     # signal.signal only works in the main thread — skip when called
     # from a worker thread (e.g. pytest runs run_worker in a thread).
-    if _threading.current_thread() is _threading.main_thread():
+    _has_proc_sigalrm = hasattr(_proc_sig, "SIGALRM") and hasattr(_proc_sig, "alarm")
+    _use_proc_sigalrm = (
+        _has_proc_sigalrm
+        and _threading.current_thread() is _threading.main_thread()
+    )
+    _proc_timer = None
+    if _use_proc_sigalrm:
         _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
         _proc_sig.alarm(_PROCESS_TIMEOUT_S)
+    elif not _has_proc_sigalrm:
+        _proc_timer = _threading.Timer(_PROCESS_TIMEOUT_S, _process_killer, args=(0, None))
+        _proc_timer.daemon = True
+        _proc_timer.start()
 
     try:
         if drain:
@@ -1369,7 +1394,10 @@ def run_worker(
                             pass
                         time.sleep(1)
     finally:
-        _proc_sig.alarm(0)
+        if _use_proc_sigalrm:
+            _proc_sig.alarm(0)
+        if _proc_timer is not None:
+            _proc_timer.cancel()
         logger.info("worker: stopped")
 
 
@@ -1432,8 +1460,8 @@ def main():
             acquire_lock_or_exit(_lock_name)
         except ImportError:
             # Best-effort: if flock module isn't on path, fall back to
-            # a lightweight inline lock using fcntl directly.
-            import fcntl
+            # a lightweight inline lock using infra.file_lock.
+            from infra.file_lock import lock_fd
 
             _lock_path = (
                 resolve_active_memory_dir()
@@ -1442,9 +1470,7 @@ def main():
             )
             _lock_path.parent.mkdir(parents=True, exist_ok=True)
             _lock_fd = open(_lock_path, "w")
-            try:
-                fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+            if not lock_fd(_lock_fd.fileno(), nonblocking=True):
                 logger.info("background_worker: another instance holds %s lock, exiting", _lock_name)
                 _lock_fd.close()
                 return 0

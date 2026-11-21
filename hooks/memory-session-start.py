@@ -29,7 +29,6 @@ I1 fix (2026-06-22): participates in the per-process search
 dedup cache shared with the other two hooks.
 """
 
-import fcntl
 import json
 import os
 import sys
@@ -160,14 +159,16 @@ def _read_current_session() -> dict:
 
 
 def _write_current_session(data: dict) -> None:
+    from infra.file_lock import lock_fd, unlock_fd
+
     _get_sessions_dir().mkdir(parents=True, exist_ok=True)
     _CURRENT_SESSION_LOCK.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd = _CURRENT_SESSION_LOCK.open("w")
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            lock_fd(fd.fileno(), nonblocking=False)
             _CURRENT_SESSION_FILE.write_text(json.dumps(data, indent=2))
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            unlock_fd(fd.fileno())
         finally:
             fd.close()
     except OSError:

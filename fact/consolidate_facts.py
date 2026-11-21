@@ -10,11 +10,6 @@ from pathlib import Path
 
 from typing import Any
 
-fcntl: Any
-try:
-    import fcntl
-except ImportError:
-    fcntl = None
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
 from config import resolve_db_path
 from infra.memory_common import (
@@ -81,32 +76,39 @@ def consolidate_memory_facts(db_path: Path | str | None = None):
         logger.error("Database %s does not exist. Run rebuild_index.py first.", db_path)
         sys.exit(1)
 
-    # Process lock using flock
+    from infra.file_lock import lock_fd, unlock_fd
+
+    # Process lock using cross-platform file lock
     lock_file = None
-    if fcntl:
-        try:
-            lock_path = local_mem / ".consolidate.lock"
-            lock_file = open(lock_path, "w")
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+    try:
+        lock_path = local_mem / ".consolidate.lock"
+        lock_file = open(lock_path, "w")
+        if not lock_fd(lock_file.fileno(), nonblocking=True):
             logger.warning(
                 "Another consolidation is already running. Waiting for it to finish..."
             )
-            if lock_file is not None:
-                deadline = time.monotonic() + 600  # 10-minute safety cap
-                while True:
-                    try:
-                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-                        break
-                    except BlockingIOError:
-                        if time.monotonic() > deadline:
-                            raise TimeoutError(
-                                "Consolidate lock held for >10 minutes; aborting."
-                            )
-                        time.sleep(0.5)
-        except Exception as e:
-            logger.warning("Could not acquire process lock: %s", e)
-            lock_file = None
+            deadline = time.monotonic() + 600  # 10-minute safety cap
+            while not lock_fd(lock_file.fileno(), nonblocking=True):
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        "Consolidate lock held for >10 minutes; aborting."
+                    )
+                time.sleep(0.5)
+    except TimeoutError:
+        if lock_file is not None:
+            try:
+                lock_file.close()
+            except Exception:
+                pass
+        raise
+    except Exception as e:
+        logger.warning("Could not acquire process lock: %s", e)
+        if lock_file is not None:
+            try:
+                lock_file.close()
+            except Exception:
+                pass
+        lock_file = None
 
     db = None
     try:
@@ -325,9 +327,15 @@ def consolidate_memory_facts(db_path: Path | str | None = None):
     finally:
         if db is not None:
             safe_close_db(db)
-        if lock_file and fcntl:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            lock_file.close()
+        if lock_file is not None:
+            try:
+                unlock_fd(lock_file.fileno())
+            except Exception as e:
+                logger.debug("Could not unlock consolidate lock: %s", e)
+            try:
+                lock_file.close()
+            except Exception as e:
+                logger.debug("Could not close consolidate lock: %s", e)
 
     # 8. Output Compaction Report
     if issues:

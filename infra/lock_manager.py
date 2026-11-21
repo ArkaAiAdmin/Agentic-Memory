@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import contextlib
 import datetime
-import fcntl
 import hashlib
 import logging
 import os
@@ -17,6 +16,8 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Generator, Tuple
+
+from infra.file_lock import lock_fd, unlock_fd
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +225,7 @@ class FlockLockManager(LockManager):
         self._mu = threading.Lock()  # protects _lock_fds / _lock_tokens
 
     def _lock_file(self, lock_name: str) -> str:
-        if "/" in lock_name or os.path.isabs(lock_name):
+        if "/" in lock_name or "\\" in lock_name or os.path.isabs(lock_name):
             return lock_name + ".flock"
         h = hashlib.sha256(lock_name.encode()).hexdigest()[:16]
         return self.base_path + f".flock.{h}"
@@ -245,7 +246,9 @@ class FlockLockManager(LockManager):
             path = self._lock_file(lock_name)
             fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if not lock_fd(fd, nonblocking=True):
+                    os.close(fd)
+                    return False, ""
             except (IOError, OSError):
                 os.close(fd)
                 return False, ""
@@ -266,7 +269,7 @@ class FlockLockManager(LockManager):
             self._lock_tokens.pop(lock_name, None)
             self._lock_fds.pop(lock_name, None)
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            unlock_fd(fd)
         except Exception:
             pass
         try:
@@ -284,9 +287,10 @@ class FlockLockManager(LockManager):
             return False
         fd = os.open(path, os.O_RDWR, 0o644)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            return False
+            if lock_fd(fd, nonblocking=True):
+                unlock_fd(fd)
+                return False
+            return True
         except (IOError, OSError):
             return True
         finally:

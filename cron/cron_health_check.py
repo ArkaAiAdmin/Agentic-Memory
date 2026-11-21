@@ -63,16 +63,40 @@ def _check_timeout_handler(signum, frame):
 
 
 def _with_timeout(seconds: int, fn, *args, **kwargs):
-    """Run *fn* with a SIGALRM timeout. Returns result or error dict."""
-    old_handler = signal.signal(signal.SIGALRM, _check_timeout_handler)
-    signal.alarm(seconds)
-    try:
-        return fn(*args, **kwargs)
-    except _CheckTimeout:
+    """Run *fn* with a SIGALRM timeout (or thread-join fallback). Returns result or error dict."""
+    import threading as _threading
+
+    if (
+        hasattr(signal, "SIGALRM")
+        and hasattr(signal, "alarm")
+        and _threading.current_thread() is _threading.main_thread()
+    ):
+        old_handler = signal.signal(signal.SIGALRM, _check_timeout_handler)
+        signal.alarm(seconds)
+        try:
+            return fn(*args, **kwargs)
+        except _CheckTimeout:
+            return {"status": "critical", "error": f"Timed out after {seconds}s"}
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+
+    res_container: dict[str, Any] = {}
+
+    def _runner():
+        try:
+            res_container["val"] = fn(*args, **kwargs)
+        except Exception as exc:
+            res_container["exc"] = exc
+
+    t = _threading.Thread(target=_runner, daemon=True)
+    t.start()
+    t.join(timeout=float(seconds))
+    if t.is_alive():
         return {"status": "critical", "error": f"Timed out after {seconds}s"}
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+    if "exc" in res_container:
+        raise res_container["exc"]
+    return res_container.get("val", {"status": "error", "message": "no result"})
 
 
 # Minimal lock — non-blocking: skip if another health check holds it
@@ -85,18 +109,31 @@ except ImportError:
         sys.exit(1)
 
 
+_HELD_LOCK_FDS: list[int] = []
+
+
 def _try_lock_or_skip(name: str) -> bool:
     """Try to acquire flock; return True if held, False if contended."""
+    fd = None
     try:
         from _flock import _lock_path
+        from infra.file_lock import lock_fd
+
         lock = _lock_path(name)
         lock.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(str(lock), os.O_CREAT | os.O_RDWR, 0o644)
-        import fcntl
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if not lock_fd(fd, nonblocking=True):
+            os.close(fd)
+            return False
         # Keep fd open for the process lifetime (lock auto-releases on exit)
+        _HELD_LOCK_FDS.append(fd)
         return True
     except (OSError, BlockingIOError):
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         return False
 
 

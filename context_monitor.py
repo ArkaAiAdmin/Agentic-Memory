@@ -13,7 +13,6 @@ Called from OpenCode plugin hooks:
   - compacting          → pre_compaction (save before context is lost)
 """
 
-import fcntl
 import json
 import logging
 import os
@@ -22,6 +21,8 @@ import shutil
 import sys
 import time
 from pathlib import Path
+
+from infra.file_lock import lock_fd as _lock_fd_fn, unlock_fd as _unlock_fd_fn
 
 # C15 fix (2026-06-27): prevent MPS kernel crash when concurrent subprocesses
 # load sentence-transformers on Apple Silicon. Must be set before any torch import.
@@ -94,22 +95,30 @@ def _save_state(state: dict):
     # Acquire exclusive flock; re-open FD each call so we don't hold
     # it between calls (the hook model is short-lived subprocesses,
     # not long-lived daemons).
+    lock_file = None
     try:
-        lock_fd = open(_STATE_LOCK_PATH, "w", encoding="utf-8")
-        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+        lock_file = open(_STATE_LOCK_PATH, "w", encoding="utf-8")
+        if not _lock_fd_fn(lock_file.fileno(), nonblocking=False):
+            lock_file.close()
+            lock_file = None
     except OSError as exc:
         logger.debug("context_monitor: cannot acquire state lock: %s", exc)
-        lock_fd = None  # best-effort: proceed without lock
+        if lock_file is not None:
+            try:
+                lock_file.close()
+            except OSError:
+                pass
+        lock_file = None  # best-effort: proceed without lock
 
     try:
         from infra.memory_common import atomic_write
 
         atomic_write(STATE_FILE, json.dumps(state, indent=2) + "\n")
     finally:
-        if lock_fd is not None:
+        if lock_file is not None:
             try:
-                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
-                lock_fd.close()
+                _unlock_fd_fn(lock_file.fileno())
+                lock_file.close()
             except OSError as exc:
                 logger.debug("context_monitor: cannot release state lock: %s", exc)
 

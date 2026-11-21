@@ -34,11 +34,6 @@ from infra.memory_common import safe_close_db
 
 logger = logging.getLogger(__name__)
 
-try:
-    import fcntl
-except ImportError:
-    fcntl = None  # type: ignore[assignment]
-
 import numpy as np
 from usearch.index import Index as USearchIndex
 

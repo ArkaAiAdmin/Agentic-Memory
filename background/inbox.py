@@ -149,6 +149,43 @@ def _write_daemon_manifest(manifest: dict[str, dict]) -> None:
         pass
 
 
+def _is_pid_alive(pid: int) -> bool:
+    """Return True if *pid* is currently alive (POSIX and Windows)."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+
+        _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        _STILL_ACTIVE = 259
+        _ERROR_ACCESS_DENIED = 5
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        k32.OpenProcess.restype = ctypes.c_void_p
+        k32.GetExitCodeProcess.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
+        k32.GetExitCodeProcess.restype = ctypes.c_int
+        k32.CloseHandle.argtypes = [ctypes.c_void_p]
+        k32.CloseHandle.restype = ctypes.c_int
+        handle = k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ctypes.get_last_error() == _ERROR_ACCESS_DENIED
+        try:
+            exit_code = ctypes.c_uint32(0)
+            if not k32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return True
+            return exit_code.value == _STILL_ACTIVE
+        finally:
+            k32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
 def _register_in_daemon_manifest() -> None:
     """Register the current process in the global daemon manifest.
 
@@ -165,9 +202,7 @@ def _register_in_daemon_manifest() -> None:
         pid = info.get("pid", 0)
         if pid <= 0 or pid == os.getpid():
             continue
-        try:
-            os.kill(pid, 0)
-        except (OSError, ProcessLookupError):
+        if not _is_pid_alive(pid):
             stale.append(key)
     for key in stale:
         manifest.pop(key, None)
@@ -214,11 +249,7 @@ def _is_daemon_running() -> bool:
         return False
     if pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)  # signal 0 = existence check
-    except (OSError, ProcessLookupError):
-        return False
-    return True
+    return _is_pid_alive(pid)
 
 
 def _write_pid_file() -> bool:
@@ -285,20 +316,27 @@ def _enqueue_to_inbox(entry: dict) -> bool:
         # refuse.  The lock is released when ``f`` is closed.
         max_bytes = _inbox_max_bytes()
         line_bytes = line.encode("utf-8")
+        from infra.file_lock import lock_fd, unlock_fd
+
         with open(inbox, "ab") as f:
-            import fcntl
-            fcntl.flock(f, fcntl.LOCK_EX)
-            current_size = os.fstat(f.fileno()).st_size
-            if current_size + len(line_bytes) >= max_bytes:
-                logger.warning(
-                    "auto-save: inbox at %d bytes, refusing enqueue of %d bytes "
-                    "(cap is %d). Caller will fall back to sync path.",
-                    current_size,
-                    len(line_bytes),
-                    max_bytes,
-                )
-                return False
-            f.write(line_bytes)
+            lock_fd(f.fileno(), nonblocking=False)
+            try:
+                current_size = os.fstat(f.fileno()).st_size
+                if current_size + len(line_bytes) >= max_bytes:
+                    logger.warning(
+                        "auto-save: inbox at %d bytes, refusing enqueue of %d bytes "
+                        "(cap is %d). Caller will fall back to sync path.",
+                        current_size,
+                        len(line_bytes),
+                        max_bytes,
+                    )
+                    return False
+                f.write(line_bytes)
+            finally:
+                try:
+                    unlock_fd(f.fileno())
+                except OSError:
+                    pass
         return True
     except Exception as e:
         logger.warning("auto-save: failed to enqueue to inbox: %s", e)
@@ -491,11 +529,8 @@ def _cleanup_stale_daemon_lock() -> bool:
         return False
     if pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)
+    if _is_pid_alive(pid):
         return False  # PID is alive — lock is legit
-    except (OSError, ProcessLookupError):
-        pass
     # PID is dead.  Try to acquire the lock; if we can't, the
     # lock is held by another process (unlikely since PID is dead,
     # but handle it defensively).

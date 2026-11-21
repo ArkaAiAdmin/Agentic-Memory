@@ -23,11 +23,12 @@ from __future__ import annotations
 import logging
 
 import contextlib
-import fcntl
 import os
 import time
 from pathlib import Path
 from typing import Generator
+
+from infra.file_lock import lock_fd, unlock_fd
 
 logger = logging.getLogger(__name__)
 
@@ -96,23 +97,30 @@ def cron_model_lock(
         if timeout > 0:
             deadline = time.monotonic() + timeout
             while True:
+                fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
                 try:
-                    fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    acquired = True
-                    break
-                except BlockingIOError:
-                    if fd is not None:
-                        os.close(fd)
-                        fd = None
-                    if time.monotonic() > deadline:
-                        raise TimeoutError(
-                            f"cron_model_lock({name}): timed out after {timeout}s"
-                        )
-                    time.sleep(0.5)
+                    if lock_fd(fd, nonblocking=True):
+                        acquired = True
+                        break
+                except OSError:
+                    os.close(fd)
+                    fd = None
+                    raise
+                os.close(fd)
+                fd = None
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f"cron_model_lock({name}): timed out after {timeout}s"
+                    )
+                time.sleep(0.5)
         else:
             fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT)
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if not lock_fd(fd, nonblocking=True):
+                os.close(fd)
+                fd = None
+                raise BlockingIOError(
+                    f"cron_model_lock({name}): lock is held"
+                )
             acquired = True
         if acquired:
             logger.info("cron_model_lock(%s): acquired", name)
@@ -121,7 +129,7 @@ def cron_model_lock(
         if fd is not None:
             try:
                 if acquired:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
+                    unlock_fd(fd)
                 os.close(fd)
             except OSError:
                 pass
