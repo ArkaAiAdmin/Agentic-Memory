@@ -34,24 +34,31 @@ def _fts_search(
     recency_order: bool = False,
     tenant_id: str | None = None,
     include_global: bool = True,
+    project: str | None = None,
 ) -> list:
-    _base_filter = repo_filter + tag_filter_sql
-    _tenant_params = ()
+    _tenant_sql = ""
+    _tenant_params: tuple = ()
     if tenant_id and tenant_id != "default":
         if include_global:
-            _base_filter = _base_filter + " AND (m.tenant_id = ? OR m.tenant_id = 'default')"
+            _tenant_sql = " AND (m.tenant_id = ? OR m.tenant_id = 'default')"
         else:
-            _base_filter = _base_filter + " AND m.tenant_id = ?"
+            _tenant_sql = " AND m.tenant_id = ?"
         _tenant_params = (tenant_id,)
     elif tenant_id == "default" and not include_global:
-        _base_filter = _base_filter + " AND m.tenant_id = 'default'"
+        _tenant_sql = " AND m.tenant_id = 'default'"
+
+    _project_sql = " AND json_extract(m.metadata, '$.project') = ?" if project else ""
+    _project_params: tuple = (project,) if project else ()
 
     if prefilter_ids:
         _id_list = ",".join("?" for _ in prefilter_ids)
-        _base_filter = _base_filter + f" AND m.id IN ({_id_list})"
-        _params = tuple(prefilter_ids)
+        _prefilter_sql = f" AND m.id IN ({_id_list})"
+        _prefilter_params: tuple = tuple(prefilter_ids)
     else:
-        _params = ()
+        _prefilter_sql = ""
+        _prefilter_params = ()
+
+    _base_filter = repo_filter + tag_filter_sql + _tenant_sql + _project_sql + _prefilter_sql
     try:
         db.execute("SELECT 1 FROM tenant_memories LIMIT 0")
         _target_table = "tenant_memories"
@@ -59,7 +66,7 @@ def _fts_search(
         _target_table = "memories"
 
     _order = "m.observed_at DESC" if recency_order else "fts.rank"
-    params = (fts_query,) + tag_filter_params + _tenant_params + _params
+    params = (fts_query,) + tag_filter_params + _tenant_params + _project_params + _prefilter_params
     res = db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
@@ -72,10 +79,8 @@ def _fts_search(
         (*params, limit * 2),
     ).fetchall()
     if not res and tag_filter_sql:
-        _base_filter_fallback = repo_filter + (f" AND m.id IN ({','.join('?' for _ in prefilter_ids)})" if prefilter_ids else "")
-        if tenant_id:
-            _base_filter_fallback += " AND m.tenant_id = ?"
-        _params_fallback = (fts_query,) + _tenant_params + _params
+        _base_filter_fallback = repo_filter + _tenant_sql + _project_sql + _prefilter_sql
+        _params_fallback = (fts_query,) + _tenant_params + _project_params + _prefilter_params
         res = db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
@@ -99,13 +104,15 @@ def _fallback_embedding_search(
     category: str = "",
     tag_filter_sql: str = "",
     tag_filter_params: tuple = (),
+    project: str | None = None,
 ) -> list:
     """Try embedding search as fallback when FTS returns nothing."""
     try:
         from infra._lazy_imports import get_embedding_search
 
         _es = get_embedding_search()
-        _es_results = _es.search(normalized_query, db_path, limit=limit * 10, category=category)
+        _es_limit = max(limit * 20, 200) if project else limit * 10
+        _es_results = _es.search(normalized_query, db_path, limit=_es_limit, category=category)
         if not isinstance(_es_results, list) or not _es_results:
             return []
 
@@ -118,8 +125,15 @@ def _fallback_embedding_search(
             return []
         hit_ids = [hit.get("id") for hit in _es_results if hit.get("id")]
         _cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
-        _params = _cat_params + tag_filter_params
-        rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=repo_filter, extra_params=_params)
+        _extra_filter = repo_filter + (tag_filter_sql if tag_filter_sql else "")
+        _params = _cat_params + (tag_filter_params if tag_filter_sql else ())
+        rows_map = _fetch_rows_by_ids(
+            db,
+            hit_ids,
+            extra_filter=_extra_filter,
+            extra_params=_params,
+            **({"project": project} if project else {}),
+        )
 
         fb_rows = []
         for hit in _es_results:

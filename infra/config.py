@@ -460,7 +460,7 @@ class SyncConfig:
 class APIConfig:
     enable_server: bool = False
     listen_host: str = "127.0.0.1"
-    listen_port: int = 9879
+    listen_port: int = 9876
     api_token: str = ""
     insecure_loopback: bool = False
     dashboard_address: str = "127.0.0.1"
@@ -1472,6 +1472,14 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
     )
 
     # ---- api ----
+    _api_port_env = os.environ.get("MEMORY_API_PORT", "").strip()
+    _api_listen_port_env = os.environ.get("MEMORY_API_LISTEN_PORT", "").strip()
+    _api_port_fallback: int | None = None
+    if not _api_listen_port_env and _api_port_env:
+        try:
+            _api_port_fallback = int(_api_port_env)
+        except ValueError:
+            _api_port_fallback = None
     api = APIConfig(
         enable_server=_b(
             "MEMORY_API_ENABLE_SERVER", "api.enable_server", False, bool, toml_data
@@ -1480,8 +1488,10 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_API_LISTEN_HOST", "api.listen_host", "127.0.0.1", str, toml_data
         ),
         listen_port=_b(
-            "MEMORY_API_LISTEN_PORT", "api.listen_port", 9879, int, toml_data
-        ),
+            "MEMORY_API_LISTEN_PORT", "api.listen_port", 9876, int, toml_data
+        )
+        if _api_port_fallback is None
+        else _api_port_fallback,
         api_token=_b("MEMORY_API_TOKEN", "api.token", "", str, toml_data),
         insecure_loopback=_b(
             "MEMORY_API_INSECURE_LOOPBACK", "api.insecure_loopback", False, bool, toml_data

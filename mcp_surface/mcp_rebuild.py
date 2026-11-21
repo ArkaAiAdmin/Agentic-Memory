@@ -103,7 +103,7 @@ def memory_rebuild(scope: str = "active") -> str:
 
 @mcp.tool()
 @with_audit("memory_compact")
-def memory_compact(dry_run: bool = False) -> str:
+def memory_compact(dry_run: bool = False, session_id: str = "") -> str:
     """Run tier migration + consolidation + rebuild + session archival."""
     results = []
     active = _resolve_memory_dir()
@@ -180,6 +180,12 @@ def memory_compact(dry_run: bool = False) -> str:
         logger.warning("memory_compact failed: %s", e)
         results.append(f"WAL Checkpoint (error, non-fatal): {e}")
 
+    if not results:
+        return (
+            f"Session {session_id} compacted."
+            if session_id
+            else "Memory compaction complete."
+        )
     return "\n\n".join(results)
 
 

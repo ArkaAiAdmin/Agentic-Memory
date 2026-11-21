@@ -207,6 +207,10 @@ def memory_search(
     fact_type: str | None = None,
     memory_source: str | None = None,
     shared_with_me: bool = False,
+    tags: list[str] | None = None,
+    project: str = "",
+    light: bool = True,
+    rerank: bool = False,
 ) -> str:
     """Search memories by semantic + FTS5 hybrid search.
 
@@ -229,6 +233,10 @@ def memory_search(
             memories whose source file category matches the given type.
         shared_with_me: If True, also include memories explicitly shared with
             the current agent (via the shared pool's target_agent_id).
+        tags: Optional list of tag strings to filter memories by.
+        project: Optional project slug to filter memories by (metadata.project).
+        light: Skip expensive cross-encoder reranking pass (default True).
+        rerank: Enable cross-encoder reranking when light=False (default False).
     """
     auth_err = _check_authorization("search", "memory")
     if auth_err:
@@ -255,6 +263,10 @@ def memory_search(
             fact_type=fact_type,
             memory_source=memory_source,
             category=category,
+            tags=tags,
+            project=project,
+            light=light,
+            rerank=rerank,
             shared_with_me=shared_with_me,
             mode=mode,
         )
@@ -391,6 +403,11 @@ def memory_save(
 
         from save_pipeline import save_memory_auto, SaveValidationError
         slug = title_slug or _auto_slug(content)
+        save_extra: dict[str, Any] = {}
+        if kwargs.get("metadata") is not None:
+            save_extra["metadata"] = kwargs["metadata"]
+        if kwargs.get("project"):
+            save_extra["project"] = str(kwargs["project"])
         try:
             result = save_memory_auto(
                 content=content,
@@ -402,6 +419,7 @@ def memory_save(
                 is_global=is_global,
                 safety_wiring=safety_wiring,
                 defer_expensive=True,
+                **save_extra,
             )
             resp = {"note_id": result, "status": "success"}
             if idempotency_key:
@@ -1097,10 +1115,12 @@ def memory_graph(
     except (ValueError, TypeError):
         max_depth = 2
     try:
-        from mcp_surface.mcp_kg import memory_facts_list, memory_graph_stats
+        from mcp_surface.mcp_kg import memory_facts_list, memory_graph_stats, memory_graph_search
         from mcp_surface.mcp_kg_traversal import memory_graph_shortest_path, memory_graph_traverse
 
         if action == "explore":
+            if query:
+                return str(memory_graph_search(query=query, max_hops=max_depth, tenant_id=tenant_id))
             facts = memory_facts_list(limit=20, tenant_id=tenant_id)
             stats = memory_graph_stats(tenant_id=tenant_id)
             return f"## KG Facts\n{facts}\n\n## Stats\n{stats}"

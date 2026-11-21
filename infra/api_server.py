@@ -768,8 +768,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             except (ValueError, TypeError, IndexError):
                 self._error("Invalid limit or offset parameter", 400)
                 return
+            category = query_params.get("category", [""])[0] or ""
+            project = query_params.get("project", [""])[0] or ""
             client = MemoryClient(db_path=self.server.db_path)
-            memories = client.list(limit=limit, offset=offset)
+            memories = client.list(limit=limit, offset=offset, category=category, project=project)
             # Serialize MemoryResult dataclasses
             memories_list = [
                 {
@@ -780,7 +782,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "category": m.category,
                     "created_at": m.created_at,
                     "pinned": m.pinned,
-                    "importance": m.importance
+                    "importance": m.importance,
+                    "metadata": m.metadata if isinstance(m.metadata, dict) else {},
+                    **({"project": m.metadata["project"]} if isinstance(m.metadata, dict) and "project" in m.metadata else {}),
                 }
                 for m in memories
             ]
@@ -805,6 +809,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             light = light_param.lower() == "true" if light_param else (not rerank)
             tags_str = query_params.get("tags", [None])[0]
             tags = tags_str.split(",") if tags_str else None
+            category = query_params.get("category", [""])[0] or ""
+            project = query_params.get("project", [""])[0] or ""
             # Default fts: sub-100ms BM25. Hybrid costs ~8s query-parse
             # (semantic expansion) + fusion, and auto-escalates to the
             # deep cross-encoder on reasoning-shaped queries (measured
@@ -812,7 +818,16 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             mode = query_params.get("mode", ["fts"])[0]
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
-                results = client.search(query, limit=limit, rerank=rerank, tags=tags, mode=mode, light=light)
+                results = client.search(
+                    query,
+                    limit=limit,
+                    rerank=rerank,
+                    tags=tags,
+                    mode=mode,
+                    light=light,
+                    category=category,
+                    project=project,
+                )
             
             # Serialize SearchResults object
             results_list = [
@@ -823,7 +838,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "score": r.score,
                     "tags": r.tags,
                     "category": r.category,
-                    "created_at": r.created_at
+                    "created_at": r.created_at,
+                    "importance": r.importance,
+                    "pinned": r.pinned,
+                    "metadata": r.metadata if isinstance(r.metadata, dict) else {},
+                    **({"project": r.metadata["project"]} if isinstance(r.metadata, dict) and "project" in r.metadata else {}),
                 }
                 for r in results.results
             ]
@@ -843,6 +862,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(str(e), 400)
             return
         try:
+            parsed_qs = parse_qs(urlparse(self.path).query)
             query = req.get("query", "")
             if not query:
                 self._error("Missing query field in request body", 400)
@@ -855,6 +875,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             rerank = req.get("rerank", False)
             light = req.get("light", not rerank)
             tags = req.get("tags", None)
+            category = req.get("category") or parsed_qs.get("category", [""])[0] or ""
+            project = req.get("project") or parsed_qs.get("project", [""])[0] or ""
             # Default fts — see GET handler note above.
             mode = req.get("mode", "fts")
             include_global = req.get("include_global", True)
@@ -868,6 +890,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     mode=mode,
                     light=light,
                     include_global=include_global,
+                    category=category,
+                    project=project,
                 )
             
             # Serialize SearchResults object
@@ -879,7 +903,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "score": r.score,
                     "tags": r.tags,
                     "category": r.category,
-                    "created_at": r.created_at
+                    "created_at": r.created_at,
+                    "importance": r.importance,
+                    "pinned": r.pinned,
+                    "metadata": r.metadata if isinstance(r.metadata, dict) else {},
+                    **({"project": r.metadata["project"]} if isinstance(r.metadata, dict) and "project" in r.metadata else {}),
                 }
                 for r in results.results
             ]
@@ -915,7 +943,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             try:
                 _principal_tenant = self._resolve_tenant_id()
                 row = conn.execute(
-                    "SELECT id, content, tags, category, created_at, updated_at, deleted_at, importance "
+                    "SELECT id, content, tags, category, created_at, updated_at, deleted_at, importance, metadata "
                     "FROM memories WHERE id = ? AND tenant_id = ?",
                     (note_id, _principal_tenant),
                 ).fetchone()
@@ -929,6 +957,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 
                 tags_val = row[2]
                 tags = json.loads(tags_val) if isinstance(tags_val, str) else list(tags_val or [])
+                meta_val = row[8]
+                meta_dict: dict[str, Any] = {}
+                if meta_val:
+                    try:
+                        parsed_meta = json.loads(meta_val) if isinstance(meta_val, str) else meta_val
+                        if isinstance(parsed_meta, dict):
+                            meta_dict = parsed_meta
+                    except (json.JSONDecodeError, TypeError):
+                        meta_dict = {}
                 self._write_json({
                     "id": row[0],
                     "note_id": row[0],
@@ -939,6 +976,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "updated_at": row[5],
                     "deleted_at": row[6],
                     "importance": row[7],
+                    "metadata": meta_dict,
+                    **({"project": meta_dict["project"]} if "project" in meta_dict else {}),
                 })
             finally:
                 safe_close_db(conn)
@@ -1069,6 +1108,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     return
                 importance = imp_raw
             title_slug = req.get("title_slug", "")
+            metadata = req.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                self._error("metadata must be a JSON object", 400)
+                return
+            project = req.get("project", "")
+            if project is not None and not isinstance(project, str):
+                self._error("project must be a string", 400)
+                return
 
             _principal_tenant = self._resolve_tenant_id()
 
@@ -1087,6 +1134,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
             with getattr(self.server, "_db_lock", threading.Lock()):
                 client = MemoryClient(db_path=self.server.db_path)
+                save_extra: dict[str, Any] = {}
+                if metadata is not None:
+                    save_extra["metadata"] = metadata
+                if project:
+                    save_extra["project"] = project
                 note_id = client.save(
                     content=content,
                     tags=tags,
@@ -1096,6 +1148,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     importance=importance,
                     title_slug=title_slug,
                     tenant_id=_principal_tenant,
+                    **save_extra,
                 )
             if isinstance(note_id, str):
                 if note_id.startswith("Error [AUTHORIZATION_DENIED]"):
@@ -1138,6 +1191,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             content = req.get("content")
             tags = req.get("tags")
             pinned = req.get("pinned")
+            category = req.get("category")
+            metadata = req.get("metadata")
+            project = req.get("project")
+            if metadata is not None and not isinstance(metadata, dict):
+                self._error("metadata must be a JSON object", 400)
+                return
+            if project is not None and not isinstance(project, str):
+                self._error("project must be a string", 400)
+                return
             importance = None
             if "importance" in req and req["importance"] is not None:
                 imp_raw = req["importance"]
@@ -1153,7 +1215,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     return
                 importance = imp_raw
 
-            if content is None and tags is None and pinned is None and importance is None:
+            if (
+                content is None
+                and tags is None
+                and pinned is None
+                and importance is None
+                and category is None
+                and metadata is None
+                and project is None
+            ):
                 self._error("No fields provided to update", 400)
                 return
 
@@ -1167,6 +1237,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     tags=tags,
                     pinned=pinned,
                     importance=importance,
+                    category=category,
+                    metadata=metadata,
+                    project=project,
                     tenant_id=_principal_tenant,
                 )
             if not updated:
@@ -1257,7 +1330,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             from agentic_memory.maintenance import Maintenance
             maint = Maintenance(db_path=self.server.db_path)
             result = maint.compact()
-            self._write_json({"success": True, "result": str(result)})
+            context_str = getattr(result, "message", None) or str(result)
+            self._write_json({"success": True, "context": context_str, "result": str(result)})
         except Exception as e:
             logger.warning("_handle_compact: broad except swallowed: %s", e)
             self._error(f"Compaction failed: {e}", 500)
@@ -3183,15 +3257,47 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             req = {}
         try:
+            from agent_context import temporary_agent_context
             from mcp_surface.mcp_search import memory_session_start
 
+            principal_id = getattr(self, "_principal_id", None)
+            tenant_id = self._resolve_tenant_id()
+            effective_agent_id = principal_id or os.environ.get("MEMORY_AGENT_ID") or "ami"
             query = req.get("query", "")
-            result = memory_session_start(query=query)
+            with temporary_agent_context(effective_agent_id, principal_id=principal_id, tenant_id=tenant_id):
+                result = memory_session_start(query=query)
+
+            sid = ""
+            try:
+                from infra.memory_common import get_sessions_dir
+                state_file = get_sessions_dir() / ".current_session.json"
+                if state_file.exists():
+                    state_data = json.loads(state_file.read_text(encoding="utf-8"))
+                    sid = str(state_data.get("session_id") or "")
+            except Exception:
+                pass
+            if not sid:
+                sid = f"session_{int(time.time() * 1000)}"
+
             try:
                 parsed = json.loads(result) if isinstance(result, str) else result
             except (json.JSONDecodeError, TypeError):
                 parsed = {"briefing": str(result)}
-            self._write_json({"result": parsed})
+
+            if isinstance(parsed, dict):
+                context_text = str(parsed.get("context") or parsed.get("briefing") or "")
+                sid = str(parsed.get("session_id") or sid)
+            else:
+                context_text = str(parsed)
+
+            self._write_json({
+                "session_id": sid,
+                "context": context_text,
+                "active_threads": parsed.get("active_threads", []) if isinstance(parsed, dict) else [],
+                "recent_memories": parsed.get("recent_memories", []) if isinstance(parsed, dict) else [],
+                "project_facts": parsed.get("project_facts", []) if isinstance(parsed, dict) else [],
+                "result": parsed,
+            })
         except Exception as e:
             logger.warning("_handle_session_start: %s", e)
             self._error(f"Session start failed: {e}", 500)
@@ -3339,7 +3445,7 @@ class APIServer(ThreadingHTTPServer):
         db_path: str | Path,
         agent_id: str,
         host: str = "127.0.0.1",
-        port: int = 9879,
+        port: int = 9876,
         token: str = "",
         insecure_loopback: bool = False,
     ):
@@ -3587,11 +3693,17 @@ class APIServer(ThreadingHTTPServer):
                             logger.warning("_outbox_loop: broad except swallowed: %s", _wp_exc)
                             payload = payload_str
 
+                        _OUTBOX_EVENT_TYPE_MAP = {
+                            "memory_added": "memory.saved",
+                            "memory_updated": "memory.saved",
+                            "memory_deleted": "memory.deleted",
+                        }
                         msg = json.dumps({
                             "event": "memory_event",
                             "data": {
                                 "id": event_id,
                                 "event_type": event_type,
+                                "type": _OUTBOX_EVENT_TYPE_MAP.get(event_type, event_type),
                                 "note_id": note_id,
                                 "payload": payload,
                                 "created_at": created_at,
@@ -3688,7 +3800,7 @@ def start_server_from_config(db_path: str | Path) -> Optional[APIServer]:
         db_path=db_path,
         agent_id=agent_id,
         host=getattr(cfg, "api_listen_host", "127.0.0.1"),
-        port=getattr(cfg, "api_listen_port", 9879),
+        port=getattr(cfg, "api_listen_port", 9876),
         token=getattr(cfg, "api_token", ""),
         insecure_loopback=getattr(cfg, "api_insecure_loopback", False),
     )

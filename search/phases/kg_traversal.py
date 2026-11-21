@@ -314,6 +314,7 @@ def _text_multi_hop_traversal(
     limit: int = 10,
     repo_filter: str = "",
     category: str | None = None,
+    project: str | None = None,
 ) -> list:
     """Discover multi-hop reasoning chains through entity and phrase bridging.
 
@@ -465,6 +466,7 @@ def _text_multi_hop_traversal(
                 table=tgt_table,
                 extra_filter=repo_filter,
                 extra_params=cat_params,
+                **({"project": project} if project else {}),
             )
             # P0: _fetch_rows_by_ids returns the raw 12-column layout
             # (id, content, source_file, tags, created_at, fitness_score,
@@ -516,6 +518,7 @@ def _phase_ten_kg_boost(
     limit: int,
     repo_filter: str = "",
     category: str | None = None,
+    project: str | None = None,
 ) -> list:
     """Phase 10: KG concept/centrality boost — expand candidates via KG edges.
 
@@ -671,6 +674,7 @@ def _phase_ten_kg_boost(
             db, new_memory_ids,
             extra_filter=repo_filter,
             extra_params=cat_params,
+            **({"project": project} if project else {}),
         )
         base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         added = 0
@@ -715,6 +719,7 @@ def _phase_ten_multi_hop_kg(
     limit: int,
     repo_filter: str = "",
     category: str | None = None,
+    project: str | None = None,
 ) -> list:
     """Phase 10: Multi-hop KG traversal for cross-category queries.
 
@@ -924,6 +929,7 @@ def _phase_ten_multi_hop_kg(
             db, [m[0] for m in new_memory_scores],
             extra_filter=repo_filter,
             extra_params=cat_params,
+            **({"project": project} if project else {}),
         )
         base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         for mid, score in new_memory_scores:

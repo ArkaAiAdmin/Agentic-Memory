@@ -100,7 +100,7 @@ Agentic Memory is configured via environment variables or `memory.toml`. (Schema
 | `MEMORY_API_ENABLE_SERVER` | `False` | TOML: `api.enable_server=False` |
 | `MEMORY_API_INSECURE_LOOPBACK` | `False` | TOML: `api.insecure_loopback=False` |
 | `MEMORY_API_LISTEN_HOST` | `127.0.0.1` | TOML: `api.listen_host=127.0.0.1` |
-| `MEMORY_API_LISTEN_PORT` | `9879` | TOML: `api.listen_port=9879` |
+| `MEMORY_API_LISTEN_PORT` | `9876` | TOML: `api.listen_port=9879` |
 | `MEMORY_API_RATE_LIMIT` | `600` | TOML: `api.rate_limit=600` |
 | `MEMORY_API_STRICT_TOKEN` | `False` |  |
 

@@ -121,6 +121,7 @@ def _hybrid_fusion(
     chunk_hits_out: list | None = None,
     embedding_weight_override: float | None = None,
     tenant_id: str | None = None,
+    project: str | None = None,
 ) -> list:
     """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF.
 
@@ -337,7 +338,13 @@ def _hybrid_fusion(
             if hit_id and hit_id not in existing_ids and hit_id not in new_hit_ids:
                 new_hit_ids.append(hit_id)
         cat_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
-        new_hit_rows = _fetch_rows_by_ids(db, new_hit_ids, extra_filter=repo_filter, extra_params=cat_params)
+        new_hit_rows = _fetch_rows_by_ids(
+            db,
+            new_hit_ids,
+            extra_filter=repo_filter,
+            extra_params=cat_params,
+            **({"project": project} if project else {}),
+        )
         semantic_only = []
         for hit_id in new_hit_ids:
             row = new_hit_rows.get(hit_id)
@@ -418,6 +425,7 @@ def _enhance_with_chunks(
     repo_filter: str,
     category: str | None = None,
     merged_chunks: list | None = None,
+    project: str | None = None,
 ) -> list:
     """Add chunk-level matches to results.
 
@@ -438,7 +446,13 @@ def _enhance_with_chunks(
         if not chunk_parent_ids:
             return results
         chunk_params = (category,) if (category and "m.category = ?" in repo_filter) else ()
-        chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter, extra_params=chunk_params)
+        chunk_rows = _fetch_rows_by_ids(
+            db,
+            chunk_parent_ids,
+            extra_filter=repo_filter,
+            extra_params=chunk_params,
+            **({"project": project} if project else {}),
+        )
         # P0-6 fix (2026-06-23): batch the valid_to check instead of
         # one query per chunk hit. Previously we ran a separate
         # ``SELECT valid_to FROM memories WHERE id = ?`` inside the

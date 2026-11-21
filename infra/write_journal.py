@@ -323,6 +323,8 @@ def _ensure_journal_columns(conn: sqlite3.Connection) -> None:
         # C3 fix: GDPR subject tag for per-subject erasure via the CQRS
         # journal path.
         conn.execute("ALTER TABLE write_journal ADD COLUMN data_subject_sub TEXT")
+    if "metadata" not in cols:
+        conn.execute("ALTER TABLE write_journal ADD COLUMN metadata TEXT")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS journal_failed (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -343,12 +345,19 @@ def _ensure_journal_columns(conn: sqlite3.Connection) -> None:
             fact_type       TEXT DEFAULT 'observation',
             defer_expensive INTEGER DEFAULT 1,
             context         TEXT DEFAULT 'generic',
+            metadata        TEXT,
             error           TEXT,
             retry_count     INTEGER DEFAULT 0,
             content_hash    TEXT,
             failed_at       TEXT NOT NULL DEFAULT (datetime('now'))
         )"""
     )
+    failed_cols = {
+        r[1]
+        for r in conn.execute("PRAGMA table_info(journal_failed)").fetchall()
+    }
+    if "metadata" not in failed_cols:
+        conn.execute("ALTER TABLE journal_failed ADD COLUMN metadata TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_journal_failed_note ON journal_failed(note_id)"
     )
@@ -500,13 +509,26 @@ def enqueue_write(
     # at materialization so a corrupted journal row is detected (and
     # dead-lettered) rather than silently materialized into memory.db.
     content_hash = hashlib.sha256(req.content.encode("utf-8")).hexdigest()
+    meta_dict: dict[str, Any] = {}
+    if isinstance(req.metadata, dict):
+        meta_dict.update(req.metadata)
+    elif isinstance(req.metadata, str) and req.metadata.strip():
+        try:
+            parsed_meta = json.loads(req.metadata)
+            if isinstance(parsed_meta, dict):
+                meta_dict.update(parsed_meta)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if req.project and "project" not in meta_dict:
+        meta_dict["project"] = req.project
+    metadata_json = json.dumps(meta_dict) if meta_dict else None
     conn.execute(
         """INSERT INTO write_journal
            (note_id, agent_id, category, title_slug, content, tags,
              pinned, is_global, importance, tenant_id,
              epistemic_source, belief_status, asserting_agent_id, fact_type,
-             defer_expensive, context, data_subject_sub, content_hash, retry_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+             defer_expensive, context, data_subject_sub, metadata, content_hash, retry_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
         (
             note_id,
             agent_id,
@@ -525,6 +547,7 @@ def enqueue_write(
             1 if req.defer_expensive else 0,
             req.context,
             req.data_subject_sub,
+            metadata_json,
             content_hash,
         ),
     )
@@ -559,7 +582,7 @@ def dequeue_pending_for_worker(
             "SELECT id, note_id, agent_id, category, title_slug, content, "
             "tags, pinned, is_global, importance, tenant_id, "
             "epistemic_source, belief_status, asserting_agent_id, fact_type, "
-            "defer_expensive, context, data_subject_sub, status, created_at "
+            "defer_expensive, context, data_subject_sub, metadata, status, created_at "
             "FROM write_journal WHERE status='pending' AND tenant_id = ? "
             "AND (id % ?) = ? "
             "ORDER BY id LIMIT ?"
@@ -570,7 +593,7 @@ def dequeue_pending_for_worker(
             "SELECT id, note_id, agent_id, category, title_slug, content, "
             "tags, pinned, is_global, importance, tenant_id, "
             "epistemic_source, belief_status, asserting_agent_id, fact_type, "
-            "defer_expensive, context, data_subject_sub, status, created_at "
+            "defer_expensive, context, data_subject_sub, metadata, status, created_at "
             "FROM write_journal WHERE status='pending' "
             "AND (id % ?) = ? "
             "ORDER BY id LIMIT ?"
@@ -708,11 +731,11 @@ def mark_dead_letter(journal_path: Path, entry_id: int, error: str) -> None:
            (original_id, note_id, agent_id, category, title_slug, content,
             tags, pinned, is_global, importance, tenant_id,
             epistemic_source, belief_status, asserting_agent_id, fact_type,
-            defer_expensive, context, error, retry_count, content_hash)
+            defer_expensive, context, metadata, error, retry_count, content_hash)
            SELECT id, note_id, agent_id, category, title_slug, content,
                   tags, pinned, is_global, importance, tenant_id,
                   epistemic_source, belief_status, asserting_agent_id, fact_type,
-                  defer_expensive, context, ?, retry_count, content_hash
+                  defer_expensive, context, metadata, ?, retry_count, content_hash
            FROM write_journal WHERE id=?""",
         (error[:500], entry_id),
     )

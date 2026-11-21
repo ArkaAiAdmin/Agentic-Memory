@@ -63,6 +63,8 @@ class MemoryClient:
         importance: int = 3,
         title_slug: str = "",
         tenant_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        project: str = "",
     ) -> str:
         """Save a memory and return its note ID.
 
@@ -91,6 +93,11 @@ class MemoryClient:
         from infra._lazy_imports import save_memory_auto
 
         slug = title_slug or _auto_slug(content)
+        extra_kwargs: dict[str, Any] = {}
+        if metadata is not None:
+            extra_kwargs["metadata"] = metadata
+        if project:
+            extra_kwargs["project"] = project
         note_id = save_memory_auto(
             content=content,
             category=category,
@@ -101,6 +108,7 @@ class MemoryClient:
             importance=importance,
             db_path=str(self._db_path),
             tenant_id=tenant_id,
+            **extra_kwargs,
         )
 
         return str(note_id)
@@ -123,6 +131,8 @@ class MemoryClient:
         # queries — opt in explicitly when needed.
         mode: str = "fts",
         light: bool = False,
+        category: str = "",
+        project: str = "",
     ) -> SearchResults:
         """Search memories by semantic and keyword relevance.
 
@@ -165,10 +175,15 @@ class MemoryClient:
         """
         from infra._lazy_imports import search_memories
 
+        search_extra: dict[str, Any] = {}
+        if category:
+            search_extra["category"] = category
+        if project:
+            search_extra["project"] = project
         raw = search_memories(
             db_path=self._db_path,
             query=query,
-            limit=limit,
+            limit=max(limit * 5, 50) if project else limit,
             include_global=include_global,
             rerank=rerank,
             boost_pinned=boost_pinned,
@@ -180,38 +195,56 @@ class MemoryClient:
             tags=tags,
             mode=mode,
             light=light,
+            **search_extra,
         )
 
         items = parse_search_results(raw)
-        results = [
-            MemoryResult(
-                id=r.get("id", ""),
-                content=r.get("content", ""),
-                score=float(r.get("final_score", r.get("rank", 0))),
-                tags=r.get("tags", []),
-                category=r.get("category", ""),
-                created_at=r.get("created_at") or r.get("created") or "",
-                pinned=bool(r.get("pinned", False)),
-                importance=int(r.get("importance") or 3),
-                metadata={
-                    k: v
-                    for k, v in r.items()
-                    if k
-                    not in (
-                        "id",
-                        "content",
-                        "final_score",
-                        "rank",
-                        "tags",
-                        "category",
-                        "created_at",
-                        "pinned",
-                        "importance",
-                    )
-                },
+        results = []
+        for r in items:
+            merged_meta: dict[str, Any] = {
+                k: v
+                for k, v in r.items()
+                if k
+                not in (
+                    "id",
+                    "content",
+                    "final_score",
+                    "rank",
+                    "tags",
+                    "category",
+                    "created_at",
+                    "pinned",
+                    "importance",
+                    "metadata",
+                )
+            }
+            raw_item_meta = r.get("metadata")
+            if isinstance(raw_item_meta, dict):
+                merged_meta.update(raw_item_meta)
+            elif isinstance(raw_item_meta, str) and raw_item_meta.strip():
+                try:
+                    parsed_m = json.loads(raw_item_meta)
+                    if isinstance(parsed_m, dict):
+                        merged_meta.update(parsed_m)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if project and merged_meta.get("project") != project:
+                continue
+            results.append(
+                MemoryResult(
+                    id=r.get("id", ""),
+                    content=r.get("content", ""),
+                    score=float(r.get("final_score", r.get("rank", 0))),
+                    tags=r.get("tags", []),
+                    category=r.get("category", ""),
+                    created_at=r.get("created_at") or r.get("created") or "",
+                    pinned=bool(r.get("pinned", False)),
+                    importance=int(r.get("importance") or 3),
+                    metadata=merged_meta,
+                )
             )
-            for r in items
-        ]
+            if len(results) >= limit:
+                break
 
         synthesis = ""
         raw_dict: dict = {}
@@ -266,6 +299,9 @@ class MemoryClient:
         tags: list[str] | None = None,
         pinned: bool | None = None,
         importance: int | None = None,
+        category: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        project: str | None = None,
         tenant_id: str | None = None,
     ) -> bool:
         """Update fields of an existing memory, scoped to a tenant."""
@@ -276,6 +312,21 @@ class MemoryClient:
                 raise ValidationError("Importance must be an integer between 1 and 5")
             if not (1 <= importance <= 5):
                 raise ValidationError("Importance must be between 1 and 5")
+        if category is not None:
+            if (
+                not isinstance(category, str)
+                or not category.strip()
+                or category.strip() in (".", "..")
+                or "/" in category
+                or "\\" in category
+                or category.startswith("~")
+                or len(category) > 64
+            ):
+                raise ValidationError(
+                    "Invalid category. Must be a non-empty single segment up to 64 chars."
+                )
+        if metadata is not None and not isinstance(metadata, dict):
+            raise ValidationError("Metadata must be a JSON object")
 
         updates: list[str] = []
         params: list[Any] = []
@@ -294,8 +345,10 @@ class MemoryClient:
         if importance is not None:
             updates.append("importance = ?")
             params.append(int(importance))
-
-        if not updates:
+        if category is not None:
+            updates.append("category = ?")
+            params.append(category.strip())
+        if not updates and metadata is None and project is None:
             conn = get_db_connection(self._db_path)
             try:
                 row = conn.execute(
@@ -306,19 +359,52 @@ class MemoryClient:
             finally:
                 safe_close_db(conn)
 
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
-        updates.append("updated_at = ?")
-        params.append(now)
-
-        params.extend([note_id, tenant_id])
-
-        sql = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL"
         conn = get_db_connection(self._db_path)
         try:
+            if not getattr(conn, "in_transaction", False):
+                conn.execute("BEGIN IMMEDIATE")
+            if metadata is not None or project is not None:
+                existing_row = conn.execute(
+                    "SELECT metadata FROM memories WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
+                    (note_id, tenant_id),
+                ).fetchone()
+                if existing_row is None:
+                    conn.rollback()
+                    return False
+                existing_meta: dict[str, Any] = {}
+                if existing_row[0]:
+                    try:
+                        parsed_existing = json.loads(existing_row[0]) if isinstance(existing_row[0], str) else existing_row[0]
+                        if isinstance(parsed_existing, dict):
+                            existing_meta = parsed_existing
+                    except (json.JSONDecodeError, TypeError):
+                        existing_meta = {}
+                if metadata is not None:
+                    merged_meta = {**existing_meta, **metadata}
+                else:
+                    merged_meta = dict(existing_meta)
+                if project is not None:
+                    merged_meta["project"] = project
+                updates.append("metadata = ?")
+                params.append(json.dumps(merged_meta))
+
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            updates.append("updated_at = ?")
+            params.append(now)
+
+            params.extend([note_id, tenant_id])
+
+            sql = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL"
             cur = conn.execute(sql, params)
             conn.commit()
             return cur.rowcount > 0
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
         finally:
             safe_close_db(conn)
 
@@ -328,12 +414,20 @@ class MemoryClient:
         try:
             row = conn.execute(
                 "SELECT id, content, tags, category, created_at, "
-                "       pinned, importance "
+                "       pinned, importance, metadata "
                 "FROM memories WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
                 (note_id, tenant_id),
             ).fetchone()
             if not row:
                 return None
+            meta_dict: dict[str, Any] = {}
+            if row[7]:
+                try:
+                    parsed_meta = json.loads(row[7]) if isinstance(row[7], str) else row[7]
+                    if isinstance(parsed_meta, dict):
+                        meta_dict = parsed_meta
+                except (json.JSONDecodeError, TypeError):
+                    meta_dict = {}
             return MemoryResult(
                 id=row[0],
                 content=row[1],
@@ -342,6 +436,7 @@ class MemoryClient:
                 created_at=row[4] or "",
                 pinned=bool(row[5]),
                 importance=int(row[6] or 3),
+                metadata=meta_dict,
             )
         finally:
             safe_close_db(conn)
@@ -352,9 +447,10 @@ class MemoryClient:
         offset: int = 0,
         category: str = "",
         *,
+        project: str = "",
         tenant_id: str | None = None,
     ) -> list[MemoryResult]:
-        """List recent memories (newest first), optionally filtered by category.
+        """List recent memories (newest first), optionally filtered by category or project.
 
         Uses explicit tenant scoping. When tenant_id is not provided,
         resolves from the current agent context (falling back to "default").
@@ -363,36 +459,45 @@ class MemoryClient:
             tenant_id = _resolve_tenant()
         conn = get_db_connection(self._db_path)
         try:
+            where_clauses = ["deleted_at IS NULL", "tenant_id = ?"]
+            sql_params: list[Any] = [tenant_id]
             if category:
-                rows = conn.execute(
-                    "SELECT id, content, tags, category, created_at, "
-                    "       pinned, importance "
-                    "FROM memories WHERE deleted_at IS NULL AND category = ? "
-                    "AND tenant_id = ? "
-                    "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (category, tenant_id, limit, offset),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT id, content, tags, category, created_at, "
-                    "       pinned, importance "
-                    "FROM memories WHERE deleted_at IS NULL "
-                    "AND tenant_id = ? "
-                    "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (tenant_id, limit, offset),
-                ).fetchall()
-            return [
-                MemoryResult(
-                    id=r[0],
-                    content=r[1],
-                    tags=r[2] or [],
-                    category=r[3] or "",
-                    created_at=r[4] or "",
-                    pinned=bool(r[5]),
-                    importance=int(r[6] or 3),
+                where_clauses.append("category = ?")
+                sql_params.append(category)
+            if project:
+                where_clauses.append("json_extract(metadata, '$.project') = ?")
+                sql_params.append(project)
+            sql_params.extend([limit, offset])
+            rows = conn.execute(
+                "SELECT id, content, tags, category, created_at, "
+                "       pinned, importance, metadata "
+                f"FROM memories WHERE {' AND '.join(where_clauses)} "
+                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                tuple(sql_params),
+            ).fetchall()
+            out: list[MemoryResult] = []
+            for r in rows:
+                meta_dict: dict[str, Any] = {}
+                if r[7]:
+                    try:
+                        parsed_meta = json.loads(r[7]) if isinstance(r[7], str) else r[7]
+                        if isinstance(parsed_meta, dict):
+                            meta_dict = parsed_meta
+                    except (json.JSONDecodeError, TypeError):
+                        meta_dict = {}
+                out.append(
+                    MemoryResult(
+                        id=r[0],
+                        content=r[1],
+                        tags=r[2] or [],
+                        category=r[3] or "",
+                        created_at=r[4] or "",
+                        pinned=bool(r[5]),
+                        importance=int(r[6] or 3),
+                        metadata=meta_dict,
+                    )
                 )
-                for r in rows
-            ]
+            return out
         finally:
             safe_close_db(conn)
 

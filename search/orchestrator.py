@@ -581,11 +581,13 @@ def _counting_phase(
     limit: int,
     repo_filter: str = "",
     tenant_id: str | None = None,
+    project: str | None = None,
 ) -> list:
     """Counting phase: for 'how many times/how often/how many distinct' queries,
     count distinct values across matching sessions and return both the aggregate
     count and matching provenance notes.
     """
+    import json as _json
     import re as _re
 
     _COUNT_PATTERNS = [
@@ -632,59 +634,66 @@ def _counting_phase(
     search_phrases.extend(keywords[:3])
 
     for target in search_phrases:
-        # Structured KG State Ledger check first (Option B)
-        try:
-            from search.temporal_facts import query_state_count_from_ledger
-            ledger_state = query_state_count_from_ledger(db, target, tenant_id=tenant_id or "default")
-            if ledger_state and ledger_state["count"] > 0:
-                count = ledger_state["count"]
-                sorted_vals = ", ".join(ledger_state["values"])
-                count_content = (
-                    f"The {target} has had {count} distinct values in history: {sorted_vals}. "
-                    f"Total distinct count: {count}."
-                )
-                synthetic = (
-                    f"count_{target}",
-                    count_content,
-                    "eval://aggregate",
-                    "[]",
-                    "",
-                    0, 1.0, 1.0, 5, 0, None, "{}", None,
-                )
-                new_results: list[tuple] = [synthetic]
-                existing_ids = {synthetic[0]}
-                for mem_id in ledger_state.get("source_memories", []):
-                    m_row = db.execute(
-                        "SELECT id, content, source_file, tags, created_at, observed_at FROM memories WHERE id = ?",
-                        (mem_id,)
-                    ).fetchone()
-                    if m_row and m_row[0] not in existing_ids:
-                        existing_ids.add(m_row[0])
-                        new_results.append((
-                            m_row[0], m_row[1], m_row[2], m_row[3], m_row[4], 0, 0.8,
-                            1.0, 3, 0, None, "{}", None,
-                        ))
-                for r in results:
-                    if r[0] not in existing_ids:
-                        existing_ids.add(r[0])
-                        new_results.append(r)
-                return new_results[:limit]
-        except Exception:
-            pass
+        # Structured KG State Ledger check first (Option B; skip when project-scoped since ledger has no project filter)
+        if not project:
+            try:
+                from search.temporal_facts import query_state_count_from_ledger
+                ledger_state = query_state_count_from_ledger(db, target, tenant_id=tenant_id or "default")
+                if ledger_state and ledger_state["count"] > 0:
+                    count = ledger_state["count"]
+                    sorted_vals = ", ".join(ledger_state["values"])
+                    count_content = (
+                        f"The {target} has had {count} distinct values in history: {sorted_vals}. "
+                        f"Total distinct count: {count}."
+                    )
+                    synthetic = (
+                        f"count_{target}",
+                        count_content,
+                        "eval://aggregate",
+                        "[]",
+                        "",
+                        0, 1.0, 1.0, 5, 0, None, "{}", None,
+                    )
+                    new_results: list[tuple] = [synthetic]
+                    existing_ids = {synthetic[0]}
+                    for mem_id in ledger_state.get("source_memories", []):
+                        m_row = db.execute(
+                            "SELECT id, content, source_file, tags, created_at, observed_at, metadata FROM memories WHERE id = ?",
+                            (mem_id,)
+                        ).fetchone()
+                        if m_row and m_row[0] not in existing_ids:
+                            existing_ids.add(m_row[0])
+                            new_results.append((
+                                m_row[0], m_row[1], m_row[2], m_row[3], m_row[4], 0, 0.8,
+                                1.0, 3, 0, None, (m_row[6] or "{}") if len(m_row) > 6 else "{}", None,
+                            ))
+                    for r in results:
+                        if r[0] not in existing_ids:
+                            existing_ids.add(r[0])
+                            new_results.append(r)
+                    return new_results[:limit]
+            except Exception:
+                pass
 
         safe_target = target.replace('"', '""')
         try:
-            tenant_clause = " AND m.tenant_id = ?" if tenant_id else ""
-            params = (f'"{safe_target}"', tenant_id) if tenant_id else (f'"{safe_target}"',)
+            clause = ""
+            params_list: list[Any] = [f'"{safe_target}"']
+            if tenant_id:
+                clause += " AND m.tenant_id = ?"
+                params_list.append(tenant_id)
+            if project:
+                clause += " AND json_extract(m.metadata, '$.project') = ?"
+                params_list.append(project)
             # Query all sessions matching the target
             rows = db.execute(
-                "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at, m.metadata "
                 "FROM memories_fts fts "
                 "JOIN memories m ON m.rowid = fts.rowid "
-                f"WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{tenant_clause} "
+                f"WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{clause} "
                 "AND m.category = 'sessions' "
                 "ORDER BY m.observed_at ASC",
-                params
+                tuple(params_list),
             ).fetchall()
 
             if not rows:
@@ -750,7 +759,7 @@ def _counting_phase(
                     5,    # importance
                     0,    # pinned
                     None, # last_accessed
-                    "{}", # metadata
+                    _json.dumps({"project": project}) if project else "{}", # metadata
                     None, # supersedes
                 )
                 new_results: list[tuple] = [synthetic]
@@ -760,7 +769,7 @@ def _counting_phase(
                         existing_ids.add(r[0])
                         new_results.append((
                             r[0], r[1], r[2], r[3], r[4], 0, 0.8,
-                            1.0, 3, 0, None, "{}", None,
+                            1.0, 3, 0, None, (r[6] or "{}") if len(r) > 6 else "{}", None,
                         ))
                 for r in results:
                     if r[0] not in existing_ids:
@@ -816,6 +825,7 @@ def _temporal_compare(
     repo_filter: str = "",
     as_of: float | str | None = None,
     tenant_id: str | None = None,
+    project: str | None = None,
 ) -> list:
     """Phase 10.5: Temporal comparison for ordering, recency, and conflicting queries.
 
@@ -883,13 +893,17 @@ def _temporal_compare(
                 if tenant_id:
                     tenant_clause = "AND m.tenant_id = ? "
                     sql_params.append(tenant_id)
+                project_clause = ""
+                if project:
+                    project_clause = "AND json_extract(m.metadata, '$.project') = ? "
+                    sql_params.append(project)
 
                 try:
                     time_rows = db.execute(
-                        f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                        f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at, m.metadata "
                         f"FROM memories m "
                         f"WHERE m.deleted_at IS NULL AND m.category = 'sessions' "
-                        f"AND DATE(m.created_at) BETWEEN ? AND ? {tenant_clause}"
+                        f"AND DATE(m.created_at) BETWEEN ? AND ? {tenant_clause}{project_clause}"
                         f"ORDER BY m.created_at DESC LIMIT 10",
                         tuple(sql_params),
                     ).fetchall()
@@ -898,7 +912,7 @@ def _temporal_compare(
                         for tr in time_rows:
                             new_res.append((
                                 tr[0], tr[1], tr[2], tr[3], tr[4],
-                                0, 1.0, 1.0, 5, 0, None, "{}", None,
+                                0, 1.0, 1.0, 5, 0, None, (tr[6] or "{}") if len(tr) > 6 else "{}", None,
                             ))
                         for r in results:
                             if not any(r[0] == nr[0] for nr in new_res):
@@ -987,16 +1001,22 @@ def _temporal_compare(
                 continue
             safe_cand = cand.replace('"', '""')
             try:
-                tenant_clause = " AND m.tenant_id = ?" if tenant_id else ""
-                params = (f'"{safe_cand}"', tenant_id) if tenant_id else (f'"{safe_cand}"',)
+                clause = ""
+                ord_params: list[Any] = [f'"{safe_cand}"']
+                if tenant_id:
+                    clause += " AND m.tenant_id = ?"
+                    ord_params.append(tenant_id)
+                if project:
+                    clause += " AND json_extract(m.metadata, '$.project') = ?"
+                    ord_params.append(project)
                 rows = db.execute(
-                    "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                    "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at, m.metadata "
                     "FROM memories_fts fts "
                     "JOIN memories m ON m.rowid = fts.rowid "
-                    f"WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{tenant_clause} "
+                    f"WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{clause} "
                     "AND m.category = 'sessions' "
                     "ORDER BY m.observed_at DESC LIMIT 1",
-                    params
+                    tuple(ord_params),
                 ).fetchall()
                 if rows:
                     candidate_records.append((cand, rows[0]))
@@ -1019,7 +1039,7 @@ def _temporal_compare(
             # Winner at Rank 1 with top score
             winner_tuple = (
                 winner_row[0], winner_row[1], winner_row[2], winner_row[3],
-                winner_row[4], 0, 1.0, 1.0, 5, 0, None, "{}", None,
+                winner_row[4], 0, 1.0, 1.0, 5, 0, None, (winner_row[6] or "{}") if len(winner_row) > 6 else "{}", None,
             )
             new_results.append(winner_tuple)
             existing_ids.add(winner_row[0])
@@ -1030,7 +1050,7 @@ def _temporal_compare(
                     existing_ids.add(row[0])
                     new_results.append((
                         row[0], row[1], row[2], row[3], row[4],
-                        0, 0.9, 1.0, 3, 0, None, "{}", None,
+                        0, 0.9, 1.0, 3, 0, None, (row[6] or "{}") if len(row) > 6 else "{}", None,
                     ))
 
             # Existing results
@@ -1065,16 +1085,22 @@ def _temporal_compare(
                 from search.temporal_facts import query_latest_fact_from_ledger
                 ledger_fact = query_latest_fact_from_ledger(db, target, tenant_id=tenant_id or "default")
                 if ledger_fact and ledger_fact.get("source_memory"):
-                    tenant_filter = " AND tenant_id = ?" if tenant_id else ""
-                    m_params = (ledger_fact["source_memory"], tenant_id) if tenant_id else (ledger_fact["source_memory"],)
+                    m_clause = ""
+                    m_params_list: list[Any] = [ledger_fact["source_memory"]]
+                    if tenant_id:
+                        m_clause += " AND tenant_id = ?"
+                        m_params_list.append(tenant_id)
+                    if project:
+                        m_clause += " AND json_extract(metadata, '$.project') = ?"
+                        m_params_list.append(project)
                     m_row = db.execute(
-                        f"SELECT id, content, source_file, tags, created_at, observed_at FROM memories WHERE id = ?{tenant_filter}",
-                        m_params,
+                        f"SELECT id, content, source_file, tags, created_at, observed_at, metadata FROM memories WHERE id = ?{m_clause}",
+                        tuple(m_params_list),
                     ).fetchone()
                     if m_row:
                         new_results = [(
                             m_row[0], m_row[1], m_row[2], m_row[3],
-                            m_row[4], 0, 1.0, 1.0, 5, 0, None, "{}", None,
+                            m_row[4], 0, 1.0, 1.0, 5, 0, None, (m_row[6] or "{}") if len(m_row) > 6 else "{}", None,
                         )]
                         for r in results:
                             if r[0] != m_row[0]:
@@ -1085,21 +1111,29 @@ def _temporal_compare(
 
             safe_target = target.replace('"', '""')
             try:
+                rec_clause = ""
+                rec_params: list[Any] = [f'"{safe_target}"']
+                if tenant_id:
+                    rec_clause += " AND m.tenant_id = ?"
+                    rec_params.append(tenant_id)
+                if project:
+                    rec_clause += " AND json_extract(m.metadata, '$.project') = ?"
+                    rec_params.append(project)
                 rows = db.execute(
-                    "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                    "SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at, m.metadata "
                     "FROM memories_fts fts "
                     "JOIN memories m ON m.rowid = fts.rowid "
-                    "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                    f"WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{rec_clause} "
                     "AND m.category = 'sessions' "
                     "ORDER BY m.observed_at DESC LIMIT 2",
-                    (f'"{safe_target}"',)
+                    tuple(rec_params),
                 ).fetchall()
                 if rows:
                     recent_row = rows[0]
                     new_results = []
                     recent_tuple = (
                         recent_row[0], recent_row[1], recent_row[2], recent_row[3],
-                        recent_row[4], 0, 1.0, 1.0, 5, 0, None, "{}", None,
+                        recent_row[4], 0, 1.0, 1.0, 5, 0, None, (recent_row[6] or "{}") if len(recent_row) > 6 else "{}", None,
                     )
                     new_results.append(recent_tuple)
 
@@ -1109,7 +1143,7 @@ def _temporal_compare(
                         if prior_row[0] != recent_row[0]:
                             new_results.append((
                                 prior_row[0], prior_row[1], prior_row[2], prior_row[3],
-                                prior_row[4], 0, 0.95, 1.0, 4, 0, None, "{}", None,
+                                prior_row[4], 0, 0.95, 1.0, 4, 0, None, (prior_row[6] or "{}") if len(prior_row) > 6 else "{}", None,
                             ))
 
                     for r in results:
@@ -1128,6 +1162,7 @@ def _conjoint_entity_phase(
     query: str,
     limit: int,
     tenant_id: str | None = None,
+    project: str | None = None,
 ) -> list:
     """Phase 11.4: Conjoint Entity Retrieval for compound multi-entity queries.
 
@@ -1242,9 +1277,12 @@ def _conjoint_entity_phase(
             if tenant_id:
                 where_sql += " AND m.tenant_id = ?"
                 params.append(tenant_id)
+            if project:
+                where_sql += " AND json_extract(m.metadata, '$.project') = ?"
+                params.append(project)
 
             rows = db.execute(
-                f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at, m.metadata "
                 f"FROM memories_fts fts "
                 f"JOIN memories m ON m.rowid = fts.rowid "
                 f"WHERE {where_sql} "
@@ -1261,8 +1299,11 @@ def _conjoint_entity_phase(
                     if tenant_id:
                         kw_where += " AND m.tenant_id = ?"
                         kw_params.append(tenant_id)
+                    if project:
+                        kw_where += " AND json_extract(m.metadata, '$.project') = ?"
+                        kw_params.append(project)
                     rows_kw = db.execute(
-                        f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                        f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at, m.metadata "
                         f"FROM memories_fts fts "
                         f"JOIN memories m ON m.rowid = fts.rowid "
                         f"WHERE {kw_where} "
@@ -1273,8 +1314,10 @@ def _conjoint_entity_phase(
                         kw_params_or: list[Any] = [" OR ".join(kw_terms)]
                         if tenant_id:
                             kw_params_or.append(tenant_id)
+                        if project:
+                            kw_params_or.append(project)
                         rows_kw = db.execute(
-                            f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at "
+                            f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, m.observed_at, m.metadata "
                             f"FROM memories_fts fts "
                             f"JOIN memories m ON m.rowid = fts.rowid "
                             f"WHERE {kw_where} "
@@ -1294,7 +1337,7 @@ def _conjoint_entity_phase(
                 existing_ids.add(row[0])
                 new_results.append((
                     row[0], row[1], row[2], row[3], row[4],
-                    0, 1.0 - (idx * 0.05), 1.0, 5, 0, None, "{}", None,
+                    0, 1.0 - (idx * 0.05), 1.0, 5, 0, None, (row[6] or "{}") if len(row) > 6 else "{}", None,
                 ))
         for r in results:
             if r[0] not in existing_ids:
@@ -1416,6 +1459,7 @@ def search_memories(
     tags: list[str] | None = None,
     shared_with_me: bool = False,
     mode: str = "hybrid",
+    project: str = "",
 ) -> dict:
     """Main entry point: 14-phase hybrid search returning ranked memories.
 
@@ -1681,6 +1725,7 @@ def search_memories(
         )
         + f":mode={mode}"
         + f":cat={category}"
+        + f":proj={project}"
         + f":hybrid={int(hybrid)}"
         + f":light={int(light)}"
         + f":sw={int(safety_wiring)}:dr={int(deep_rerank)}:sf={int(skill_first)}"
@@ -1781,15 +1826,15 @@ def search_memories(
             _tag_filter_sql = " AND (" + " AND ".join(_tag_filter_clauses) + ")"
 
         # category filter — appended to repo_filter so FTS and embedding
-        # paths both inherit it. The value must go into _tag_filter_params
+        # paths both inherit it. Validated strictly against [A-Za-z0-9_-]+ so
+        # _fts_search fallback never hits mismatched ? bindings with tags/project.
         if category and category.lower() == "all":
             # Explicitly search across all categories including sessions
             pass
         elif category:
             if not re.match(r'^[A-Za-z0-9_-]+$', category):
                 category = "lessons"
-            repo_filter = f"{repo_filter} AND m.category = ?"
-            _tag_filter_params.append(category)
+            repo_filter = f"{repo_filter} AND m.category = '{category}'"
         else:
             # Detect episodic/conversational queries and tenant-isolated searches and include sessions
             _session_keywords = {
@@ -1808,6 +1853,9 @@ def search_memories(
                 pass  # No filter — sessions are included
             else:
                 repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
+
+        _project_filter = project or None
+        _retrieval_limit = max(limit * 5, 50) if _project_filter else limit
 
         # Phase 5: Retrieval — FTS5 BM25 + KG facts
         # When search_parallel_enabled is on (default), run FTS and KG fact
@@ -1853,12 +1901,14 @@ def search_memories(
 
         elif mode == "fts":
             results = _fts_search(
-                db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
+                db, fts_query, _retrieval_limit * 5 if _effective_rerank else _retrieval_limit, has_fitness,
                 repo_filter,
                 tag_filter_sql=_tag_filter_sql,
                 tag_filter_params=tuple(_tag_filter_params),
                 category=category or None,
                 tenant_id=tenant_id,
+                include_global=include_global,
+                project=_project_filter,
             )
             _record_phase_latency("search.fts", _t0)
             hybrid = False
@@ -1870,7 +1920,7 @@ def search_memories(
             # fusion, KG boost, and CE reranking.
             # Recency ordering is essential: "current X" means the most recent
             # session mentioning the topic, not the BM25-best match.
-            _fts_limit = limit * 5
+            _fts_limit = _retrieval_limit * 5
             results = _fts_search(
                 db, fts_query, _fts_limit, has_fitness,
                 repo_filter,
@@ -1879,6 +1929,8 @@ def search_memories(
                 category=category or None,
                 recency_order=True,
                 tenant_id=tenant_id,
+                include_global=include_global,
+                project=_project_filter,
             )
             _record_phase_latency("search.fts", _t0)
             hybrid = False
@@ -1896,8 +1948,9 @@ def search_memories(
 
         elif mode == "semantic":
             results = _fallback_embedding_search(
-                db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
+                db, normalized_query, db_path, _retrieval_limit * 5 if _effective_rerank else _retrieval_limit, repo_filter, category,
                 tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
+                project=_project_filter,
             )
             _record_phase_latency("search.embedding_fallback", _t0)
             if include_facts:
@@ -1945,14 +1998,14 @@ def search_memories(
                     try:
                         return _fts_search(
                             conn, fts_query,
-                            limit * 10 if _effective_rerank else max(limit * 5, 50),
+                            _retrieval_limit * 10 if _effective_rerank else max(_retrieval_limit * 5, 50),
                             has_fitness, repo_filter,
                             tag_filter_sql=_tag_filter_sql,
                             tag_filter_params=tuple(_tag_filter_params),
                             category=category or None,
-                            prefilter_ids=None,
                             tenant_id=tenant_id,
                             include_global=include_global,
+                            project=_project_filter,
                         )
                     except Exception as _fts_exc:
                         _phase_inc("search.fts", _fts_exc)
@@ -1988,14 +2041,14 @@ def search_memories(
                 _record_phase_latency("search.kg_facts", _t0)
             else:
                 results = _fts_search(
-                    db, fts_query, limit * 5 if _effective_rerank else max(limit * 5, 50), has_fitness,
+                    db, fts_query, _retrieval_limit * 5 if _effective_rerank else max(_retrieval_limit * 5, 50), has_fitness,
                     repo_filter,
                     tag_filter_sql=_tag_filter_sql,
                     tag_filter_params=tuple(_tag_filter_params),
                     category=category or None,
-                    prefilter_ids=None,
                     tenant_id=tenant_id,
                     include_global=include_global,
+                    project=_project_filter,
                 )
                 _record_phase_latency("search.fts", _t0)
 
@@ -2018,8 +2071,9 @@ def search_memories(
                     from search import search_pipeline as _sp_mod2
                     _t0 = time.time()
                     results = _sp_mod2._fallback_embedding_search(  # type: ignore[attr-defined]
-                        db, normalized_query, db_path, limit, repo_filter, category,
+                        db, normalized_query, db_path, _retrieval_limit, repo_filter, category,
                         tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
+                        **({"project": _project_filter} if _project_filter else {}),
                     )
                 except ImportError:
                     results = []
@@ -2063,10 +2117,11 @@ def search_memories(
                 from search.config import get_search_config
                 _fusion_emb_override = get_search_config().inference_embedding_downweight
             results = _hybrid_fusion(
-                db, results, normalized_query, fts_query, db_path, limit, repo_filter, category=category or None,
+                db, results, normalized_query, fts_query, db_path, _retrieval_limit, repo_filter, category=category or None,
                 chunk_hits_out=_fusion_chunk_hits,
                 embedding_weight_override=_fusion_emb_override,
                 tenant_id=tenant_id,
+                **({"project": _project_filter} if _project_filter else {}),
             )
             _record_phase_latency("search.hybrid_fusion", _t0)
             if _fusion_chunk_hits:
@@ -2126,8 +2181,9 @@ def search_memories(
         # queries and cost seconds per search. FTS5 rank is the final rank.
         if mode not in ("fact_lookup", "fts"):
             results = _enhance_with_chunks(
-                db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
+                db, results, fts_query, _retrieval_limit if _project_filter else limit, include_invalid, repo_filter, category=category or None,
                 merged_chunks=_merged_chunks,
+                **({"project": _project_filter} if _project_filter else {}),
             )
             # Phase 9.1: UI-state inventory lookup (flag-gated, default off).
             # Structured synthesis over materialized dropdown/option
@@ -2193,7 +2249,8 @@ def search_memories(
             _t0_kgb = time.time()
             try:
                 results = _phase_ten_kg_boost(
-                    db, results, normalized_query, limit, repo_filter, category=category or None,
+                    db, results, normalized_query, _retrieval_limit if _project_filter else limit, repo_filter, category=category or None,
+                    **({"project": _project_filter} if _project_filter else {}),
                 )
             except Exception as _kgb_exc:
                 _phase_inc("search.kg_boost", _kgb_exc)
@@ -2205,7 +2262,8 @@ def search_memories(
                 _t0_mhkg = time.time()
                 try:
                     results = _phase_ten_multi_hop_kg(
-                        db, results, normalized_query, limit, repo_filter, category=category or None,
+                        db, results, normalized_query, _retrieval_limit if _project_filter else limit, repo_filter, category=category or None,
+                        **({"project": _project_filter} if _project_filter else {}),
                     )
                 except Exception as _mhkg_exc:
                     _phase_inc("search.multi_hop_kg", _mhkg_exc)
@@ -2216,7 +2274,8 @@ def search_memories(
                 _t0_tmh = time.time()
                 try:
                     results = _text_multi_hop_traversal(
-                        db, results, query, limit, repo_filter, category=category or None,
+                        db, results, query, _retrieval_limit if _project_filter else limit, repo_filter, category=category or None,
+                        **({"project": _project_filter} if _project_filter else {}),
                     )
                 except Exception as _tmh_exc:
                     _phase_inc("search.text_multi_hop", _tmh_exc)
@@ -2253,7 +2312,7 @@ def search_memories(
                     rerank=_effective_rerank,
                     boost_pinned=boost_pinned if not light else False,
                     recency_weight=recency_weight,
-                    limit=limit,
+                    limit=_retrieval_limit,
                     deep_rerank=deep_rerank,
                     session_boost_ids=session_boost_ids,
                     as_of=as_of,
@@ -2304,7 +2363,10 @@ def search_memories(
         if results_to_display:
             _t0_tc = time.time()
             try:
-                results_to_display = _temporal_compare(db, results_to_display, query, limit, repo_filter=repo_filter, as_of=as_of, tenant_id=tenant_id)
+                results_to_display = _temporal_compare(
+                    db, results_to_display, query, _retrieval_limit,
+                    repo_filter=repo_filter, as_of=as_of, tenant_id=tenant_id, project=_project_filter,
+                )
             except Exception as _tc_exc:
                 _phase_inc("search.temporal_compare", _tc_exc)
                 logger.debug("temporal_compare failed (degraded): %s", _tc_exc)
@@ -2314,7 +2376,10 @@ def search_memories(
         # count distinct values across matching sessions and surface aggregate count.
         _t0_cnt = time.time()
         try:
-            results_to_display = _counting_phase(db, results_to_display, query, limit, repo_filter=repo_filter, tenant_id=tenant_id)
+            results_to_display = _counting_phase(
+                db, results_to_display, query, _retrieval_limit,
+                repo_filter=repo_filter, tenant_id=tenant_id, project=_project_filter,
+            )
         except Exception as _cnt_exc:
             _phase_inc("search.counting", _cnt_exc)
             logger.debug("counting phase failed (degraded): %s", _cnt_exc)
@@ -2324,7 +2389,10 @@ def search_memories(
         # ensure each conjunct independently secures top representation in results_to_display.
         _t0_conj = time.time()
         try:
-            results_to_display = _conjoint_entity_phase(db, results_to_display, query, limit, tenant_id=tenant_id)
+            results_to_display = _conjoint_entity_phase(
+                db, results_to_display, query, _retrieval_limit,
+                tenant_id=tenant_id, project=_project_filter,
+            )
         except Exception as _conj_exc:
             _phase_inc("search.conjoint_entity", _conj_exc)
             logger.debug("conjoint_entity phase failed (degraded): %s", _conj_exc)
@@ -2434,6 +2502,30 @@ def search_memories(
             results_to_display = _state.results_to_display
 
         # Phase 14: Finalization — record access
+        if project:
+            from search.phases.postprocess import _format_search_results
+
+            result_items = [
+                item for item in result_items
+                if isinstance(item.get("metadata"), dict) and item["metadata"].get("project") == project
+            ][:limit]
+            if not result_items:
+                return _build_empty_result_with_hint(
+                    cache_key=cache_key,
+                    query=query,
+                    db_path=db_path,
+                    hint=f"No memories found for project '{project}'.",
+                    related_facts=related_facts,
+                )
+            _allowed_ids = {item.get("id") for item in result_items}
+            results_to_display = [r for r in results_to_display if r[0] in _allowed_ids][:limit]
+            output = _format_search_results(
+                results_to_display,
+                query,
+                rerank,
+                result_items,
+                backlinks_map,
+            )
         _record_last_accessed(db, result_items)
 
         # B3.1: shared_with_me post-filter — append shared memories whose

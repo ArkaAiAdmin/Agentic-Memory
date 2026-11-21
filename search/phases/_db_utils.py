@@ -97,6 +97,7 @@ def _fetch_rows_by_ids(
     columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata, access_count, score",
     extra_filter: str = "",
     extra_params: tuple = (),
+    project: str | None = None,
 ) -> dict:
     """Batch-fetch rows by IDs to avoid N+1 queries. Returns {id: row_tuple}.
 
@@ -133,14 +134,17 @@ def _fetch_rows_by_ids(
         except Exception:
             _target_table = "memories"
 
+    _project_filter = " AND json_extract(m.metadata, '$.project') = ?" if project else ""
+    _project_params = (project,) if project else ()
+
     for i in range(0, len(ids), _CHUNK_SIZE):
         chunk = ids[i : i + _CHUNK_SIZE]
         placeholders = ",".join("?" * len(chunk))
-        query = f"SELECT {columns} FROM {_target_table} m WHERE m.id IN ({placeholders}) AND m.deleted_at IS NULL{extra_filter}"
+        query = f"SELECT {columns} FROM {_target_table} m WHERE m.id IN ({placeholders}) AND m.deleted_at IS NULL{extra_filter}{_project_filter}"
         try:
-            rows = db.execute(query, [*chunk, *extra_params]).fetchall()
+            rows = db.execute(query, [*chunk, *extra_params, *_project_params]).fetchall()
             result.update({row[0]: row for row in rows})
         except sqlite3.Error as _sql_err:
-            logger.warning("_fetch_rows_by_ids: chunk of %d ids failed: %s (query=%s, params=%s)", len(chunk), _sql_err, query, [*chunk, *extra_params][:5])
+            logger.warning("_fetch_rows_by_ids: chunk of %d ids failed: %s (query=%s, params=%s)", len(chunk), _sql_err, query, [*chunk, *extra_params, *_project_params][:5])
             continue
     return result

@@ -110,6 +110,8 @@ class SaveRequest:
     # to a hashed principal sub (see _default_data_subject_sub) so per-subject
     # erasure is always possible later.  Stored as a plaintext hash (no PII).
     data_subject_sub: str | None = None
+    metadata: Optional[dict[str, Any] | str] = None
+    project: str = ""
 
 def _write_vec_key(db: AnyConnection, note_id: str) -> int:
     """Write the memory_vec_keys mapping for a note.
@@ -795,6 +797,8 @@ def _update_memory_index_incremental(
     evidence_chain: list | None = None,
     fact_type: str = "observation",
     data_subject_sub: str | None = None,
+    metadata: Optional[dict[str, Any] | str] = None,
+    project: str = "",
 ):
     """Update memory index incrementally.
 
@@ -1340,6 +1344,8 @@ def _build_memory_file(
     pinned: bool,
     now_iso: Optional[str] = None,
     note_id: Optional[str] = None,
+    metadata: Optional[dict[str, Any] | str] = None,
+    project: str = "",
 ) -> tuple[str, dict[str, Any], str, str]:
     import datetime
 
@@ -1407,6 +1413,18 @@ def _build_memory_file(
         fm_metadata = {"value": raw_meta}
     else:
         fm_metadata = fm_metadata if isinstance(fm_metadata, dict) else {}
+    if metadata is not None:
+        if isinstance(metadata, dict):
+            fm_metadata.update(metadata)
+        elif isinstance(metadata, str) and metadata.strip():
+            try:
+                parsed_extra = json.loads(metadata)
+                if isinstance(parsed_extra, dict):
+                    fm_metadata.update(parsed_extra)
+            except (json.JSONDecodeError, TypeError):
+                pass
+    if project and "project" not in fm_metadata:
+        fm_metadata["project"] = project
     for k in (
         "category",
         "title_slug",
@@ -1492,6 +1510,8 @@ def _try_saga_persist(
     evidence_chain: list | None = None,
     fact_type: str = "observation",
     data_subject_sub: str | None = None,
+    metadata: Optional[dict[str, Any] | str] = None,
+    project: str = "",
 ):
     """Wrap the upsert + write + vec-key triple-store steps in a saga.
 
@@ -1567,6 +1587,8 @@ def _persist_via_saga(
     evidence_chain: list | None = None,
     fact_type: str = "observation",
     data_subject_sub: str | None = None,
+    metadata: Optional[dict[str, Any] | str] = None,
+    project: str = "",
 ):
     """Persist a memory via the saga-wrapped write path.
 
@@ -1630,6 +1652,8 @@ def save_memory(
     evidence_chain: list | None = None,
     fact_type: str = "observation",
     data_subject_sub: str | None = None,
+    metadata: Optional[dict[str, Any] | str] = None,
+    project: str = "",
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
@@ -1681,6 +1705,8 @@ def save_memory(
         evidence_chain=evidence_chain,
         fact_type=fact_type,
         data_subject_sub=data_subject_sub,
+        metadata=metadata,
+        project=project,
     )
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
@@ -1754,6 +1780,8 @@ def save_memory_journal(
     evidence_chain: list | None = None,
     fact_type: str = "observation",
     data_subject_sub: str | None = None,
+    metadata: Optional[dict[str, Any] | str] = None,
+    project: str = "",
 ) -> str:
     """Write a memory note via the CQRS write journal.
 
@@ -1803,6 +1831,8 @@ def save_memory_journal(
             evidence_chain=evidence_chain,
             fact_type=fact_type,
             data_subject_sub=data_subject_sub,
+            metadata=metadata,
+            project=project,
         )
 
     _start_time = time.time()
@@ -1860,6 +1890,8 @@ def save_memory_journal(
         evidence_chain=req.evidence_chain,
         fact_type=req.fact_type,
         data_subject_sub=_resolved_data_subject_sub,
+        metadata=req.metadata,
+        project=req.project,
     )
 
     from infra.write_journal import enqueue_write, init_journal_db
@@ -2087,6 +2119,7 @@ def _materialize_journal_once(
         asserting_agent_id=entry.get("asserting_agent_id", ""),
         fact_type=entry.get("fact_type", "observation"),
         data_subject_sub=entry.get("data_subject_sub"),
+        metadata=json.loads(entry["metadata"]) if entry.get("metadata") else None,
     )
     note_id = entry.get("note_id", "")
 
@@ -2124,6 +2157,7 @@ def _materialize_journal_once(
     _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
         req.content, req.category, req.title_slug, tags_list, req.pinned,
         now_iso=entry.get("created_at"), note_id=note_id,
+        metadata=req.metadata, project=req.project,
     )
 
     _db_path_parsed = Path(db_path_obj)
@@ -2440,6 +2474,8 @@ def _save_memory_core(
             pinned,
             now_iso=_now_iso,
             note_id=note_id,
+            metadata=req.metadata,
+            project=req.project,
         )
         db_path_obj = (
             Path(db_path) if db_path is not None else target_base / "memory.db"

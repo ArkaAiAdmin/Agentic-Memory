@@ -122,6 +122,15 @@ def memory_graph_traverse(
     if not patterns:
         return _err(ErrorCode.INVALID_PARAMS, "edge_patterns cannot be empty")
 
+    raw_depth = kwargs.get("depth")
+    if patterns == ["*"] and raw_depth is not None:
+        try:
+            depth_int = int(raw_depth)
+            if depth_int > 1:
+                patterns = ["*"] * min(depth_int, 10)
+        except (ValueError, TypeError):
+            pass
+
     patterns = patterns[:10]  # Bound traversal sequence depth to 10 steps
 
     try:
