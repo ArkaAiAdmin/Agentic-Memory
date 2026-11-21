@@ -18,7 +18,7 @@ import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 from agentic_memory.client import MemoryClient
 from agentic_memory.exceptions import ValidationError
@@ -623,6 +623,25 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/v1/memories/") and path.endswith("/restore"):
             note_id = path[len("/api/v1/memories/"):-len("/restore")]
             self._handle_restore_memory(note_id)
+        elif path.startswith("/api/v1/beliefs/"):
+            rest = path[len("/api/v1/beliefs/"):]
+            if "/" in rest:
+                raw_id, action = rest.rsplit("/", 1)
+                belief_id = unquote(raw_id)
+                if not belief_id:
+                    self._error("Not found", 404)
+                elif action == "confirm":
+                    self._handle_confirm_belief(belief_id)
+                elif action == "pin":
+                    self._handle_pin_belief(belief_id)
+                elif action == "supersede":
+                    self._handle_supersede_belief(belief_id)
+                elif action == "retract":
+                    self._handle_retract_belief(belief_id)
+                else:
+                    self._error("Not found", 404)
+            else:
+                self._error("Not found", 404)
         else:
             self._error("Not found", 404)
 
@@ -994,6 +1013,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             return json.loads(body.decode("utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid JSON: {exc}") from exc
+
+    def _read_optional_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", 0))
+        if length <= 0:
+            return {}
+        parsed = self._read_json_body()
+        if not isinstance(parsed, dict):
+            raise ValueError("request body must be a JSON object")
+        return parsed
 
     # ── Phase 2: auth endpoints ─────────────────────────────────────────────
 
@@ -1869,66 +1897,179 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             except (ValueError, TypeError, IndexError):
                 limit = 50
 
-            belief_status = query_params.get("belief_status", ["active"])[0]
-            if belief_status.lower() in ("all", "*", "any"):
+            status_explicit = "belief_status" in query_params or "status" in query_params
+            raw_status = (
+                query_params.get("belief_status")
+                or query_params.get("status")
+                or ["active"]
+            )[0]
+            belief_status: str | None = raw_status
+            if isinstance(raw_status, str) and raw_status.lower() in ("all", "*", "any"):
                 belief_status = None
 
-            is_due = (
-                "due" in query_params
-                or has_older_than
-                or min_confidence_val is not None
-            )
+            raw_inc_sup = query_params.get("include_superseded", ["true"])[0]
+            include_superseded = str(raw_inc_sup).strip().lower() not in ("false", "0", "no")
+
             if "due" in query_params and not has_older_than:
                 older_than_days_val = 30.0
 
             from infra._lazy_imports import connection_pool, safe_close_db
-            from belief.belief_lifecycle import get_active_beliefs, get_beliefs_due_for_review
+            from belief.belief_lifecycle import list_beliefs_unified
+
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
             try:
-                if is_due:
-                    raw_beliefs = get_beliefs_due_for_review(
-                        conn,
-                        staleness_days=older_than_days_val,
-                        min_confidence=min_confidence_val,
-                        limit=limit,
-                        tenant_id=tenant_id,
-                        belief_status=belief_status,
-                    )
-                else:
-                    raw_beliefs = get_active_beliefs(
-                        conn,
-                        min_confidence=0.0,
-                        belief_status=belief_status,
-                        limit=limit,
-                        tenant_id=tenant_id,
-                    )
-                beliefs = [
-                    {
-                        "id": str(b["id"]),
-                        "fact_id": b["fact_id"],
-                        "content": f"{b.get('subject', '')} --[{b.get('predicate', '')}]--> {b.get('object', '')}" if b.get("subject") and b.get("predicate") else b.get("rationale", ""),
-                        "subject": b.get("subject"),
-                        "predicate": b.get("predicate"),
-                        "object": b.get("object"),
-                        "confidence": b.get("confidence", 1.0),
-                        "evidence_count": len(b.get("evidence_chain") or []) or 1,
-                        "evidence_chain": b.get("evidence_chain", []),
-                        "rationale": b.get("rationale"),
-                        "last_challenged_at": b.get("last_reviewed_at"),
-                        "last_reviewed_at": b.get("last_reviewed_at"),
-                        "superseded_by": None,
-                        "created_at": b.get("created_at"),
-                        "certainty_tier": b.get("certainty_tier"),
-                        "status": b.get("belief_status", "active"),
-                    }
-                    for b in raw_beliefs
-                ]
+                beliefs = list_beliefs_unified(
+                    conn,
+                    min_confidence=min_confidence_val,
+                    staleness_days=older_than_days_val,
+                    belief_status=belief_status,
+                    status_explicit=status_explicit,
+                    include_superseded=include_superseded,
+                    limit=limit,
+                    tenant_id=tenant_id,
+                )
                 self._write_json({"beliefs": beliefs, "count": len(beliefs)})
             finally:
                 safe_close_db(conn)
         except Exception as e:
             logger.warning("_handle_get_beliefs: %s", e)
             self._error(f"Failed to get beliefs: {e}", 500)
+
+    def _handle_confirm_belief(self, belief_id: str) -> None:
+        try:
+            self._read_optional_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            tenant_id = self._resolve_tenant_id()
+            from infra._lazy_imports import connection_pool, safe_close_db
+            from belief.belief_lifecycle import confirm_belief_record
+
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
+                try:
+                    with conn:
+                        updated = confirm_belief_record(conn, belief_id, tenant_id=tenant_id)
+                finally:
+                    safe_close_db(conn)
+            if updated is None:
+                self._error(f"Belief not found: {belief_id}", 404)
+                return
+            self._write_json(updated)
+        except Exception as e:
+            logger.warning("_handle_confirm_belief: %s", e)
+            self._error(f"Failed to confirm belief: {e}", 500)
+
+    def _handle_pin_belief(self, belief_id: str) -> None:
+        try:
+            self._read_optional_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            tenant_id = self._resolve_tenant_id()
+            from infra._lazy_imports import connection_pool, safe_close_db
+            from belief.belief_lifecycle import pin_belief_record
+
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
+                try:
+                    with conn:
+                        updated = pin_belief_record(conn, belief_id, tenant_id=tenant_id)
+                finally:
+                    safe_close_db(conn)
+            if updated is None:
+                self._error(f"Belief not found: {belief_id}", 404)
+                return
+            self._write_json(updated)
+        except Exception as e:
+            logger.warning("_handle_pin_belief: %s", e)
+            self._error(f"Failed to pin belief: {e}", 500)
+
+    def _handle_supersede_belief(self, belief_id: str) -> None:
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        if not isinstance(req, dict):
+            self._error("request body must be a JSON object", 400)
+            return
+        content = req.get("content")
+        if not isinstance(content, str) or not content.strip():
+            self._error("content is required for supersede", 400)
+            return
+        reason = req.get("reason")
+        if reason is None:
+            reason = req.get("rationale")
+        if reason is not None and not isinstance(reason, str):
+            self._error("reason must be a string", 400)
+            return
+        try:
+            tenant_id = self._resolve_tenant_id()
+            from infra._lazy_imports import connection_pool, safe_close_db
+            from belief.belief_lifecycle import supersede_belief_record
+
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
+                try:
+                    with conn:
+                        result = supersede_belief_record(
+                            conn,
+                            belief_id,
+                            replacement_content=content.strip(),
+                            reason=reason,
+                            tenant_id=tenant_id,
+                        )
+                finally:
+                    safe_close_db(conn)
+            if result is None:
+                self._error(f"Belief not found: {belief_id}", 404)
+                return
+            self._write_json(result)
+        except ValueError as e:
+            self._error(str(e), 400)
+        except Exception as e:
+            logger.warning("_handle_supersede_belief: %s", e)
+            self._error(f"Failed to supersede belief: {e}", 500)
+
+    def _handle_retract_belief(self, belief_id: str) -> None:
+        try:
+            req = self._read_optional_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        reason = req.get("reason")
+        if reason is None:
+            reason = req.get("rationale")
+        if reason is not None and not isinstance(reason, str):
+            self._error("reason must be a string", 400)
+            return
+        try:
+            tenant_id = self._resolve_tenant_id()
+            from infra._lazy_imports import connection_pool, safe_close_db
+            from belief.belief_lifecycle import retract_belief_record
+
+            with getattr(self.server, "_db_lock", threading.Lock()):
+                conn = connection_pool.get(str(self.server.db_path), timeout=5.0, tenant_id=tenant_id)
+                try:
+                    with conn:
+                        updated = retract_belief_record(
+                            conn,
+                            belief_id,
+                            reason=reason,
+                            tenant_id=tenant_id,
+                        )
+                finally:
+                    safe_close_db(conn)
+            if updated is None:
+                self._error(f"Belief not found: {belief_id}", 404)
+                return
+            self._write_json(updated)
+        except Exception as e:
+            logger.warning("_handle_retract_belief: %s", e)
+            self._error(f"Failed to retract belief: {e}", 500)
 
     def _handle_kg_nodes(self, query_params: dict) -> None:
         try:
