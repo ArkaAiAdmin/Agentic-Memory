@@ -99,3 +99,9 @@ pnpm-workspace.yaml
 .env.local
 artifacts/
 *.html
+
+# Local Git LFS hooks auto-installed into core.hooksPath (.githooks/)
+.githooks/post-checkout
+.githooks/post-commit
+.githooks/post-merge
+.githooks/pre-push
